@@ -31,7 +31,6 @@ class RuntimeContext:
 
 @dataclass(frozen=True)
 class PromptDebugEntry:
-    name: str
     label: str
     priority: int
     rendered: bool
@@ -89,7 +88,7 @@ class SystemPromptBuilder:
                 rendered_sections.append(content)
                 section_renders.append(
                     PromptSectionRender(
-                        name=block.name,
+                        label=block.label,
                         content=content,
                         priority=block.priority,
                         is_static=block.is_static,
@@ -98,7 +97,6 @@ class SystemPromptBuilder:
 
             breakdown.append(
                 PromptDebugEntry(
-                    name=block.name,
                     label=block.label,
                     priority=block.priority,
                     rendered=is_rendered,
@@ -250,7 +248,6 @@ class ContextBuilder:
     ) -> list[PromptDebugEntry]:
         rendered_entries = [
             PromptDebugEntry(
-                name=entry.name,
                 label=entry.label,
                 priority=entry.priority,
                 rendered=entry.rendered,
@@ -260,17 +257,16 @@ class ContextBuilder:
                 destination=destination,
             )
             for entry in breakdown
-            if entry.name not in disabled_sections
+            if entry.label not in disabled_sections
             and (
-                entry.name in context_frame_sections
+                entry.label in context_frame_sections
                 if destination == "context_frame"
-                else entry.name not in context_frame_sections
+                else entry.label not in context_frame_sections
             )
         ]
         injected_entries = [
             PromptDebugEntry(
-                name=section.name,
-                label=section.name,
+                label=section.label,
                 priority=section.priority,
                 rendered=True,
                 char_count=len(section.content),
@@ -278,6 +274,6 @@ class ContextBuilder:
                 destination=destination,
             )
             for section in sections
-            if not any(entry.name == section.name for entry in breakdown)
+            if not any(entry.label == section.label for entry in breakdown)
         ]
         return [*rendered_entries, *injected_entries]

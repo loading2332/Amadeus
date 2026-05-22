@@ -53,9 +53,9 @@ This keeps block rendering simple while making final message routing explicit an
 
 ### `amadeus.prompt_block`
 
-`PromptBlock` gains a stable `name` field.
+`PromptBlock` uses a stable `label` field as the section id.
 
-Expected default names:
+Expected default labels:
 
 ```text
 identity
@@ -68,7 +68,7 @@ active_skills
 runtime_metadata
 ```
 
-`label` remains useful for class-level debug output, but `name` is the routing key. This avoids using class names in `disabled_sections` or trim plans, which would make future refactors unnecessarily expensive.
+`label` is the routing key and the visible context-frame heading. Amadeus intentionally does not keep a second hand-written `name` field because it would duplicate the same section identity.
 
 `RecentContextPromptBlock` strips `## Recent Turns` and everything after it before rendering. If the remaining content is empty, it returns an empty result with a clear reason.
 
@@ -108,7 +108,7 @@ SystemPromptResult(
 
 `PromptAssembler` owns section routing.
 
-Default context frame section names:
+Default context frame section labels:
 
 ```python
 {

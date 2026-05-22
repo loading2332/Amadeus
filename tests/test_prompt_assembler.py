@@ -8,7 +8,7 @@ from amadeus.prompting.assembler import (
 
 def section(name, content, priority=10):
     return PromptSectionRender(
-        name=name,
+        label=name,
         content=content,
         priority=priority,
         is_static=False,
@@ -27,13 +27,13 @@ def test_prompt_assembler_routes_sections_by_name():
     )
 
     assert result.system_prompt == (
-        "identity content\n\n---\n\nmemory content"
+        "## identity\n\nidentity content\n\n---\n\n## long_term_memory\n\nmemory content"
     )
-    assert [item.name for item in result.system_sections] == [
+    assert [item.label for item in result.system_sections] == [
         "identity",
         "long_term_memory",
     ]
-    assert [item.name for item in result.frame_sections] == [
+    assert [item.label for item in result.frame_sections] == [
         "recent_context",
         "retrieved_memory",
         "runtime_metadata",
@@ -48,8 +48,16 @@ def test_context_frame_content_uses_system_reminder_marker():
 
     assert content.startswith(SYSTEM_CONTEXT_FRAME_MARKER)
     assert "以下内容由系统提供" in content
-    assert "## recent_context\nrecent content" in content
+    assert "## recent_context\n\nrecent content" in content
     assert content.rstrip().endswith("</system-reminder>")
+
+
+def test_context_frame_content_uses_label_as_single_visible_heading():
+    content = build_context_frame_content(
+        [section("recent_context", "recent content")]
+    )
+
+    assert "## recent_context\n\nrecent content" in content
 
 
 def test_context_frame_content_is_empty_without_sections():
@@ -73,4 +81,4 @@ def test_prompt_assembler_skips_disabled_sections_and_injection():
     assert "recent content" not in result.context_frame
     assert "disabled tool context" not in result.context_frame
     assert "enabled hint" in result.context_frame
-    assert [item.name for item in result.frame_sections] == ["plugin_hints"]
+    assert [item.label for item in result.frame_sections] == ["plugin_hints"]

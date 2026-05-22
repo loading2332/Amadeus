@@ -14,7 +14,7 @@ LEGACY_CONTEXT_FRAME_MARKER = "[SYSTEM_CONTEXT_FRAME]"
 
 @dataclass(frozen=True)
 class PromptSectionRender:
-    name: str
+    label: str
     content: str
     priority: int
     is_static: bool
@@ -54,9 +54,14 @@ def build_context_frame_content(sections: Iterable[PromptSectionRender]) -> str:
         ),
     ]
     for section in selected_sections:
-        parts.append(f"## {section.name}\n{section.content}")
+        parts.append(_format_prompt_section(section))
     parts.append(SYSTEM_CONTEXT_FRAME_END)
     return "\n\n".join(parts)
+
+
+def _format_prompt_section(section: PromptSectionRender) -> str:
+    content = section.content.strip()
+    return f"## {section.label}\n\n{content}"
 
 
 class PromptAssembler:
@@ -80,17 +85,17 @@ class PromptAssembler:
         enabled_sections = [
             section
             for section in sorted(sections, key=lambda item: item.priority)
-            if section.name not in disabled
+            if section.label not in disabled
         ]
         system_sections = [
             section
             for section in enabled_sections
-            if section.name not in self.context_frame_sections
+            if section.label not in self.context_frame_sections
         ]
         frame_sections = [
             section
             for section in enabled_sections
-            if section.name in self.context_frame_sections
+            if section.label in self.context_frame_sections
         ]
 
         for name, content in (turn_injection_context or {}).items():
@@ -99,7 +104,7 @@ class PromptAssembler:
                 continue
             frame_sections.append(
                 PromptSectionRender(
-                    name=name,
+                    label=name,
                     content=text,
                     priority=10_000,
                     is_static=False,
@@ -110,7 +115,7 @@ class PromptAssembler:
             system_sections=system_sections,
             frame_sections=frame_sections,
             system_prompt=self.separator.join(
-                section.content for section in system_sections
+                _format_prompt_section(section) for section in system_sections
             ),
             context_frame=build_context_frame_content(frame_sections),
         )

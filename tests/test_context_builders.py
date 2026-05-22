@@ -23,7 +23,6 @@ def make_context(tmp_path, **overrides):
 
 @dataclass
 class CountingBlock:
-    name: str
     label: str
     priority: int
     content: str
@@ -39,8 +38,8 @@ class CountingBlock:
 
 
 def test_system_prompt_builder_sorts_blocks_by_priority(tmp_path):
-    low_priority = CountingBlock("later", "later label", 20, "later")
-    high_priority = CountingBlock("earlier", "earlier label", 10, "earlier")
+    low_priority = CountingBlock("later", 20, "later")
+    high_priority = CountingBlock("earlier", 10, "earlier")
 
     result = SystemPromptBuilder([low_priority, high_priority]).build(make_context(tmp_path))
 
@@ -48,17 +47,17 @@ def test_system_prompt_builder_sorts_blocks_by_priority(tmp_path):
         "earlier #1",
         "later #1",
     ]
-    assert [entry.name for entry in result.breakdown] == ["earlier", "later"]
+    assert [entry.label for entry in result.breakdown] == ["earlier", "later"]
 
 
 def test_system_prompt_builder_tracks_empty_blocks_without_rendering_them(tmp_path):
-    empty = CountingBlock("empty", "empty label", 10, "", empty_reason="nothing to render")
-    full = CountingBlock("full", "full label", 20, "content")
+    empty = CountingBlock("empty", 10, "", empty_reason="nothing to render")
+    full = CountingBlock("full", 20, "content")
 
     result = SystemPromptBuilder([empty, full]).build(make_context(tmp_path))
 
     assert result.prompt == "content #1"
-    assert result.breakdown[0].name == "empty"
+    assert result.breakdown[0].label == "empty"
     assert result.breakdown[0].rendered is False
     assert result.breakdown[0].char_count == 0
     assert result.breakdown[0].estimated_tokens == 0
@@ -66,7 +65,7 @@ def test_system_prompt_builder_tracks_empty_blocks_without_rendering_them(tmp_pa
 
 
 def test_system_prompt_builder_caches_static_blocks(tmp_path):
-    static = CountingBlock("static", "static label", 10, "static", is_static=True)
+    static = CountingBlock("static", 10, "static", is_static=True)
     builder = SystemPromptBuilder([static])
 
     first = builder.build(make_context(tmp_path))
@@ -78,7 +77,7 @@ def test_system_prompt_builder_caches_static_blocks(tmp_path):
 
 
 def test_system_prompt_builder_rerenders_dynamic_blocks(tmp_path):
-    dynamic = CountingBlock("dynamic", "dynamic label", 10, "dynamic", is_static=False)
+    dynamic = CountingBlock("dynamic", 10, "dynamic", is_static=False)
     builder = SystemPromptBuilder([dynamic])
 
     first = builder.build(make_context(tmp_path))
@@ -90,12 +89,12 @@ def test_system_prompt_builder_rerenders_dynamic_blocks(tmp_path):
 
 
 def test_debug_entry_counts_characters_and_estimated_tokens(tmp_path):
-    block = CountingBlock("block", "block label", 10, "abcd")
+    block = CountingBlock("block", 10, "abcd")
 
     result = SystemPromptBuilder([block]).build(make_context(tmp_path))
 
     entry = result.breakdown[0]
-    assert entry.name == "block"
+    assert entry.label == "block"
     assert entry.priority == 10
     assert entry.rendered is True
     assert entry.char_count == len("abcd #1")
@@ -113,16 +112,16 @@ def test_retrieval_is_structurally_in_context_frame_not_system_prompt(tmp_path):
     )
 
     system_prompt = result.system_prompt.prompt
-    assert system_prompt.index("## Identity") < system_prompt.index("## Amadeus Self Model")
+    assert system_prompt.index("## identity") < system_prompt.index("## self_model")
     assert "dynamic retrieved material" not in system_prompt
     assert "dynamic retrieved material" in result.context_frame.prompt
-    assert [entry.name for entry in result.system_prompt.breakdown] == [
+    assert [entry.label for entry in result.system_prompt.breakdown] == [
         "identity",
         "behavior_rules",
         "self_model",
         "long_term_memory",
     ]
-    assert [entry.name for entry in result.context_frame.breakdown] == [
+    assert [entry.label for entry in result.context_frame.breakdown] == [
         "recent_context",
         "retrieved_memory",
         "active_skills",
@@ -183,11 +182,11 @@ def test_context_builder_default_blocks_include_self_model_in_system_prompt(tmp_
     result = ContextBuilder().render(make_context(tmp_path))
 
     assert result.messages[0]["role"] == "system"
-    assert "## Amadeus Self Model\n\nAmadeus stays grounded." in result.messages[0][
+    assert "## self_model\n\nAmadeus stays grounded." in result.messages[0][
         "content"
     ]
     assert result.messages[-1] == {"role": "user", "content": "hello"}
-    assert [entry.name for entry in result.system_prompt.breakdown] == [
+    assert [entry.label for entry in result.system_prompt.breakdown] == [
         "identity",
         "behavior_rules",
         "self_model",
@@ -212,6 +211,7 @@ def test_context_builder_routes_dynamic_context_to_context_frame(tmp_path):
     assert "recent summary" not in result.system_prompt.prompt
     assert "retrieved fact" not in result.system_prompt.prompt
     assert "## recent_context" in result.context_frame.prompt
+    assert "## Recent Context" not in result.context_frame.prompt
     assert "recent summary" in result.context_frame.prompt
     assert "retrieved fact" in result.context_frame.prompt
     assert "- python" in result.context_frame.prompt
@@ -254,6 +254,6 @@ def test_context_builder_applies_disabled_sections_and_turn_injection(tmp_path):
     assert "retrieved fact" not in result.context_frame.prompt
     assert "prefetched data" in result.context_frame.prompt
     assert "retrieved_memory" not in [
-        entry.name for entry in result.context_frame.breakdown
+        entry.label for entry in result.context_frame.breakdown
     ]
-    assert result.context_frame.breakdown[-1].name == "tool_prefetch"
+    assert result.context_frame.breakdown[-1].label == "tool_prefetch"

@@ -55,14 +55,13 @@ RECENT_CONTEXT.md 里的 Recent Turns 为什么在被动回复注入时要裁掉
 模块2要求每个 block 具备稳定的机器名：
 
 ```text
-name: section 机器名，用于路由、禁用、调试和裁剪
-label: 面向调试的人类可读类名
+label: section 机器名，用于路由、禁用、调试、裁剪和 context frame 标题
 priority: 渲染顺序
 is_static: 是否可缓存
 render(context): 返回 PromptBlockRenderResult
 ```
 
-`name` 和 `label` 的职责不同。`label` 可以服务调试展示，`name` 必须稳定，因为它会进入 `disabled_sections`、context frame routing 和 trim plan。
+`label` 必须稳定，因为它会进入 `disabled_sections`、context frame routing 和 trim plan。Amadeus 不再同时维护 `name` 和 `label` 两套语义一致的字段。
 
 ### 4.2 Prompt Section
 
@@ -124,7 +123,7 @@ turn_injection_context entries
 ```text
 1. 接收 PromptSectionRender 列表
 2. 按 priority 保持稳定顺序
-3. 根据 section.name 把 section 分到 system prompt 或 context frame
+3. 根据 section.label 把 section 分到 system prompt 或 context frame
 4. 应用 disabled_sections
 5. 追加 turn_injection_context 到 context frame
 6. 输出 PromptAssemblyResult
@@ -309,7 +308,7 @@ OPENAI_TIMEOUT_SECONDS, optional
 ```text
 保留 system prompt 的稳定边界。
 动态材料有明确 marker，不冒充用户原文。
-后续可以按 section name 做禁用、裁剪和调试。
+后续可以按 section label 做禁用、裁剪和调试。
 ```
 
 代价：

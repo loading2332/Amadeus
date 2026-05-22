@@ -118,7 +118,7 @@ def _print_rendered_messages(rendered: ContextRenderResult) -> None:
         status = "rendered" if entry.rendered else f"empty: {entry.empty_reason}"
         destination = entry.destination or "unknown"
         print(
-            f"- {entry.name} -> {destination}: {status}, "
+            f"- {entry.label} -> {destination}: {status}, "
             f"{entry.char_count} chars, ~{entry.estimated_tokens} tokens"
         )
 

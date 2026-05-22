@@ -4,7 +4,7 @@
 
 **Goal:** Finish the Amadeus lesson3 prompt context migration by routing stable prompt sections to the system prompt, dynamic per-turn sections to a marked context frame, and documenting/debugging the resulting message assembly.
 
-**Architecture:** Keep the phase 1 `PromptBlock` rendering model, add stable section names and a `PromptSectionRender` intermediate representation, then let `PromptAssembler` route named sections into `system_prompt` or `context_frame`. `ContextBuilder` coordinates assembly, history slicing, destination-aware debug breakdowns, and final message ordering.
+**Architecture:** Keep the phase 1 `PromptBlock` rendering model, use stable section labels and a `PromptSectionRender` intermediate representation, then let `PromptAssembler` route labeled sections into `system_prompt` or `context_frame`. `ContextBuilder` coordinates assembly, history slicing, destination-aware debug breakdowns, and final message ordering.
 
 **Tech Stack:** Python 3.11+, pytest, standard library only for core package; development provider utilities use `urllib` and injectable transport.
 
@@ -13,7 +13,7 @@
 ## File Structure
 
 - Modify: `amadeus/prompt_block.py`
-  - Add stable `name` fields to prompt blocks.
+  - Keep stable `label` fields on prompt blocks.
   - Strip `## Recent Turns` from recent context before prompt injection.
 - Modify: `amadeus/context.py`
   - Extend `RuntimeContext`.
@@ -73,7 +73,7 @@ This plan is written for a partially migrated workspace. Before adding new code,
 
 Inspect `amadeus/prompt_block.py`.
 
-Expected default block names:
+Expected default block labels:
 
 ```text
 identity
@@ -190,7 +190,7 @@ SYSTEM_CONTEXT_FRAME_MARKER = '<system-reminder data-system-context-frame="true"
 SYSTEM_CONTEXT_FRAME_END = "</system-reminder>"
 ```
 
-`PromptAssembler.assemble()` should sort sections by priority, apply `disabled_sections`, split by `section.name`, append non-empty enabled `turn_injection_context`, and return `PromptAssemblyResult`.
+`PromptAssembler.assemble()` should sort sections by priority, apply `disabled_sections`, split by `section.label`, append non-empty enabled `turn_injection_context`, and return `PromptAssemblyResult`.
 
 - [x] **Step 4: Re-run assembler tests**
 
@@ -215,7 +215,7 @@ Expected: PASS.
 Ensure tests cover:
 
 ```text
-SystemPromptBuilder stores PromptSectionRender with block.name.
+SystemPromptBuilder stores PromptSectionRender with block.label.
 retrieved_memory is absent from system prompt and present in context frame.
 system prompt breakdown contains system sections only.
 context frame breakdown contains frame sections only.
@@ -492,7 +492,7 @@ Explain:
 
 ```text
 what was built
-why name and label are separate
+why label is the single section id
 why context frame is a marked user-role message
 what tests verify
 what remains out of scope
