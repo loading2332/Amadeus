@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Protocol
 
 from amadeus.context import RuntimeContext
 from amadeus.prompts import build_behavior_rules_prompt, build_static_identity_prompt
@@ -9,7 +9,7 @@ from amadeus.prompts import build_behavior_rules_prompt, build_static_identity_p
 @dataclass(frozen=True)
 class PromptBlockRenderResult:
     content: str
-    empty_reason: Optional[str] = None
+    empty_reason: str | None = None
 
     @property
     def rendered(self) -> bool:
@@ -17,6 +17,7 @@ class PromptBlockRenderResult:
 
 
 class PromptBlock(Protocol):
+    name: str
     label: str
     priority: int
     is_static: bool
@@ -40,8 +41,25 @@ def _section(title: str, content: str) -> str:
     return f"## {title}\n\n{content.strip()}"
 
 
+def _strip_recent_turns(content: str) -> str:
+    kept_lines = []
+    for line in content.splitlines():
+        if line.strip() == "## Recent Turns":
+            break
+        kept_lines.append(line)
+    return "\n".join(kept_lines).strip()
+
+
+def _recent_context_result(content: str) -> PromptBlockRenderResult:
+    trimmed = _strip_recent_turns(content)
+    if not trimmed:
+        return PromptBlockRenderResult("", "recent context only contained recent turns")
+    return PromptBlockRenderResult(_section("Recent Context", trimmed))
+
+
 @dataclass(frozen=True)
 class IdentityPromptBlock:
+    name: str = "identity"
     label: str = "IdentityPromptBlock"
     priority: int = 10
     is_static: bool = True
@@ -52,6 +70,7 @@ class IdentityPromptBlock:
 
 @dataclass(frozen=True)
 class BehaviorRulesPromptBlock:
+    name: str = "behavior_rules"
     label: str = "BehaviorRulesPromptBlock"
     priority: int = 20
     is_static: bool = True
@@ -62,6 +81,7 @@ class BehaviorRulesPromptBlock:
 
 @dataclass(frozen=True)
 class SelfModelPromptBlock:
+    name: str = "self_model"
     label: str = "SelfModelPromptBlock"
     priority: int = 30
     is_static: bool = False
@@ -79,6 +99,7 @@ class SelfModelPromptBlock:
 
 @dataclass(frozen=True)
 class LongTermMemoryPromptBlock:
+    name: str = "long_term_memory"
     label: str = "LongTermMemoryPromptBlock"
     priority: int = 40
     is_static: bool = False
@@ -96,15 +117,14 @@ class LongTermMemoryPromptBlock:
 
 @dataclass(frozen=True)
 class RecentContextPromptBlock:
+    name: str = "recent_context"
     label: str = "RecentContextPromptBlock"
     priority: int = 50
     is_static: bool = False
 
     def render(self, context: RuntimeContext) -> PromptBlockRenderResult:
         if context.recent_context_override and context.recent_context_override.strip():
-            return PromptBlockRenderResult(
-                _section("Recent Context", context.recent_context_override)
-            )
+            return _recent_context_result(context.recent_context_override)
 
         result = _read_markdown(
             Path(context.workspace_root) / "memory" / "RECENT_CONTEXT.md",
@@ -113,11 +133,12 @@ class RecentContextPromptBlock:
         )
         if not result.rendered:
             return result
-        return PromptBlockRenderResult(_section("Recent Context", result.content))
+        return _recent_context_result(result.content)
 
 
 @dataclass(frozen=True)
 class RetrievedMemoryPromptBlock:
+    name: str = "retrieved_memory"
     label: str = "RetrievedMemoryPromptBlock"
     priority: int = 60
     is_static: bool = False
@@ -130,6 +151,7 @@ class RetrievedMemoryPromptBlock:
 
 @dataclass(frozen=True)
 class ActiveSkillsPromptBlock:
+    name: str = "active_skills"
     label: str = "ActiveSkillsPromptBlock"
     priority: int = 70
     is_static: bool = False
@@ -145,6 +167,7 @@ class ActiveSkillsPromptBlock:
 
 @dataclass(frozen=True)
 class RuntimeMetadataPromptBlock:
+    name: str = "runtime_metadata"
     label: str = "RuntimeMetadataPromptBlock"
     priority: int = 80
     is_static: bool = False

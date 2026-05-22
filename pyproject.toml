@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "amadeus"
 version = "0.1.0"
 description = "Amadeus runtime context and prompt assembly layer"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]

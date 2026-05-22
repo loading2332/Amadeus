@@ -72,6 +72,44 @@ def test_recent_context_block_reads_recent_context_md(tmp_path):
     assert result.content == "## Recent Context\n\nWe are designing phase one."
 
 
+def test_recent_context_block_strips_recent_turns_section(tmp_path):
+    recent_path = tmp_path / "memory" / "RECENT_CONTEXT.md"
+    recent_path.parent.mkdir()
+    recent_path.write_text(
+        "Compact summary.\n\n"
+        "## Ongoing Threads\n\n"
+        "- context migration\n\n"
+        "## Recent Turns\n\n"
+        "- user: repeated raw history\n",
+        encoding="utf-8",
+    )
+
+    result = RecentContextPromptBlock().render(make_context(tmp_path))
+
+    assert result.rendered
+    assert result.content == (
+        "## Recent Context\n\n"
+        "Compact summary.\n\n"
+        "## Ongoing Threads\n\n"
+        "- context migration"
+    )
+
+
+def test_recent_context_block_skips_when_only_recent_turns_remain(tmp_path):
+    recent_path = tmp_path / "memory" / "RECENT_CONTEXT.md"
+    recent_path.parent.mkdir()
+    recent_path.write_text(
+        "## Recent Turns\n\n"
+        "- user: repeated raw history\n",
+        encoding="utf-8",
+    )
+
+    result = RecentContextPromptBlock().render(make_context(tmp_path))
+
+    assert not result.rendered
+    assert result.empty_reason == "recent context only contained recent turns"
+
+
 def test_recent_context_override_takes_precedence_over_file(tmp_path):
     recent_path = tmp_path / "memory" / "RECENT_CONTEXT.md"
     recent_path.parent.mkdir()

@@ -1,6 +1,13 @@
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Literal, Optional, Tuple, TypedDict
+from typing import Literal, TypedDict
+
+from amadeus.prompting.assembler import (
+    PromptAssembler,
+    PromptAssemblyResult,
+    PromptSectionRender,
+)
 
 
 class Message(TypedDict):
@@ -11,34 +18,49 @@ class Message(TypedDict):
 @dataclass
 class RuntimeContext:
     workspace_root: Path
-    history: List[Message]
+    history: list[Message]
     current_user_message: str
-    retrieved_memory: Optional[str] = None
-    active_skills: List[str] = field(default_factory=list)
-    runtime_metadata: Dict[str, str] = field(default_factory=dict)
-    recent_context_override: Optional[str] = None
+    retrieved_memory: str | None = None
+    active_skills: list[str] = field(default_factory=list)
+    runtime_metadata: dict[str, str] = field(default_factory=dict)
+    recent_context_override: str | None = None
+    disabled_sections: set[str] = field(default_factory=set)
+    turn_injection_context: dict[str, str] = field(default_factory=dict)
+    history_window: int | None = None
 
 
 @dataclass(frozen=True)
 class PromptDebugEntry:
+    name: str
     label: str
     priority: int
     rendered: bool
     char_count: int
     estimated_tokens: int
-    empty_reason: Optional[str] = None
+    empty_reason: str | None = None
+    destination: Literal["system", "context_frame"] | None = None
 
 
 @dataclass(frozen=True)
 class SystemPromptResult:
     prompt: str
-    breakdown: List[PromptDebugEntry]
+    breakdown: list[PromptDebugEntry]
+    sections: list[PromptSectionRender] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ContextFrameResult:
+    prompt: str
+    breakdown: list[PromptDebugEntry]
+    sections: list[PromptSectionRender] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class ContextRenderResult:
-    messages: List[Message]
+    messages: list[Message]
     system_prompt: SystemPromptResult
+    context_frame: ContextFrameResult
+    assembly: PromptAssemblyResult
 
 
 def _estimate_tokens(text: str) -> int:
@@ -51,11 +73,12 @@ class SystemPromptBuilder:
     def __init__(self, blocks: Iterable[object], separator: str = "\n\n---\n\n") -> None:
         self.blocks = list(blocks)
         self.separator = separator
-        self._static_cache: Dict[str, object] = {}
+        self._static_cache: dict[str, object] = {}
 
     def build(self, context: RuntimeContext) -> SystemPromptResult:
-        rendered_sections: List[str] = []
-        breakdown: List[PromptDebugEntry] = []
+        rendered_sections: list[str] = []
+        section_renders: list[PromptSectionRender] = []
+        breakdown: list[PromptDebugEntry] = []
 
         for block in sorted(self.blocks, key=lambda item: item.priority):
             result = self._render_block(block, context)
@@ -64,9 +87,18 @@ class SystemPromptBuilder:
 
             if is_rendered:
                 rendered_sections.append(content)
+                section_renders.append(
+                    PromptSectionRender(
+                        name=block.name,
+                        content=content,
+                        priority=block.priority,
+                        is_static=block.is_static,
+                    )
+                )
 
             breakdown.append(
                 PromptDebugEntry(
+                    name=block.name,
                     label=block.label,
                     priority=block.priority,
                     rendered=is_rendered,
@@ -79,6 +111,7 @@ class SystemPromptBuilder:
         return SystemPromptResult(
             prompt=self.separator.join(rendered_sections),
             breakdown=breakdown,
+            sections=section_renders,
         )
 
     def _render_block(self, block: object, context: RuntimeContext) -> object:
@@ -95,34 +128,40 @@ class MessageEnvelopeBuilder:
     def build(
         self,
         system_prompt: str,
-        history: List[Message],
+        history: list[Message],
         current_user_message: str,
-    ) -> List[Message]:
+        context_frame: str = "",
+    ) -> list[Message]:
         if any(message["role"] == "system" for message in history):
             raise ValueError("history must not contain system messages")
 
-        return [
+        messages: list[Message] = [
             {"role": "system", "content": system_prompt},
             *history,
-            {"role": "user", "content": current_user_message},
         ]
+        if context_frame.strip():
+            messages.append({"role": "user", "content": context_frame})
+        messages.append({"role": "user", "content": current_user_message})
+        return messages
 
 
 class ContextBuilder:
     def __init__(
         self,
-        blocks: Optional[Iterable[object]] = None,
-        system_prompt_builder: Optional[SystemPromptBuilder] = None,
-        message_envelope_builder: Optional[MessageEnvelopeBuilder] = None,
+        blocks: Iterable[object] | None = None,
+        system_prompt_builder: SystemPromptBuilder | None = None,
+        message_envelope_builder: MessageEnvelopeBuilder | None = None,
+        prompt_assembler: PromptAssembler | None = None,
     ) -> None:
         selected_blocks = list(blocks) if blocks is not None else list(self.default_blocks())
         self.system_prompt_builder = system_prompt_builder or SystemPromptBuilder(
             selected_blocks
         )
         self.message_envelope_builder = message_envelope_builder or MessageEnvelopeBuilder()
+        self.prompt_assembler = prompt_assembler or PromptAssembler()
 
     @staticmethod
-    def default_blocks() -> Tuple[object, ...]:
+    def default_blocks() -> tuple[object, ...]:
         from amadeus.prompt_block import (
             ActiveSkillsPromptBlock,
             BehaviorRulesPromptBlock,
@@ -146,10 +185,99 @@ class ContextBuilder:
         )
 
     def render(self, context: RuntimeContext) -> ContextRenderResult:
-        system_prompt = self.system_prompt_builder.build(context)
+        built = self.system_prompt_builder.build(context)
+        assembly = self.prompt_assembler.assemble(
+            built.sections,
+            disabled_sections=context.disabled_sections,
+            turn_injection_context=context.turn_injection_context,
+        )
+        system_breakdown = self._filtered_breakdown(
+            built.breakdown,
+            assembly.system_sections,
+            context.disabled_sections,
+            destination="system",
+            context_frame_sections=self.prompt_assembler.context_frame_sections,
+        )
+        frame_breakdown = self._filtered_breakdown(
+            built.breakdown,
+            assembly.frame_sections,
+            context.disabled_sections,
+            destination="context_frame",
+            context_frame_sections=self.prompt_assembler.context_frame_sections,
+        )
+        system_prompt = SystemPromptResult(
+            prompt=assembly.system_prompt,
+            breakdown=system_breakdown,
+            sections=assembly.system_sections,
+        )
+        context_frame = ContextFrameResult(
+            prompt=assembly.context_frame,
+            breakdown=frame_breakdown,
+            sections=assembly.frame_sections,
+        )
+        history = self._slice_history(context.history, context.history_window)
         messages = self.message_envelope_builder.build(
             system_prompt=system_prompt.prompt,
-            history=context.history,
+            history=history,
+            context_frame=context_frame.prompt,
             current_user_message=context.current_user_message,
         )
-        return ContextRenderResult(messages=messages, system_prompt=system_prompt)
+        return ContextRenderResult(
+            messages=messages,
+            system_prompt=system_prompt,
+            context_frame=context_frame,
+            assembly=assembly,
+        )
+
+    @staticmethod
+    def _slice_history(
+        history: list[Message],
+        history_window: int | None,
+    ) -> list[Message]:
+        if history_window is None:
+            return history
+        if history_window <= 0:
+            return []
+        return history[-history_window:]
+
+    @staticmethod
+    def _filtered_breakdown(
+        breakdown: list[PromptDebugEntry],
+        sections: list[PromptSectionRender],
+        disabled_sections: set[str],
+        destination: Literal["system", "context_frame"],
+        context_frame_sections: set[str],
+    ) -> list[PromptDebugEntry]:
+        rendered_entries = [
+            PromptDebugEntry(
+                name=entry.name,
+                label=entry.label,
+                priority=entry.priority,
+                rendered=entry.rendered,
+                char_count=entry.char_count,
+                estimated_tokens=entry.estimated_tokens,
+                empty_reason=entry.empty_reason,
+                destination=destination,
+            )
+            for entry in breakdown
+            if entry.name not in disabled_sections
+            and (
+                entry.name in context_frame_sections
+                if destination == "context_frame"
+                else entry.name not in context_frame_sections
+            )
+        ]
+        injected_entries = [
+            PromptDebugEntry(
+                name=section.name,
+                label=section.name,
+                priority=section.priority,
+                rendered=True,
+                char_count=len(section.content),
+                estimated_tokens=_estimate_tokens(section.content),
+                destination=destination,
+            )
+            for section in sections
+            if not any(entry.name == section.name for entry in breakdown)
+        ]
+        return [*rendered_entries, *injected_entries]
