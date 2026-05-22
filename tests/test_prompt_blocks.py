@@ -46,7 +46,7 @@ def test_self_model_block_reads_self_md(tmp_path):
     result = SelfModelPromptBlock().render(make_context(tmp_path))
 
     assert result.rendered
-    assert result.content == "## Amadeus Self Model\n\nStable self model."
+    assert result.content == "Stable self model."
     assert result.empty_reason is None
 
 
@@ -58,7 +58,7 @@ def test_long_term_memory_block_reads_memory_md(tmp_path):
     result = LongTermMemoryPromptBlock().render(make_context(tmp_path))
 
     assert result.rendered
-    assert result.content == "## User Long-Term Memory\n\nUser prefers concise answers."
+    assert result.content == "User prefers concise answers."
 
 
 def test_recent_context_block_reads_recent_context_md(tmp_path):
@@ -69,7 +69,44 @@ def test_recent_context_block_reads_recent_context_md(tmp_path):
     result = RecentContextPromptBlock().render(make_context(tmp_path))
 
     assert result.rendered
-    assert result.content == "## Recent Context\n\nWe are designing phase one."
+    assert result.content == "We are designing phase one."
+
+
+def test_recent_context_block_strips_recent_turns_section(tmp_path):
+    recent_path = tmp_path / "memory" / "RECENT_CONTEXT.md"
+    recent_path.parent.mkdir()
+    recent_path.write_text(
+        "Compact summary.\n\n"
+        "## Ongoing Threads\n\n"
+        "- context migration\n\n"
+        "## Recent Turns\n\n"
+        "- user: repeated raw history\n",
+        encoding="utf-8",
+    )
+
+    result = RecentContextPromptBlock().render(make_context(tmp_path))
+
+    assert result.rendered
+    assert result.content == (
+        "Compact summary.\n\n"
+        "## Ongoing Threads\n\n"
+        "- context migration"
+    )
+
+
+def test_recent_context_block_skips_when_only_recent_turns_remain(tmp_path):
+    recent_path = tmp_path / "memory" / "RECENT_CONTEXT.md"
+    recent_path.parent.mkdir()
+    recent_path.write_text(
+        "## Recent Turns\n\n"
+        "- user: repeated raw history\n",
+        encoding="utf-8",
+    )
+
+    result = RecentContextPromptBlock().render(make_context(tmp_path))
+
+    assert not result.rendered
+    assert result.empty_reason == "recent context only contained recent turns"
 
 
 def test_recent_context_override_takes_precedence_over_file(tmp_path):
@@ -82,7 +119,7 @@ def test_recent_context_override_takes_precedence_over_file(tmp_path):
     )
 
     assert result.rendered
-    assert result.content == "## Recent Context\n\nruntime context"
+    assert result.content == "runtime context"
 
 
 def test_retrieved_memory_block_renders_runtime_retrieval(tmp_path):
@@ -91,7 +128,7 @@ def test_retrieved_memory_block_renders_runtime_retrieval(tmp_path):
     )
 
     assert result.rendered
-    assert result.content == "## Retrieved Memory\n\nretrieved fact"
+    assert result.content == "retrieved fact"
 
 
 def test_active_skills_block_renders_skill_names(tmp_path):
@@ -100,7 +137,7 @@ def test_active_skills_block_renders_skill_names(tmp_path):
     )
 
     assert result.rendered
-    assert result.content == "## Active Skills\n\n- python\n- pytest"
+    assert result.content == "- python\n- pytest"
 
 
 def test_runtime_metadata_block_renders_sorted_metadata(tmp_path):
@@ -113,7 +150,6 @@ def test_runtime_metadata_block_renders_sorted_metadata(tmp_path):
 
     assert result.rendered
     assert result.content == (
-        "## Runtime Metadata\n\n"
         "- channel: chat\n"
         "- request_time: 2026-05-21"
     )
