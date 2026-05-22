@@ -7,6 +7,14 @@
 1. 推进项目，真的把功能、修复、重构、测试做好。
 2. 在推进过程中教会我，让我逐步具备独立分析、实现、调试同类问题的能力。
 
+## 项目边界
+
+- Akashic reference path: `/Users/didi/develop/akashic-agent`
+- Amadeus project path: `/Users/didi/develop/amadeus`
+- Akashic 是参考实现和学习对象，不是 Amadeus 的 base class。
+- 做 Amadeus 任务时，默认只修改 Amadeus project path；需要参考 Akashic 时只读 Akashic，除非用户明确要求修改 Akashic。
+- 迁移时迁移经过判断的设计模式，不照搬 Akashic 的目录结构、历史包袱或未验证模块。
+
 ## 一、默认工作方式
 
 - 可以直接推进，不要只停留在建议层。
