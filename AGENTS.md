@@ -9,11 +9,24 @@
 
 ## 项目边界
 
-- Akashic reference path: `/Users/didi/develop/akashic-agent`
-- Amadeus project path: `/Users/didi/develop/amadeus`
+- Akashic reference path: `/root/develop/akashic-agent`
+- Amadeus project path: `/root/develop/Amadeus`
 - Akashic 是参考实现和学习对象，不是 Amadeus 的 base class。
 - 做 Amadeus 任务时，默认只修改 Amadeus project path；需要参考 Akashic 时只读 Akashic，除非用户明确要求修改 Akashic。
 - 迁移时迁移经过判断的设计模式，不照搬 Akashic 的目录结构、历史包袱或未验证模块。
+
+## 迁移优先原则
+
+- 当用户说“迁移 Akashic”“参考 Akashic”“继续迁移”或任务明显属于 Akashic → Amadeus 路线时，默认目标是迁移 Akashic 中已经存在的设计模式，而不是在 Amadeus 里临时发明替代实现。
+- 做迁移任务前，必须先定位 Akashic 对应的参考文件、调用链和测试；如果 Akashic 没有对应实现，要明确说“Akashic 没有这一层”，再给出是否扩展 Amadeus 的方案。
+- 不要用 fake、stub、mock、临时 parser、临时 sanitizer、硬编码规则或补丁式 helper 来替代 Akashic 已经存在的真实机制。只有在以下情况才允许使用 fake：
+  - 写单元测试时隔离外部服务、网络、时间或 LLM nondeterminism。
+  - Akashic 本身对应阶段就使用 fake/test double。
+  - 用户明确要求先做 fake 版原型。
+- 如果为了测试而使用 fake，必须明确标注它只属于测试边界，不能把 fake 设计扩散成生产架构。
+- 不要为了“先让测试过”而绕开迁移主线。测试应该验证迁移后的接口、数据流和边界，而不是验证一个临时补丁能工作。
+- 如果当前 bug 暴露的是架构缺口，优先迁移 Akashic 的对应扩展点；只有在 Akashic 没有可迁模式，且用户确认后，才在 Amadeus 中新增本项目专属扩展。
+- 任何新增模块都要回答：它在 Akashic 中的对应物是什么？如果没有对应物，为什么 Amadeus 需要它？它是临时过渡、测试辅助，还是长期架构？
 
 ## 一、默认工作方式
 
@@ -23,6 +36,11 @@
   - 为什么把它定义成这个问题
   - 你考虑过哪些方案
   - 为什么选当前方案
+- 迁移任务中，关键判断还必须说明：
+  - Akashic 对应实现在哪里
+  - Amadeus 当前缺口是什么
+  - 迁移的是接口、数据流、生命周期、测试模式，还是具体实现
+  - 有没有使用 fake / stub / 临时补丁；如果有，为什么没有更贴近 Akashic 的选择
 - 解释要贴当前项目、当前代码、当前约束，不要泛泛讲“最佳实践”。
 
 ## 二、输出详略规则

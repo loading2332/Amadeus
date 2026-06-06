@@ -13,7 +13,13 @@ def initialize_workspace(workspace_root: str | Path) -> None:
     root = Path(workspace_root)
     memory_dir = root / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
+    (memory_dir / "journal").mkdir(parents=True, exist_ok=True)
 
     self_path = memory_dir / "SELF.md"
     if not self_path.exists():
         self_path.write_text(DEFAULT_SELF_MD, encoding="utf-8")
+
+    for name in ("MEMORY.md", "RECENT_CONTEXT.md", "HISTORY.md", "PENDING.md"):
+        path = memory_dir / name
+        if not path.exists():
+            path.touch()
