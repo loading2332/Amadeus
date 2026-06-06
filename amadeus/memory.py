@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from amadeus.events import EventBus, TurnCommitted
+from amadeus.memory_engine import MemoryEngine, MemoryIngestRequest
 from amadeus.provider import LLMProvider
 from amadeus.session import Session, SessionManager, is_real_memory_message
+from amadeus.vector_memory import build_entry_source_ref
 
 
 _MARKER_PREFIX = "<!-- consolidation:"
@@ -286,6 +288,7 @@ class MarkdownMemoryMaintenance:
         keep_count: int = 12,
         session_manager: SessionManager | None = None,
         event_bus: EventBus | None = None,
+        vector_memory: MemoryEngine | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
@@ -293,6 +296,7 @@ class MarkdownMemoryMaintenance:
         self.keep_count = max(1, int(keep_count))
         self.min_new_messages = max(5, self.keep_count // 2)
         self.session_manager = session_manager
+        self.vector_memory = vector_memory
         if event_bus is not None:
             event_bus.on(TurnCommitted, self.on_turn_committed)
 
@@ -327,10 +331,15 @@ class MarkdownMemoryMaintenance:
         draft = await self._prepare_draft(request.session, window, request.archive_all)
         if draft is None:
             return ConsolidateResult(trace={"mode": "skipped"})
-        self._commit_draft(request.session, draft)
+        committed_entries = self._commit_draft(request.session, draft)
+        vector_trace = await self._ingest_vector_memory(draft, committed_entries)
         return ConsolidateResult(
             consolidated_count=len(draft.window.old_messages),
-            trace={"mode": "markdown", "source_ref": draft.source_ref},
+            trace={
+                "mode": "markdown",
+                "source_ref": draft.source_ref,
+                "vector_ingest": vector_trace,
+            },
         )
 
     def _should_consolidate(self, session: Session) -> bool:
@@ -419,14 +428,17 @@ class MarkdownMemoryMaintenance:
             recent_turns=recent_turns,
         )
 
-    def _commit_draft(self, session: Session, draft: _ConsolidationDraft) -> None:
+    def _commit_draft(self, session: Session, draft: _ConsolidationDraft) -> list[str]:
+        committed_entries: list[str] = []
         if draft.history_entries:
-            self.store.append_history_once(
+            appended_history = self.store.append_history_once(
                 "\n".join(draft.history_entries),
                 source_ref=draft.source_ref,
                 kind="history_entry",
             )
-            for entry in draft.history_entries:
+            if appended_history:
+                committed_entries.extend(draft.history_entries)
+            for entry in draft.history_entries if appended_history else []:
                 match = _DATE_RE.match(entry)
                 if match:
                     self.store.append_journal(
@@ -442,6 +454,44 @@ class MarkdownMemoryMaintenance:
             )
         self.store.write_recent_context(draft.recent_context_text)
         session.last_consolidated = 0 if draft.archive_all else draft.window.consolidate_up_to
+        return committed_entries
+
+    async def _ingest_vector_memory(
+        self,
+        draft: _ConsolidationDraft,
+        entries: list[str],
+    ) -> dict[str, Any]:
+        trace: dict[str, Any] = {
+            "attempted": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "errors": [],
+        }
+        if self.vector_memory is None or not entries:
+            return trace
+        for entry in entries:
+            trace["attempted"] += 1
+            source_ref = build_entry_source_ref(draft.source_ref, entry)
+            try:
+                result = await self.vector_memory.ingest(
+                    MemoryIngestRequest(
+                        summary=entry,
+                        kind="event",
+                        source_ref=source_ref,
+                    )
+                )
+            except Exception as error:
+                trace["failed"] += 1
+                trace["errors"].append({"source_ref": source_ref, "error": str(error)})
+                continue
+            if result.status in {"new", "reinforced", "skipped"}:
+                trace["succeeded"] += 1
+            else:
+                trace["failed"] += 1
+                trace["errors"].append(
+                    {"source_ref": source_ref, "status": result.status}
+                )
+        return trace
 
 
 class MemoryOptimizerBusy(RuntimeError):
@@ -521,6 +571,7 @@ def build_markdown_memory_runtime(
     session_manager: SessionManager | None = None,
     event_bus: EventBus | None = None,
     keep_count: int = 12,
+    vector_memory: MemoryEngine | None = None,
 ) -> MarkdownMemoryRuntime:
     store = MarkdownMemoryStore(workspace_root)
     maintenance = MarkdownMemoryMaintenance(
@@ -530,6 +581,7 @@ def build_markdown_memory_runtime(
         keep_count=keep_count,
         session_manager=session_manager,
         event_bus=event_bus,
+        vector_memory=vector_memory,
     )
     optimizer = MemoryOptimizer(store=store, provider=provider, model=model)
     return MarkdownMemoryRuntime(store=store, maintenance=maintenance, optimizer=optimizer)

@@ -7,6 +7,7 @@ from typing import Any
 
 from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
 from amadeus.events import EventBus, TurnCommitted
+from amadeus.memory_engine import MemoryEngine, MemoryQuery
 from amadeus.provider import LLMProvider
 from amadeus.response_parser import parse_response
 from amadeus.session import SessionManager
@@ -30,6 +31,7 @@ class PassiveRuntime:
     event_bus: EventBus = field(default_factory=EventBus)
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     history_window: int = 500
+    memory_engine: MemoryEngine | None = None
 
     async def run_turn(
         self,
@@ -43,11 +45,18 @@ class PassiveRuntime:
     ) -> PassiveTurnResult:
         session = self.session_manager.get_or_create(session_key)
         history = session.get_history(self.history_window)
+        resolved_retrieved_memory = retrieved_memory
+        if resolved_retrieved_memory is None and self.memory_engine is not None:
+            try:
+                memory_result = await self.memory_engine.query(MemoryQuery(text=user_message))
+                resolved_retrieved_memory = self.memory_engine.render_context_block(memory_result)
+            except Exception:
+                resolved_retrieved_memory = None
         context = RuntimeContext(
             workspace_root=self.workspace_root,
             history=history,
             current_user_message=user_message,
-            retrieved_memory=retrieved_memory,
+            retrieved_memory=resolved_retrieved_memory,
             active_skills=active_skills or [],
             runtime_metadata=runtime_metadata or {},
         )
