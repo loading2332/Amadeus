@@ -30,6 +30,15 @@ from amadeus.memory import (
     RefreshRecentTurnsRequest,
     build_markdown_memory_runtime,
 )
+from amadeus.memory_engine import (
+    EvidenceRef,
+    MemoryEngine,
+    MemoryIngestRequest,
+    MemoryIngestResult,
+    MemoryQuery,
+    MemoryQueryResult,
+    MemoryRecord,
+)
 from amadeus.prompting import (
     DEFAULT_CONTEXT_TRIM_PLANS,
     PromptAssembler,
@@ -79,6 +88,7 @@ __all__ = [
     "DEFAULT_SELF_MD",
     "DEFAULT_CONTEXT_TRIM_PLANS",
     "EventBus",
+    "EvidenceRef",
     "IdentityPromptBlock",
     "LLMProvider",
     "LLMProviderConfig",
@@ -91,6 +101,12 @@ __all__ = [
     "MessageEnvelopeBuilder",
     "MemoryOptimizer",
     "MemoryOptimizerBusy",
+    "MemoryEngine",
+    "MemoryIngestRequest",
+    "MemoryIngestResult",
+    "MemoryQuery",
+    "MemoryQueryResult",
+    "MemoryRecord",
     "PassiveRuntime",
     "PassiveTurnResult",
     "PassiveApp",

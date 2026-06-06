@@ -10,6 +10,12 @@ from amadeus.memory import MarkdownMemoryRuntime, build_markdown_memory_runtime
 from amadeus.provider import ChatClient, LLMProvider, LLMProviderConfig
 from amadeus.runtime import PassiveRuntime
 from amadeus.session import SessionManager
+from amadeus.vector_memory import (
+    OpenAIEmbeddingConfig,
+    OpenAIEmbeddingProvider,
+    VectorMemoryEngine,
+    VectorMemoryStore,
+)
 from amadeus.workspace import initialize_workspace
 
 
@@ -23,6 +29,9 @@ class RuntimeConfig:
     provider: LLMProviderConfig
     default_session_key: str = "cli:default"
     memory_keep_count: int = 12
+    vector_memory_enabled: bool = False
+    embedding_model: str | None = None
+    vector_memory_top_k: int = 8
 
 
 @dataclass
@@ -58,6 +67,11 @@ def load_runtime_config(
     max_tokens = _int_config("OPENAI_MAX_TOKENS", file_values, default=2048)
     keep_count = _int_config("AMADEUS_MEMORY_KEEP_COUNT", file_values, default=12)
     session_key = _config_value("AMADEUS_SESSION_KEY", file_values) or "cli:default"
+    vector_memory_enabled = _bool_config("AMADEUS_VECTOR_MEMORY_ENABLED", file_values)
+    embedding_model = _config_value("OPENAI_EMBEDDING_MODEL", file_values)
+    vector_memory_top_k = _int_config("AMADEUS_VECTOR_MEMORY_TOP_K", file_values, default=8)
+    if vector_memory_enabled and not embedding_model:
+        raise ValueError("Missing Amadeus runtime config: OPENAI_EMBEDDING_MODEL")
     return RuntimeConfig(
         workspace_root=root,
         provider=LLMProviderConfig(
@@ -69,6 +83,9 @@ def load_runtime_config(
         ),
         default_session_key=session_key,
         memory_keep_count=keep_count,
+        vector_memory_enabled=vector_memory_enabled,
+        embedding_model=embedding_model,
+        vector_memory_top_k=vector_memory_top_k,
     )
 
 
@@ -83,6 +100,20 @@ def build_passive_app(
     provider = LLMProvider(config.provider, client=client)
     session_manager = SessionManager(config.workspace_root)
     event_bus = EventBus()
+    vector_memory = None
+    if config.vector_memory_enabled and config.embedding_model:
+        vector_memory = VectorMemoryEngine(
+            store=VectorMemoryStore(config.workspace_root / "memory" / "vector_memory.db"),
+            embedding_provider=OpenAIEmbeddingProvider(
+                OpenAIEmbeddingConfig(
+                    api_key=config.provider.api_key,
+                    base_url=config.provider.base_url,
+                    model=config.embedding_model,
+                    timeout_seconds=config.provider.timeout_seconds,
+                )
+            ),
+            top_k=config.vector_memory_top_k,
+        )
     memory = build_markdown_memory_runtime(
         workspace_root=config.workspace_root,
         provider=provider,
@@ -90,12 +121,14 @@ def build_passive_app(
         session_manager=session_manager,
         event_bus=event_bus,
         keep_count=config.memory_keep_count,
+        vector_memory=vector_memory,
     )
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
         provider=provider,
         session_manager=session_manager,
         event_bus=event_bus,
+        memory_engine=vector_memory,
     )
     return PassiveApp(
         config=config,
@@ -127,6 +160,13 @@ def _float_config(name: str, file_values: Mapping[str, str], *, default: float) 
     if value is None:
         return default
     return float(value)
+
+
+def _bool_config(name: str, file_values: Mapping[str, str]) -> bool:
+    value = _config_value(name, file_values)
+    if value is None:
+        return False
+    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def _read_dotenv(env_path: Path) -> dict[str, str]:
