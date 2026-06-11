@@ -52,6 +52,7 @@ from amadeus.provider import (
     LLMProvider,
     LLMProviderConfig,
     LLMResponse,
+    LLMToolCall,
 )
 from amadeus.response_parser import ParsedResponse, ResponseMetadata, parse_response
 from amadeus.runtime import PassiveRuntime, PassiveTurnResult
@@ -62,6 +63,7 @@ from amadeus.session import (
     fetch_messages,
     search_messages,
 )
+from amadeus.tools import Tool, ToolExecutionRequest, ToolHook, ToolResult, ToolTrace
 from amadeus.prompt_block import (
     ActiveSkillsPromptBlock,
     BehaviorRulesPromptBlock,
@@ -93,6 +95,7 @@ __all__ = [
     "LLMProvider",
     "LLMProviderConfig",
     "LLMResponse",
+    "LLMToolCall",
     "LongTermMemoryPromptBlock",
     "MarkdownMemoryMaintenance",
     "MarkdownMemoryRuntime",
@@ -130,6 +133,11 @@ __all__ = [
     "SelfModelPromptBlock",
     "SystemPromptBuilder",
     "SystemPromptResult",
+    "Tool",
+    "ToolExecutionRequest",
+    "ToolHook",
+    "ToolResult",
+    "ToolTrace",
     "TurnCommitted",
     "build_markdown_memory_runtime",
     "build_passive_app",

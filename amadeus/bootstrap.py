@@ -10,6 +10,10 @@ from amadeus.memory import MarkdownMemoryRuntime, build_markdown_memory_runtime
 from amadeus.provider import ChatClient, LLMProvider, LLMProviderConfig
 from amadeus.runtime import PassiveRuntime
 from amadeus.session import SessionManager
+from amadeus.tools.defaults import FetchMessagesTool, ReadFileTool, SearchMessagesTool
+from amadeus.tools.executor import ToolExecutor
+from amadeus.tools.hooks import ReadOnlyFilesystemHook
+from amadeus.tools.registry import ToolRegistry
 from amadeus.vector_memory import (
     OpenAIEmbeddingConfig,
     OpenAIEmbeddingProvider,
@@ -42,6 +46,8 @@ class PassiveApp:
     event_bus: EventBus
     memory: MarkdownMemoryRuntime
     runtime: PassiveRuntime
+    tool_registry: ToolRegistry
+    tool_executor: ToolExecutor
 
     def close(self) -> None:
         self.session_manager.store.close()
@@ -100,6 +106,14 @@ def build_passive_app(
     provider = LLMProvider(config.provider, client=client)
     session_manager = SessionManager(config.workspace_root)
     event_bus = EventBus()
+    tool_registry = ToolRegistry()
+    tool_registry.register(FetchMessagesTool(store=session_manager.store))
+    tool_registry.register(SearchMessagesTool(store=session_manager.store))
+    tool_registry.register(ReadFileTool())
+    tool_executor = ToolExecutor(
+        registry=tool_registry,
+        hooks=[ReadOnlyFilesystemHook(workspace_root=config.workspace_root)],
+    )
     vector_memory = None
     if config.vector_memory_enabled and config.embedding_model:
         vector_memory = VectorMemoryEngine(
@@ -137,6 +151,8 @@ def build_passive_app(
         event_bus=event_bus,
         memory=memory,
         runtime=runtime,
+        tool_registry=tool_registry,
+        tool_executor=tool_executor,
     )
 
 
