@@ -143,6 +143,8 @@ def build_passive_app(
         session_manager=session_manager,
         event_bus=event_bus,
         memory_engine=vector_memory,
+        tool_registry=tool_registry,
+        tool_executor=tool_executor,
     )
     return PassiveApp(
         config=config,

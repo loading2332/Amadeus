@@ -1,10 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any
 
-from amadeus.memory_engine import MemoryIngestRequest, MemoryQuery
-from amadeus.provider import LLMProvider, LLMProviderConfig
+from amadeus.memory_engine import (
+    MemoryEngine,
+    MemoryIngestRequest,
+    MemoryIngestResult,
+    MemoryQuery,
+    MemoryQueryResult,
+)
+from amadeus.provider import (
+    ChatCompletionsClient,
+    ChatNamespace,
+    LLMProvider,
+    LLMProviderConfig,
+)
 from amadeus.runtime import PassiveRuntime
 from amadeus.session import SessionManager
 from amadeus.vector_memory import VectorMemoryEngine, VectorMemoryStore
@@ -17,9 +30,9 @@ class FakeEmbeddingProvider:
 
 class FakeCompletions:
     def __init__(self) -> None:
-        self.calls = []
+        self.calls: list[dict[str, Any]] = []
 
-    async def create(self, **kwargs):
+    async def create(self, **kwargs: Any) -> SimpleNamespace:
         self.calls.append(kwargs)
         return SimpleNamespace(
             id="resp",
@@ -29,10 +42,15 @@ class FakeCompletions:
         )
 
 
+@dataclass
+class FakeChatNamespace:
+    completions: ChatCompletionsClient
+
+
 class FakeClient:
     def __init__(self) -> None:
         self.completions = FakeCompletions()
-        self.chat = SimpleNamespace(completions=self.completions)
+        self.chat: ChatNamespace = FakeChatNamespace(completions=self.completions)
 
 
 def test_runtime_retrieves_memory_into_context_frame(tmp_path):
@@ -69,11 +87,14 @@ def test_runtime_retrieves_memory_into_context_frame(tmp_path):
 
 
 def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
-    class BrokenMemory:
-        async def query(self, query: MemoryQuery):
+    class BrokenMemory(MemoryEngine):
+        async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult:
+            return MemoryIngestResult(status="skipped")
+
+        async def query(self, query: MemoryQuery) -> MemoryQueryResult:
             raise RuntimeError("embedding unavailable")
 
-        def render_context_block(self, result):
+        def render_context_block(self, result: MemoryQueryResult) -> str:
             return "should not render"
 
     client = FakeClient()

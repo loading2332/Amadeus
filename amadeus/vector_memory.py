@@ -334,7 +334,7 @@ def _row_to_item(row: sqlite3.Row) -> dict[str, Any]:
 
 def _content_hash(summary: str, kind: str) -> str:
     normalized = " ".join(summary.lower().split())
-    return hashlib.sha256(f"{kind}:{normalized}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{kind}:{normalized}".encode()).hexdigest()[:16]
 
 
 def _cosine(left: list[float], right: list[float]) -> float:

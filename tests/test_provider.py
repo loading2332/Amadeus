@@ -2,29 +2,40 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
-
-from amadeus.provider import LLMProvider, LLMProviderConfig
+from amadeus.provider import (
+    ChatCompletionsClient,
+    ChatNamespace,
+    LLMProvider,
+    LLMProviderConfig,
+)
 
 
 class FakeCompletions:
-    def __init__(self, response) -> None:
+    def __init__(self, response: Any) -> None:
         self.response = response
-        self.calls = []
+        self.calls: list[dict[str, Any]] = []
 
-    async def create(self, **kwargs):
+    async def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
 
 
+@dataclass
+class FakeChatNamespace:
+    completions: ChatCompletionsClient
+
+
 class FakeClient:
-    def __init__(self, response) -> None:
+    def __init__(self, response: Any) -> None:
         self.completions = FakeCompletions(response)
-        self.chat = SimpleNamespace(completions=self.completions)
+        self.chat: ChatNamespace = FakeChatNamespace(completions=self.completions)
 
 
 def test_llm_provider_sends_chat_completion_payload_and_parses_response():

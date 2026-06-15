@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from amadeus.bootstrap import load_runtime_config
 
 

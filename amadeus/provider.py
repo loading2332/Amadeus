@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeGuard
 
 from openai import AsyncOpenAI
 
@@ -44,8 +44,20 @@ class LLMResponse:
     usage: Mapping[str, Any] | None = None
 
 
+class ChatCompletionsClient(Protocol):
+    async def create(self, **kwargs: Any) -> Any: ...
+
+
+class ChatNamespace(Protocol):
+    completions: ChatCompletionsClient
+
+
 class ChatClient(Protocol):
-    chat: Any
+    chat: ChatNamespace
+
+
+class _HasModelDump(Protocol):
+    def model_dump(self) -> Mapping[str, Any]: ...
 
 
 class LLMProvider:
@@ -97,21 +109,15 @@ class LLMProvider:
             raise
 
         choice = raw.choices[0] if getattr(raw, "choices", None) else None
-        message = getattr(choice, "message", None)
-        content = getattr(message, "content", None)
+        assistant_message = getattr(choice, "message", None)
+        content = getattr(assistant_message, "content", None)
         parsed_content = content if isinstance(content, str) else None
-        tool_calls = _extract_tool_calls(message)
+        tool_calls = _extract_tool_calls(assistant_message)
         if parsed_content is None and not tool_calls:
             raise ValueError("LLM response did not include assistant content")
 
         usage = getattr(raw, "usage", None)
-        usage_payload = (
-            usage.model_dump()
-            if hasattr(usage, "model_dump")
-            else usage
-            if isinstance(usage, Mapping)
-            else None
-        )
+        usage_payload = _usage_payload(usage)
         return LLMResponse(
             content=parsed_content,
             tool_calls=tool_calls,
@@ -152,3 +158,15 @@ def _parse_tool_call_arguments(arguments: Any) -> dict[str, Any]:
         if isinstance(loaded, dict):
             return loaded
     return {}
+
+
+def _has_model_dump(value: object) -> TypeGuard[_HasModelDump]:
+    return hasattr(value, "model_dump")
+
+
+def _usage_payload(usage: object) -> Mapping[str, Any] | None:
+    if _has_model_dump(usage):
+        return usage.model_dump()
+    if isinstance(usage, Mapping):
+        return usage
+    return None

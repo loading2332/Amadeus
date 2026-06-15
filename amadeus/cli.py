@@ -4,7 +4,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from amadeus.bootstrap import build_passive_app, default_workspace_root
+from amadeus.bootstrap import build_passive_app
 
 
 def main(argv: list[str] | None = None) -> None:

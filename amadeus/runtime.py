@@ -1,16 +1,25 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
-from amadeus.events import EventBus, TurnCommitted
+from amadeus.events import EventBus, ToolCallCompleted, ToolCallStarted, TurnCommitted
 from amadeus.memory_engine import MemoryEngine, MemoryQuery
-from amadeus.provider import LLMProvider
+from amadeus.provider import LLMProvider, LLMResponse
 from amadeus.response_parser import parse_response
 from amadeus.session import SessionManager
+from amadeus.tool_runtime import (
+    append_assistant_tool_calls,
+    append_tool_result,
+    tool_call_batch_snapshot,
+)
+from amadeus.tools.executor import ToolExecutor
+from amadeus.tools.registry import ToolRegistry
+from amadeus.types import ReasonerResult
 
 
 @dataclass(frozen=True)
@@ -21,6 +30,7 @@ class PassiveTurnResult:
     assistant_response: str
     context: ContextRenderResult
     provider_raw: Any = None
+    tool_chain: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -32,6 +42,9 @@ class PassiveRuntime:
     context_builder: ContextBuilder = field(default_factory=ContextBuilder)
     history_window: int = 500
     memory_engine: MemoryEngine | None = None
+    tool_registry: ToolRegistry | None = None
+    tool_executor: ToolExecutor | None = None
+    max_tool_iterations: int = 10
 
     async def run_turn(
         self,
@@ -61,8 +74,28 @@ class PassiveRuntime:
             runtime_metadata=runtime_metadata or {},
         )
         rendered = self.context_builder.render(context)
-        response = await self.provider.chat(rendered.messages)
-        parsed_response = parse_response(response.content, tool_chain=[])
+        tool_schemas = (
+            self.tool_registry.export_openai_tools() if self.tool_registry is not None else None
+        )
+        messages = [dict(message) for message in rendered.messages]
+        response = await self.provider.chat(messages, tools=tool_schemas)
+        tool_chain: list[dict[str, Any]] = []
+        provider_raw = response.raw
+        if response.tool_calls:
+            reasoner_result = await self._run_tool_loop(
+                messages=messages,
+                response=response,
+                tool_schemas=tool_schemas,
+                session_key=session_key,
+            )
+            assistant_content = reasoner_result.reply
+            tool_chain = reasoner_result.tool_chain
+        else:
+            if response.content is None:
+                raise ValueError("LLM response did not include assistant content")
+            assistant_content = response.content
+
+        parsed_response = parse_response(assistant_content, tool_chain=[])
         assistant_response = parsed_response.clean_text
 
         user_record = session.add_message("user", user_message, **(extra or {}))
@@ -83,5 +116,168 @@ class PassiveRuntime:
             assistant_message_id=str(assistant_record["id"]),
             assistant_response=assistant_response,
             context=rendered,
-            provider_raw=response.raw,
+            provider_raw=provider_raw,
+            tool_chain=tool_chain,
         )
+
+    async def _run_tool_loop(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        response: LLMResponse,
+        tool_schemas: list[dict[str, Any]] | None,
+        session_key: str = "",
+    ) -> ReasonerResult:
+        if self.tool_executor is None:
+            raise ValueError("LLM requested tools but no tool executor is configured")
+
+        loop_messages = list(messages)
+        tool_chain: list[dict[str, Any]] = []
+        invocations: list[Any] = []
+        current_response = response
+        iterations = 0
+        tools_used: list[str] = []
+
+        while current_response.tool_calls:
+            if iterations >= self.max_tool_iterations:
+                break
+
+            # 1. Batch snapshot → 注入每个 ToolExecutionRequest
+            tool_batch = tool_call_batch_snapshot(current_response.tool_calls)
+
+            # 2. Append assistant tool call message
+            append_assistant_tool_calls(
+                loop_messages,
+                content=current_response.content,
+                tool_calls=current_response.tool_calls,
+            )
+
+            # 3. Execute tool calls in this batch
+            current_step: dict[str, Any] = {
+                "text": current_response.content or "",
+                "calls": [],
+            }
+            for batch_index, tool_call in enumerate(current_response.tool_calls):
+                # Emit ToolCallStarted
+                if session_key:
+                    await self.event_bus.emit(
+                        ToolCallStarted(
+                            session_key=session_key,
+                            iteration=iterations,
+                            call_id=tool_call.id,
+                            tool_name=tool_call.name,
+                            arguments=tool_call.arguments,
+                        )
+                    )
+
+                result, trace = self.tool_executor.execute(
+                    tool_call.name,
+                    tool_call.arguments,
+                    call_id=tool_call.id,
+                    tool_batch=tool_batch,
+                    tool_batch_index=batch_index,
+                )
+
+                result_preview = self._preview_tool_result(result)
+                # Emit ToolCallCompleted
+                if session_key:
+                    await self.event_bus.emit(
+                        ToolCallCompleted(
+                            session_key=session_key,
+                            iteration=iterations,
+                            call_id=tool_call.id,
+                            tool_name=tool_call.name,
+                            arguments=tool_call.arguments,
+                            final_arguments=tool_call.arguments,
+                            status=trace.status,
+                            result_preview=result_preview,
+                        )
+                    )
+
+                append_tool_result(
+                    loop_messages,
+                    tool_call_id=tool_call.id,
+                    result=result,
+                )
+                if trace.status == "success":
+                    tools_used.append(tool_call.name)
+                invocations.append(tool_call)
+                current_step["calls"].append(
+                    {
+                        "call_id": tool_call.id,
+                        "name": tool_call.name,
+                        "arguments": tool_call.arguments,
+                        "status": trace.status,
+                        "result": result_preview,
+                    }
+                )
+            tool_chain.append(current_step)
+            iterations += 1
+
+            if iterations >= self.max_tool_iterations:
+                break
+
+            # 4. Next LLM round
+            current_response = await self.provider.chat(loop_messages, tools=tool_schemas)
+
+        # 5. If loop ended due to tool_calls still present → incomplete summary
+        if current_response.tool_calls:
+            summary = self._render_incomplete_tool_loop_summary(tool_chain)
+            return ReasonerResult(
+                reply=summary,
+                tool_chain=tool_chain,
+                invocations=invocations,
+                metadata={
+                    "tools_used": tools_used,
+                    "react_stats": {
+                        "iteration_count": iterations,
+                        "tools_used_count": len(tools_used),
+                    },
+                },
+            )
+
+        # 6. Normal exit — model replied without tool_calls
+        reply = current_response.content or ""
+        return ReasonerResult(
+            reply=reply,
+            tool_chain=tool_chain,
+            invocations=invocations,
+            metadata={
+                "tools_used": tools_used,
+                "react_stats": {
+                    "iteration_count": iterations,
+                    "tools_used_count": len(tools_used),
+                },
+            },
+        )
+
+    def _render_incomplete_tool_loop_summary(
+        self,
+        tool_chain: list[dict[str, Any]],
+    ) -> str:
+        if not tool_chain:
+            return "工具执行已经达到本轮上限，但还没有完成任何工具调用。请继续下一轮处理。"
+
+        lines = ["工具执行已经达到本轮上限，当前只能先返回阶段性结果。"]
+        lines.append("已经完成的工具调用：")
+        for index, step in enumerate(tool_chain, start=1):
+            calls = step.get("calls") or []
+            for call in calls:
+                lines.append(
+                    "- "
+                    f"第 {index} 轮 {call['name']} "
+                    f"status={call['status']} "
+                    f"args={call['arguments']} "
+                    f"result={call['result']}"
+                )
+        lines.append("如果继续，下一步应该基于这些工具结果再次请求模型生成最终回复。")
+        return "\n".join(lines)
+
+    def _preview_tool_result(self, result: Any) -> str:
+        output = getattr(result, "output", result)
+        if isinstance(output, str):
+            return output
+        try:
+            return json.dumps(output, ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            return str(output)

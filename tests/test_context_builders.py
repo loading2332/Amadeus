@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
 import pytest
-
 from amadeus.context import (
     ContextBuilder,
+    Message,
     MessageEnvelopeBuilder,
     RuntimeContext,
     SystemPromptBuilder,
@@ -130,7 +130,7 @@ def test_retrieval_is_structurally_in_context_frame_not_system_prompt(tmp_path):
 
 
 def test_message_envelope_places_system_history_and_current_user_message():
-    history = [
+    history: list[Message] = [
         {"role": "user", "content": "previous question"},
         {"role": "assistant", "content": "previous answer"},
     ]
@@ -223,7 +223,7 @@ def test_context_builder_routes_dynamic_context_to_context_frame(tmp_path):
 
 
 def test_context_builder_slices_history_with_runtime_history_window(tmp_path):
-    history = [
+    history: list[Message] = [
         {"role": "user", "content": "old question"},
         {"role": "assistant", "content": "old answer"},
         {"role": "user", "content": "recent question"},

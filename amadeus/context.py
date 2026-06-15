@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Literal, Protocol, TypedDict, cast
 
 from amadeus.prompting.assembler import (
     PromptAssembler,
@@ -62,6 +62,19 @@ class ContextRenderResult:
     assembly: PromptAssemblyResult
 
 
+class PromptBlockRenderResult(Protocol):
+    content: str
+    empty_reason: str | None
+
+
+class PromptBlockLike(Protocol):
+    label: str
+    priority: int
+    is_static: bool
+
+    def render(self, context: RuntimeContext) -> PromptBlockRenderResult: ...
+
+
 def _estimate_tokens(text: str) -> int:
     if not text:
         return 0
@@ -69,10 +82,14 @@ def _estimate_tokens(text: str) -> int:
 
 
 class SystemPromptBuilder:
-    def __init__(self, blocks: Iterable[object], separator: str = "\n\n---\n\n") -> None:
+    def __init__(
+        self,
+        blocks: Iterable[PromptBlockLike],
+        separator: str = "\n\n---\n\n",
+    ) -> None:
         self.blocks = list(blocks)
         self.separator = separator
-        self._static_cache: dict[str, object] = {}
+        self._static_cache: dict[str, PromptBlockRenderResult] = {}
 
     def build(self, context: RuntimeContext) -> SystemPromptResult:
         rendered_sections: list[str] = []
@@ -112,7 +129,11 @@ class SystemPromptBuilder:
             sections=section_renders,
         )
 
-    def _render_block(self, block: object, context: RuntimeContext) -> object:
+    def _render_block(
+        self,
+        block: PromptBlockLike,
+        context: RuntimeContext,
+    ) -> PromptBlockRenderResult:
         if block.is_static and block.label in self._static_cache:
             return self._static_cache[block.label]
 
@@ -146,7 +167,7 @@ class MessageEnvelopeBuilder:
 class ContextBuilder:
     def __init__(
         self,
-        blocks: Iterable[object] | None = None,
+        blocks: Iterable[PromptBlockLike] | None = None,
         system_prompt_builder: SystemPromptBuilder | None = None,
         message_envelope_builder: MessageEnvelopeBuilder | None = None,
         prompt_assembler: PromptAssembler | None = None,
@@ -159,7 +180,7 @@ class ContextBuilder:
         self.prompt_assembler = prompt_assembler or PromptAssembler()
 
     @staticmethod
-    def default_blocks() -> tuple[object, ...]:
+    def default_blocks() -> tuple[PromptBlockLike, ...]:
         from amadeus.prompt_block import (
             ActiveSkillsPromptBlock,
             BehaviorRulesPromptBlock,
@@ -171,7 +192,9 @@ class ContextBuilder:
             SelfModelPromptBlock,
         )
 
-        return (
+        return cast(
+            tuple[PromptBlockLike, ...],
+            (
             IdentityPromptBlock(),
             BehaviorRulesPromptBlock(),
             SelfModelPromptBlock(),
@@ -180,6 +203,7 @@ class ContextBuilder:
             RetrievedMemoryPromptBlock(),
             ActiveSkillsPromptBlock(),
             RuntimeMetadataPromptBlock(),
+            ),
         )
 
     def render(self, context: RuntimeContext) -> ContextRenderResult:

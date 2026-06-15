@@ -21,3 +21,39 @@ include = ["amadeus*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["amadeus", "tests", "dev_utils"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"dev_utils/*.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["amadeus", "tests", "dev_utils"]
+strict = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = ["dev_utils.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+warn_return_any = false
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "ruff>=0.15.17",
+]

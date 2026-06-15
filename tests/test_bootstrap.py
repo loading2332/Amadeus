@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
-
 from amadeus.bootstrap import build_passive_app, load_runtime_config
+from amadeus.provider import ChatCompletionsClient, ChatNamespace
 
 
 class FakeCompletions:
     def __init__(self) -> None:
-        self.calls = []
+        self.calls: list[dict[str, Any]] = []
 
-    async def create(self, **kwargs):
+    async def create(self, **kwargs: Any) -> SimpleNamespace:
         self.calls.append(kwargs)
         return SimpleNamespace(
             id="resp",
@@ -23,10 +25,15 @@ class FakeCompletions:
         )
 
 
+@dataclass
+class FakeChatNamespace:
+    completions: ChatCompletionsClient
+
+
 class FakeClient:
     def __init__(self) -> None:
         self.completions = FakeCompletions()
-        self.chat = SimpleNamespace(completions=self.completions)
+        self.chat: ChatNamespace = FakeChatNamespace(completions=self.completions)
 
 
 def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, monkeypatch):

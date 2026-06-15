@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.memory import (
@@ -17,9 +18,9 @@ from amadeus.session import SessionManager, fetch_messages, search_messages
 class FakeProvider:
     def __init__(self, *responses: str) -> None:
         self.responses = list(responses)
-        self.calls = []
+        self.calls: list[dict[str, Any]] = []
 
-    async def chat(self, messages, **kwargs):
+    async def chat(self, messages: Any, **kwargs: Any) -> SimpleNamespace:
         self.calls.append({"messages": messages, "kwargs": kwargs})
         return SimpleNamespace(content=self.responses.pop(0))
 

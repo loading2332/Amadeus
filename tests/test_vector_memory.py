@@ -3,9 +3,18 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from amadeus.memory import ConsolidateRequest, MarkdownMemoryMaintenance, MarkdownMemoryStore
-from amadeus.memory_engine import MemoryIngestRequest, MemoryQuery
-from amadeus.memory_engine import EvidenceRef, MemoryRecord, MemoryQueryResult
+from amadeus.memory import (
+    ConsolidateRequest,
+    MarkdownMemoryMaintenance,
+    MarkdownMemoryStore,
+)
+from amadeus.memory_engine import (
+    EvidenceRef,
+    MemoryIngestRequest,
+    MemoryQuery,
+    MemoryQueryResult,
+    MemoryRecord,
+)
 from amadeus.session import SessionManager
 from amadeus.vector_memory import VectorMemoryEngine, VectorMemoryStore
 

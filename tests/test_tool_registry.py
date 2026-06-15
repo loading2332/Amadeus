@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from amadeus.tools.base import ToolExecutionRequest, ToolResult
 from amadeus.tools.registry import ToolRegistry
@@ -27,7 +28,7 @@ def test_tool_result_exposes_structured_output():
 class EchoTool:
     name: str = "echo"
     description: str = "Echo the provided text."
-    parameters: dict = field(
+    parameters: dict[str, Any] = field(
         default_factory=lambda: {
             "type": "object",
             "properties": {
@@ -37,7 +38,7 @@ class EchoTool:
         }
     )
 
-    def execute(self, **kwargs):
+    def execute(self, **kwargs: Any) -> ToolResult:
         return ToolResult(tool_name=self.name, output={"echo": kwargs["text"]})
 
 

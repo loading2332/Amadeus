@@ -6,9 +6,31 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, TypeVar, cast
 
-
 E = TypeVar("E")
 EventHandler = Callable[[E], Awaitable[E | None] | E | None]
+
+
+@dataclass(frozen=True)
+class ToolCallStarted:
+    """Emitted before a tool call is executed within the reasoner loop."""
+    session_key: str
+    iteration: int
+    call_id: str
+    tool_name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ToolCallCompleted:
+    """Emitted after a tool call has been executed within the reasoner loop."""
+    session_key: str
+    iteration: int
+    call_id: str
+    tool_name: str
+    arguments: dict[str, Any]
+    final_arguments: dict[str, Any]
+    status: str
+    result_preview: str
 
 
 @dataclass(frozen=True)

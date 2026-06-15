@@ -9,7 +9,6 @@ from urllib.request import Request, urlopen
 
 from amadeus.context import Message
 
-
 Transport = Callable[
     [str, dict[str, Any], dict[str, str], float],
     Mapping[str, Any],
@@ -83,13 +82,20 @@ def load_openai_compatible_config(
     if missing:
         raise ValueError(f"Missing OpenAI-compatible provider config: {', '.join(missing)}")
 
+    base_url = values["OPENAI_BASE_URL"]
+    api_key = values["OPENAI_API_KEY"]
+    model = values["OPENAI_MODEL"]
+    assert base_url is not None
+    assert api_key is not None
+    assert model is not None
+
     timeout_value = _config_value("OPENAI_TIMEOUT_SECONDS", file_values)
     timeout_seconds = float(timeout_value) if timeout_value else 30
 
     return OpenAICompatibleProviderConfig(
-        base_url=values["OPENAI_BASE_URL"],
-        api_key=values["OPENAI_API_KEY"],
-        model=values["OPENAI_MODEL"],
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
         timeout_seconds=timeout_seconds,
     )
 

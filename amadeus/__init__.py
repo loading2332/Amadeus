@@ -1,8 +1,15 @@
 """Amadeus runtime context and prompt assembly package."""
 
+from amadeus.bootstrap import (
+    PassiveApp,
+    RuntimeConfig,
+    build_passive_app,
+    default_workspace_root,
+    load_runtime_config,
+)
 from amadeus.context import (
-    ContextFrameResult,
     ContextBuilder,
+    ContextFrameResult,
     ContextRenderResult,
     Message,
     MessageEnvelopeBuilder,
@@ -10,13 +17,6 @@ from amadeus.context import (
     RuntimeContext,
     SystemPromptBuilder,
     SystemPromptResult,
-)
-from amadeus.bootstrap import (
-    PassiveApp,
-    RuntimeConfig,
-    build_passive_app,
-    default_workspace_root,
-    load_runtime_config,
 )
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.memory import (
@@ -38,6 +38,18 @@ from amadeus.memory_engine import (
     MemoryQuery,
     MemoryQueryResult,
     MemoryRecord,
+)
+from amadeus.prompt_block import (
+    ActiveSkillsPromptBlock,
+    BehaviorRulesPromptBlock,
+    IdentityPromptBlock,
+    LongTermMemoryPromptBlock,
+    PromptBlock,
+    PromptBlockRenderResult,
+    RecentContextPromptBlock,
+    RetrievedMemoryPromptBlock,
+    RuntimeMetadataPromptBlock,
+    SelfModelPromptBlock,
 )
 from amadeus.prompting import (
     DEFAULT_CONTEXT_TRIM_PLANS,
@@ -64,18 +76,6 @@ from amadeus.session import (
     search_messages,
 )
 from amadeus.tools import Tool, ToolExecutionRequest, ToolHook, ToolResult, ToolTrace
-from amadeus.prompt_block import (
-    ActiveSkillsPromptBlock,
-    BehaviorRulesPromptBlock,
-    IdentityPromptBlock,
-    LongTermMemoryPromptBlock,
-    PromptBlock,
-    PromptBlockRenderResult,
-    RecentContextPromptBlock,
-    RetrievedMemoryPromptBlock,
-    RuntimeMetadataPromptBlock,
-    SelfModelPromptBlock,
-)
 from amadeus.workspace import DEFAULT_SELF_MD, initialize_workspace
 
 __all__ = [
@@ -87,6 +87,7 @@ __all__ = [
     "ConsolidateRequest",
     "ConsolidateResult",
     "ContentSafetyError",
+    "ContextLengthError",
     "DEFAULT_SELF_MD",
     "DEFAULT_CONTEXT_TRIM_PLANS",
     "EventBus",

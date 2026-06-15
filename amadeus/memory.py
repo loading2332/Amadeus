@@ -7,7 +7,6 @@ import re
 import shutil
 import sqlite3
 import threading
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +17,6 @@ from amadeus.memory_engine import MemoryEngine, MemoryIngestRequest
 from amadeus.provider import LLMProvider
 from amadeus.session import Session, SessionManager, is_real_memory_message
 from amadeus.vector_memory import build_entry_source_ref
-
 
 _MARKER_PREFIX = "<!-- consolidation:"
 _MARKER_SUFFIX = " -->"
@@ -771,7 +769,7 @@ def _render_recent_context(
 def _extract_recent_context_compression(text: str) -> dict[str, list[str]] | None:
     if not text.strip():
         return None
-    result = {
+    result: dict[str, list[str]] = {
         "active_topics": [],
         "user_preferences": [],
         "follow_ups": [],

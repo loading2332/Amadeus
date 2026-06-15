@@ -8,6 +8,9 @@ from typing import Any, Protocol
 class ToolExecutionRequest:
     tool_name: str
     arguments: dict[str, Any] = field(default_factory=dict)
+    call_id: str = ""
+    tool_batch: dict[str, Any] = field(default_factory=dict)
+    tool_batch_index: int = 0
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import KeysView
 from typing import Any
 
 from amadeus.tools.base import Tool
@@ -19,7 +20,7 @@ class ToolRegistry:
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
 
-    def names(self):
+    def names(self) -> KeysView[str]:
         return self._tools.keys()
 
     def export_openai_tools(self) -> list[dict[str, Any]]:

@@ -1,4 +1,10 @@
-from amadeus.tools.base import Tool, ToolExecutionRequest, ToolHook, ToolResult, ToolTrace
+from amadeus.tools.base import (
+    Tool,
+    ToolExecutionRequest,
+    ToolHook,
+    ToolResult,
+    ToolTrace,
+)
 from amadeus.tools.defaults import FetchMessagesTool, ReadFileTool, SearchMessagesTool
 from amadeus.tools.executor import ToolExecutionDenied, ToolExecutor
 from amadeus.tools.hooks import ReadOnlyFilesystemHook

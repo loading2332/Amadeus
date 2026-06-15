@@ -20,8 +20,18 @@ class ToolExecutor:
         self,
         tool_name: str,
         arguments: dict[str, Any],
+        *,
+        call_id: str = "",
+        tool_batch: dict[str, Any] | None = None,
+        tool_batch_index: int = 0,
     ) -> tuple[ToolResult, ToolTrace]:
-        request = ToolExecutionRequest(tool_name=tool_name, arguments=dict(arguments))
+        request = ToolExecutionRequest(
+            tool_name=tool_name,
+            arguments=dict(arguments),
+            call_id=call_id,
+            tool_batch=dict(tool_batch) if tool_batch else {},
+            tool_batch_index=tool_batch_index,
+        )
         try:
             for hook in self.hooks or []:
                 request = hook.before_execute(request)

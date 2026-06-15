@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from amadeus.tools.base import ToolExecutionRequest, ToolResult
 from amadeus.tools.executor import ToolExecutionDenied, ToolExecutor
@@ -11,14 +12,14 @@ from amadeus.tools.registry import ToolRegistry
 class EchoTool:
     name: str = "echo"
     description: str = "Echo the provided text."
-    parameters: dict = field(
+    parameters: dict[str, Any] = field(
         default_factory=lambda: {
             "type": "object",
             "properties": {"text": {"type": "string"}},
         }
     )
 
-    def execute(self, **kwargs):
+    def execute(self, **kwargs: Any) -> ToolResult:
         return ToolResult(tool_name=self.name, output={"echo": kwargs["text"]})
 
 
@@ -60,11 +61,11 @@ def test_executor_wraps_tool_exceptions():
     class BrokenTool:
         name: str = "broken"
         description: str = "Always fails."
-        parameters: dict = field(
+        parameters: dict[str, Any] = field(
             default_factory=lambda: {"type": "object", "properties": {}}
         )
 
-        def execute(self, **kwargs):
+        def execute(self, **kwargs: Any) -> ToolResult:
             raise RuntimeError("boom")
 
     registry = ToolRegistry()

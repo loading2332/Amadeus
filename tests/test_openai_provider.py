@@ -1,5 +1,4 @@
 import pytest
-
 from dev_utils.openai_provider import (
     OpenAICompatibleProvider,
     OpenAICompatibleProviderConfig,
