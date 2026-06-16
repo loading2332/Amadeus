@@ -37,6 +37,44 @@
   - 不能为了看起来高效而跳过验证、代码精读和复盘。
   - 不能把用户长期卡在“会运行但说不清为什么”的状态里。
 
+## Teach 工作区协议
+
+- 当前仓库根目录就是 `teach` skill 的工作区，教学推进时默认先检查这些资产：
+  - `MISSION.md`
+  - `RESOURCES.md`
+  - `NOTES.md`
+  - `lessons/`
+  - `reference/`
+  - `learning-records/`
+- 教学产物和工程路线图要分层，不要混写：
+  - `docs/superpowers/plans/` 负责工程路线图、阶段地图和实现顺序
+  - `lessons/` 负责正式课程 HTML 产物
+  - `reference/` 负责 glossary、速查表、排错清单等长期复用资料
+  - `learning-records/` 只在用户真正证明理解后记录，不写流水账
+- teach lesson 编号独立于工程 Lesson 编号：
+  - teach lesson 用 `0001-*.html`、`0002-*.html` 递增
+  - 工程 Lesson 仍按当前总计划中的 Lesson 8、9、10... 继续，不重排
+  - 每份 teach lesson 标题里必须明确标注“对应总计划 Lesson X / Part Y”
+- 默认不回填伪历史课程。若前面阶段没有正式 lesson 产物，从当前真实进度继续沉淀，不为了“看起来完整”补写假的学习轨迹。
+- 每次进入教学型推进时，先判断是：
+  - 新建一节正式 lesson
+  - 补一份 reference 资料
+  - 还是在用户完成复述后新增 learning record
+- 每节正式 lesson 至少要包含：
+  - 本课目标
+  - 与 `MISSION.md` 的关系
+  - Part 1 Akashic 源码课
+  - Part 2 Amadeus 复现练手或当前阶段对照
+  - 关键代码定位
+  - 常见误区
+  - 验证步骤或当前阶段验证证据
+  - 必须复述的问题
+  - 继续追问提示
+- learning record 只在以下条件满足后创建：
+  - 用户已经能复述当前课的 Akashic 主链
+  - 用户能说清 Amadeus 对应代码职责
+  - 这个理解会改变后续课程难度或推进顺序
+
 ## 项目边界
 
 - Akashic reference path: `../akashic-agent`

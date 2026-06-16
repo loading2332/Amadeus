@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 10 Part 1: Akashic Passive Reasoner 多步 Loop 源码课</title>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --panel: #fffdf8;
+      --ink: #1b1a17;
+      --muted: #5b564c;
+      --accent: #8b3d2e;
+      --line: #d9cdb8;
+      --code: #f0e7d8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+      background: linear-gradient(180deg, #efe6d6 0%, var(--bg) 32%, #f8f5ef 100%);
+      color: var(--ink);
+      line-height: 1.75;
+    }
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 40px 20px 72px;
+    }
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px 28px;
+      margin-bottom: 20px;
+      box-shadow: 0 14px 40px rgba(68, 49, 16, 0.08);
+    }
+    h1, h2, h3 { line-height: 1.25; margin-top: 0; }
+    h1 { font-size: 2rem; margin-bottom: 10px; }
+    h2 { font-size: 1.3rem; color: var(--accent); }
+    p.lead { font-size: 1.05rem; color: var(--muted); margin-bottom: 0; }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #f3e3d3;
+      color: var(--accent);
+      font-size: 0.88rem;
+      letter-spacing: 0.04em;
+    }
+    code {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      background: var(--code);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.92em;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: #201b17;
+      color: #f7f3ed;
+      padding: 16px;
+      border-radius: 12px;
+      overflow: auto;
+      font-size: 0.95rem;
+    }
+    ul {
+      margin: 10px 0 0 1.2rem;
+      padding: 0;
+    }
+    li + li { margin-top: 8px; }
+    .callout {
+      border-left: 4px solid var(--accent);
+      padding-left: 14px;
+      color: var(--muted);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: #fffcf5;
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">对应总计划 Lesson 10 Part 1</span>
+      <h1>Akashic Passive Reasoner 多步 Loop 源码课</h1>
+      <p class="lead">
+        这节课不写新功能，先把 Akashic 的多步 loop 主链讲透，再对照当前 Amadeus 已经复现到了哪里、还差什么收口。
+      </p>
+    </header>
+
+    <section>
+      <h2>这节课为什么现在上</h2>
+      <p>
+        你当前已经不在 Tool Runtime 阶段，而是在 <code>Passive Agent Loop</code> 阶段中段。当前
+        <code>amadeus/runtime.py</code> 已经有基础多步 tool loop 和对应测试，但还没有完全收口成
+        Akashic 的 <code>Reasoner.run()</code> 语义。如果现在不把主链讲清，后面继续补 plugin、
+        trim、eval 时就会反复返工。
+      </p>
+      <p class="callout">
+        先抓一句话：<strong>Akashic 的 provider 只负责“把模型响应解析成结构化结果”，真正掌控多步 tool loop 的是 <code>Reasoner.run()</code>。</strong>
+      </p>
+    </section>
+
+    <section>
+      <h2>Part 1：Akashic 源码主链</h2>
+      <p>推荐主源：</p>
+      <ul>
+        <li><code>../akashic-agent/agent/core/passive_turn.py</code> 中 <code>Reasoner.run()</code></li>
+        <li><code>../akashic-agent/agent/tool_runtime.py</code></li>
+        <li><code>../akashic-agent/agent/tool_hooks/types.py</code></li>
+        <li><code>../akashic-agent/agent/tool_hooks/executor.py</code></li>
+      </ul>
+      <pre>messages
+-> provider.chat(...)
+-> response.tool_calls?
+   -> append assistant(tool_calls)
+   -> execute each tool
+   -> append tool(result)
+   -> continue next LLM round
+-> no tool_calls
+   -> final assistant reply</pre>
+      <div class="grid">
+        <div class="card">
+          <h3>1. 为什么 <code>Reasoner.run()</code> 持有 loop</h3>
+          <p>
+            因为 loop 不只是“再调一次模型”，还要同时维护 <code>messages</code>、tool batch、
+            iteration、hooks、可见工具、阶段性总结和最终 metadata。provider 只应该关心一次请求/响应的解析。
+          </p>
+        </div>
+        <div class="card">
+          <h3>2. 为什么先 append <code>assistant(tool_calls)</code></h3>
+          <p>
+            因为后面的 <code>tool</code> 消息必须引用一个已经存在的 <code>tool_call_id</code>。如果你不先把 assistant 的
+            tool 调用消息压进消息序列，协议上就没有可追溯的调用来源。
+          </p>
+        </div>
+        <div class="card">
+          <h3>3. <code>messages</code> vs <code>tool_chain</code></h3>
+          <p>
+            <code>messages</code> 是下一轮 LLM 继续推理用的上下文；<code>tool_chain</code> 是运行时观测面，
+            用来做 trace、持久化、eval、回放和解释“这一轮发生了什么”。
+          </p>
+        </div>
+        <div class="card">
+          <h3>4. 为什么 request 要带 batch 信息</h3>
+          <p>
+            <code>call_id</code> 负责关联消息协议，<code>tool_batch</code> / <code>tool_batch_index</code>
+            负责回答“这次工具调用在本轮第几个、和谁同批”，这是 hook、审计和问题定位的基础。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Part 2：对照当前 Amadeus</h2>
+      <p>当前 Amadeus 已经对齐到的部分：</p>
+      <ul>
+        <li><code>amadeus/provider.py</code> 已有 <code>LLMToolCall</code> 和 <code>LLMResponse.tool_calls</code></li>
+        <li><code>amadeus/tool_runtime.py</code> 已有 <code>append_assistant_tool_calls()</code> 与 <code>append_tool_result()</code></li>
+        <li><code>amadeus/runtime.py</code> 已有 <code>_run_tool_loop()</code>、<code>max_tool_iterations</code>、<code>tool_chain</code></li>
+        <li><code>tests/test_runtime.py</code> 已经验证单轮、多轮、上限 summary、tool_chain 持久化和 history 过滤</li>
+      </ul>
+      <p>当前还只是“基础版”的地方：</p>
+      <ul>
+        <li>还没有完整复现 Akashic 的 <code>Reasoner.run()</code> 周边语义，例如 step phases、更加完整的 incomplete summary 策略</li>
+        <li><code>messages</code> / <code>tool_chain</code> / session 持久化边界虽然已经成形，但还需要继续做 Lesson 11 收口</li>
+        <li>后续 plugin、trim、eval 接入时，loop 还要继续验证是不是稳定扩展点</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>你最容易误解的点</h2>
+      <ul>
+        <li>误以为 provider 管整个 agent loop。错，provider 只做一次请求/响应解析。</li>
+        <li>误以为 tool 中间消息就应该进入用户长期历史。错，它们主要服务 runtime 继续推理，不等于用户真实对话历史。</li>
+        <li>误以为达到 <code>max_iterations</code> 就应该直接抛错。Akashic 更像是返回“阶段性结果”，让系统可观测、可继续。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>这节课你必须能复述的 5 个问题</h2>
+      <ol>
+        <li>为什么 Akashic 把多步 tool loop 放在 <code>Reasoner.run()</code>，而不是 provider？</li>
+        <li>为什么 <code>assistant(tool_calls)</code> 必须先于 <code>tool(result)</code>？</li>
+        <li><code>messages</code> 和 <code>tool_chain</code> 各自解决什么问题？</li>
+        <li>为什么 <code>ToolExecutionRequest</code> 需要 <code>call_id / tool_batch / tool_batch_index</code>？</li>
+        <li>为什么 <code>max_iterations</code> 更适合返回阶段性总结，而不是直接报错结束？</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>继续学习</h2>
+      <p>
+        先读 <a href="../reference/0001-passive-loop-glossary.html">Passive Loop Glossary</a> 固定术语，再进入下一节
+        <strong>Lesson 10 Part 2：Amadeus 当前 loop 对照精读与 gap 标注</strong>。
+      </p>
+      <p>
+        如果你对本课任何一处主链还说不清，继续追问，不要急着进入实现。
+      </p>
+      <p>
+        Mission 参见 <a href="../MISSION.md">MISSION.md</a>。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

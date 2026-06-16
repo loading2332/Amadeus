@@ -363,3 +363,97 @@ def test_passive_runtime_returns_progress_summary_when_tool_loop_hits_iteration_
     assert len(result.tool_chain) == 1
     assert result.tool_chain[0]["calls"][0]["name"] == "echo_tool"
     assert result.tool_chain[0]["calls"][0]["status"] == "success"
+
+
+def test_tool_chain_is_persisted_in_assistant_message_extra(tmp_path):
+    """tool_chain 持久化进 assistant message 的 extra 字段。"""
+    client = FakeClient()
+    client.completions.responses = [
+        SimpleNamespace(
+            id="resp_1", model="fake-model",
+            choices=[SimpleNamespace(message=SimpleNamespace(
+                content=None,
+                tool_calls=[SimpleNamespace(
+                    id="call_1", function=SimpleNamespace(
+                        name="echo_tool", arguments=json.dumps({"text": "hello"})))],
+            ))],
+            usage={},
+        ),
+        SimpleNamespace(
+            id="resp_2", model="fake-model",
+            choices=[SimpleNamespace(message=SimpleNamespace(content="done"))],
+            usage={},
+        ),
+    ]
+    provider = LLMProvider(LLMProviderConfig(api_key="secret", model="fake-model"), client=client)
+    manager = SessionManager(tmp_path)
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path, provider=provider, session_manager=manager,
+        tool_registry=registry, tool_executor=ToolExecutor(registry=registry),
+    )
+    result = asyncio.run(
+        runtime.run_turn(session_key="persist:1", user_message="use tool")
+    )
+
+    # 从 session 中重新读取 assistant message，验证 tool_chain 已持久化
+    session = manager.get_or_create("persist:1")
+    assistant_msg = session.messages[-1]
+    assert assistant_msg["role"] == "assistant"
+    assert assistant_msg["content"] == result.assistant_response
+    assert "tool_chain" in assistant_msg
+    assert len(assistant_msg["tool_chain"]) == 1
+    assert assistant_msg["tool_chain"][0]["calls"][0]["name"] == "echo_tool"
+
+    # 验证从数据库重新加载后 tool_chain 仍然存在
+    manager._cache.clear()
+    reloaded_session = manager.get_or_create("persist:1")
+    reloaded_msg = reloaded_session.messages[-1]
+    assert "tool_chain" in reloaded_msg
+    assert reloaded_msg["tool_chain"][0]["calls"][0]["name"] == "echo_tool"
+
+
+def test_tool_messages_are_not_in_session_history(tmp_path):
+    """Assistant/tool 中间消息不直接持久化，但 get_history 会从 tool_chain 重建它们。"""
+    client = FakeClient()
+    client.completions.responses = [
+        SimpleNamespace(
+            id="resp_1", model="fake-model",
+            choices=[SimpleNamespace(message=SimpleNamespace(
+                content=None,
+                tool_calls=[SimpleNamespace(
+                    id="call_1", function=SimpleNamespace(
+                        name="echo_tool", arguments=json.dumps({"text": "hello"})))],
+            ))],
+            usage={},
+        ),
+        SimpleNamespace(
+            id="resp_2", model="fake-model",
+            choices=[SimpleNamespace(message=SimpleNamespace(content="final"))],
+            usage={},
+        ),
+    ]
+    provider = LLMProvider(LLMProviderConfig(api_key="secret", model="fake-model"), client=client)
+    manager = SessionManager(tmp_path)
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path, provider=provider, session_manager=manager,
+        tool_registry=registry, tool_executor=ToolExecutor(registry=registry),
+    )
+    result = asyncio.run(
+        runtime.run_turn(session_key="filter:1", user_message="use tool")
+    )
+
+    session = manager.get_or_create("filter:1")
+    # session.messages 应只有 user + assistant，没有 tool 中间消息
+    assert [m["role"] for m in session.messages] == ["user", "assistant"]
+    assert len(session.messages) == 2
+
+    # get_history 不直接复用 raw tool 消息，而是从 assistant.tool_chain 重建 assistant/tool 序列
+    history = session.get_history(500)
+    assert [m["role"] for m in history] == ["user", "assistant", "tool", "assistant"]
+    assert history[1]["tool_calls"][0]["function"]["name"] == "echo_tool"
+    assert history[2]["tool_call_id"] == "call_1"
+    assert history[3]["content"] == result.assistant_response

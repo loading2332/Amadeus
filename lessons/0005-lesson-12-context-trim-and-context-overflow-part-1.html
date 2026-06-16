@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 12 Part 1: Akashic Context Trim 与 Context-Length Retry 源码课</title>
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --panel: #fffdf8;
+      --ink: #191814;
+      --muted: #5d574d;
+      --accent: #2f6b5f;
+      --line: #d6cebe;
+      --code: #ece5d8;
+      --dark: #1d1a17;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+      background: linear-gradient(180deg, #ddebe6 0%, var(--bg) 34%, #faf7f1 100%);
+      color: var(--ink);
+      line-height: 1.75;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 20px 72px;
+    }
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px 28px;
+      margin-bottom: 20px;
+      box-shadow: 0 14px 42px rgba(29, 39, 34, 0.08);
+    }
+    h1, h2, h3 { line-height: 1.25; margin-top: 0; }
+    h1 { font-size: 2rem; margin-bottom: 10px; }
+    h2 { font-size: 1.3rem; color: var(--accent); }
+    p.lead { font-size: 1.05rem; color: var(--muted); margin-bottom: 0; }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e2f0eb;
+      color: var(--accent);
+      font-size: 0.88rem;
+      letter-spacing: 0.04em;
+    }
+    code {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      background: var(--code);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.92em;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: var(--dark);
+      color: #f7f3ed;
+      padding: 16px;
+      border-radius: 12px;
+      overflow: auto;
+      font-size: 0.95rem;
+    }
+    ul, ol {
+      margin: 10px 0 0 1.2rem;
+      padding: 0;
+    }
+    li + li { margin-top: 8px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: #fffcf6;
+    }
+    .callout {
+      border-left: 4px solid var(--accent);
+      padding-left: 14px;
+      color: var(--muted);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #edf6f2; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">对应总计划 Lesson 12 Part 1</span>
+      <h1>Akashic Context Trim 与 Context-Length Retry 源码课</h1>
+      <p class="lead">
+        这节课先不写新功能，先把 Akashic 在被动对话里如何处理“上下文超长”讲透。重点不是“裁剪一点历史”这么简单，而是完整理解
+        <code>provider 识别错误 -> reasoner 持有 retry 主控权 -> trim plan 逐级降载 -> 成功后把收口结果写回 session/runtime metadata</code>。
+      </p>
+    </header>
+
+    <section>
+      <h2>当前阶段地图</h2>
+      <ul>
+        <li>已经实现：多步 tool loop、<code>tool_chain</code> 持久化、从 <code>tool_chain</code> 重建未来 turn 的 model-facing history。</li>
+        <li>当前主链：<code>amadeus/runtime.py</code> 已经能跑 <code>LLM -&gt; tool -&gt; LLM</code>，但还缺少“超长上下文时自动降载并重试”的外层控制。</li>
+        <li>半成品能力：Amadeus 已经有 <code>ContextLengthError</code> 识别、已有 trim plan 生成函数、已有 <code>disabled_sections</code> / <code>history_window</code> 渲染能力，但这些拼图还没接进被动 loop 主链。</li>
+        <li>下一个 Akashic 对齐切片：把 <code>context-length failure</code> 从“直接炸掉的一次错误”变成“reasoner 可控的阶段性重试流程”。</li>
+      </ul>
+      <p class="callout">
+        为什么先做这个：因为 Lesson 10 和 Lesson 11 已经把 loop 与持久化边界铺好，下一步最真实的工程压力点就是“prompt 变长后系统怎么退化而不直接死掉”。
+      </p>
+    </section>
+
+    <section>
+      <h2>与 Mission 的关系</h2>
+      <p>
+        你的目标不是做一个“能跑一下”的 demo，而是亲手复现 Akashic 的复杂架构，最后能把 Amadeus 当成自己讲得清的简历项目。
+        <code>context trim</code> 恰好是这类 agent 系统里的真实复杂度来源之一：它逼你同时处理 provider 边界、prompt 结构、history 策略、失败恢复和可观测性。
+      </p>
+    </section>
+
+    <section>
+      <h2>Part 1：Akashic 源码主链</h2>
+      <p>推荐先读这四个主源：</p>
+      <ul>
+        <li><a href="../../akashic-agent/agent/provider.py"><code>../../akashic-agent/agent/provider.py</code></a>：识别 <code>ContextLengthError</code> 的 provider 边界</li>
+        <li><a href="../../akashic-agent/agent/prompting/budget.py"><code>../../akashic-agent/agent/prompting/budget.py</code></a>：trim plan 定义</li>
+        <li><a href="../../akashic-agent/agent/core/passive_turn.py"><code>../../akashic-agent/agent/core/passive_turn.py</code></a>：reasoner 的 retry 主循环</li>
+        <li><a href="../../akashic-agent/tests/test_safety_retry_service.py"><code>../../akashic-agent/tests/test_safety_retry_service.py</code></a>：行为验证</li>
+      </ul>
+      <pre>provider.chat(...)
+-> 远端返回 context-length 错误
+-> provider 只把它翻译成 ContextLengthError
+
+reasoner.run_turn(...)
+-> build attempt plans
+-> 每个 attempt 重新切 history + disabled_sections
+-> 重新 render prompt
+-> 再调 run()
+-> 成功则记录 selected_plan / trimmed_sections
+-> 如有必要，修剪 session 历史并持久化</pre>
+    </section>
+
+    <section>
+      <h2>第一层：provider 只负责识别，不负责重试决策</h2>
+      <p>
+        Akashic 在 <code>agent/provider.py:38-54</code> 定义了 <code>_CONTEXT_LENGTH_KEYWORDS</code> 和 <code>ContextLengthError</code>。
+        真正的意思很朴素：
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>provider 的职责</h3>
+          <p>把不同厂商报出来的“超长上下文”错误统一翻译成一个稳定异常类型，给上层流程判断。</p>
+        </div>
+        <div class="card">
+          <h3>provider 不该做的事</h3>
+          <p>它不应该自己决定删哪段 history、关哪块 prompt section，也不应该暗自重试，因为这些都属于 agent 编排层。</p>
+        </div>
+      </div>
+      <p class="callout">
+        人话版：provider 只说“炸的是上下文长度”，但“怎么降载、先砍谁、失败后怎么记账”必须交给 reasoner。
+      </p>
+    </section>
+
+    <section>
+      <h2>第二层：trim plan 不是临时补丁，而是预先定义的降载顺序</h2>
+      <p>
+        Akashic 在 <code>agent/prompting/budget.py:12-27</code> 明确写了 <code>DEFAULT_CONTEXT_TRIM_PLANS</code>：
+        <code>full -&gt; trim_skills_catalog -&gt; trim_memes -&gt; trim_long_term_memory -&gt; trim_retrieved_memory</code>。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>设计点</th>
+            <th>Akashic 的意思</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>先删动态大块</td>
+            <td>先砍 <code>skills_catalog</code>、<code>memes</code>、记忆块，而不是一上来先动核心人格/规则。</td>
+          </tr>
+          <tr>
+            <td>核心区不乱动</td>
+            <td>系统最核心的 identity / rules 要尽量保住，否则虽然短了，但 agent 也变味了。</td>
+          </tr>
+          <tr>
+            <td>顺序是产品决策</td>
+            <td>不是谁大就先删谁，而是谁“对当前轮价值更低、对 agent 身份伤害更小”就先删谁。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>第三层：真正的主控权在 <code>DefaultReasoner.run_turn()</code></h2>
+      <p>
+        Akashic 的关键代码在 <code>agent/core/passive_turn.py:750-913</code>。这段逻辑的本质是：
+      </p>
+      <ol>
+        <li>先拿到 <code>source_history</code>，并初始化 <code>retry_trace</code>。</li>
+        <li>调用 <code>_build_attempt_plans(total_history)</code> 生成一串 attempt。</li>
+        <li>每个 attempt 都会带着新的 <code>history_window</code> 和 <code>disabled_sections</code> 再次调用 prompt render。</li>
+        <li>如果 <code>run()</code> 成功，记录 <code>selected_plan</code>、<code>trimmed_sections</code>、<code>llm_user_content</code>、<code>llm_context_frame</code>、<code>react_stats</code>。</li>
+        <li>如果是后续 attempt 才成功，还会把 session 历史收口到成功窗口，再保存 session。</li>
+      </ol>
+      <pre>attempts = self._build_attempt_plans(total_history)
+for plan in attempts:
+    history_for_attempt = self._slice_history(source_history, plan["history_window"])
+    prompt_render = render(..., history=history_for_attempt, disabled_sections=plan["disabled_sections"])
+    try:
+        result = run(prompt_render.messages)
+        if attempt > 0:
+            trim session.messages to successful window
+        return TurnRunResult(..., context_retry=retry_trace)
+    except ContextLengthError:
+        continue with next plan</pre>
+      <p class="callout">
+        重点不是“捕获异常后再来一次”，而是“每次重试前都重新构造 prompt，而不是粗暴改现成 message 列表”。
+      </p>
+    </section>
+
+    <section>
+      <h2>第四层：为什么要先 trim section，再 trim history</h2>
+      <p>
+        Akashic 在 <code>agent/core/passive_turn.py:1709-1738</code> 里构造 attempt plan 时，顺序非常明确：
+      </p>
+      <ul>
+        <li>前几轮先保持完整 history window，只逐步关闭低优先级 section。</li>
+        <li>只有删到最后一层了，才开始按比例缩 history window。</li>
+        <li>比例来自 <code>_SAFETY_RETRY_RATIOS</code>，本质是在“尽量保因果链”与“必须缩短输入”之间做折中。</li>
+      </ul>
+      <p>
+        这说明 Akashic 默认认为：<strong>最近对话因果链通常比某些辅助 prompt 块更值钱</strong>。所以先删外设，再动历史。
+      </p>
+    </section>
+
+    <section>
+      <h2>第五层：重试成功以后，为什么还要修 session</h2>
+      <p>
+        这是最容易被忽略的一点。在 <code>agent/core/passive_turn.py:837-849</code>，如果不是第一次 attempt 才成功，Akashic 会把
+        <code>session.messages</code> 修剪到成功的 window，并立刻保存。
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>不是只为了这一次成功</h3>
+          <p>它是在把“这轮已经证明过太长”的事实写回 session，让下一轮从更现实的基线继续。</p>
+        </div>
+        <div class="card">
+          <h3>这也是可观测性</h3>
+          <p><code>selected_plan</code>、<code>trimmed_sections</code>、<code>react_stats</code> 会进入 <code>context_retry</code>，后续 phase 和观测层都能看到。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>第六层：Akashic 不把它当硬错误，而是阶段性事实</h2>
+      <p>
+        你前面已经抓住这个点了。这里再固定成一句工程话：
+      </p>
+      <p class="callout">
+        <strong>context-length failure 在 Akashic 里首先是一个“需要调整输入预算的运行时事实”，不是一个立即终止整个被动 turn 的架构性失败。</strong>
+      </p>
+      <p>
+        所以它才会进入 <code>context_retry</code>，才会被后续生命周期模块继续消费，而不是简单抛栈结束。
+      </p>
+    </section>
+
+    <section>
+      <h2>Part 2：对照当前 Amadeus，缺口到底在哪</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>能力</th>
+            <th>当前 Amadeus</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>provider 识别超长异常</td>
+            <td><code>amadeus/provider.py:13, 89-107</code> 已有 <code>ContextLengthError</code> 和错误翻译</td>
+            <td>已具备</td>
+          </tr>
+          <tr>
+            <td>trim plan 定义</td>
+            <td><code>amadeus/prompting/budget.py:20-81</code> 已有 <code>DEFAULT_CONTEXT_TRIM_PLANS</code> 与 <code>build_context_trim_attempts()</code></td>
+            <td>已具备</td>
+          </tr>
+          <tr>
+            <td>prompt render 支持禁用 section / history window</td>
+            <td><code>amadeus/context.py:240-264</code> 已会按 <code>history_window</code> 切 history，且 runtime context 已支持 <code>disabled_sections</code></td>
+            <td>已具备</td>
+          </tr>
+          <tr>
+            <td>被动 turn 外层 retry 主控</td>
+            <td><code>amadeus/runtime.py:52-127</code> 只 render 一次并直接调 provider，没有 attempt loop</td>
+            <td>缺口</td>
+          </tr>
+          <tr>
+            <td>成功后回写 retry 结果</td>
+            <td>没有 <code>selected_plan</code> / <code>trimmed_sections</code> / <code>context_retry</code> 这类收口信息</td>
+            <td>缺口</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        这就是 Lesson 12 的实现目标边界：不是发明新 prompt 系统，而是把现有三块拼图
+        <code>provider 异常</code>、<code>prompt budget</code>、<code>context render</code>
+        接入 <code>PassiveRuntime.run_turn()</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>当前阶段验证证据</h2>
+      <ul>
+        <li>Akashic：<code>tests/test_safety_retry_service.py</code> 已经验证“超长后先 trim 动态 section，再重试成功”。</li>
+        <li>Amadeus：<code>tests/test_prompt_budget.py</code> 已经验证 trim attempt 构造；<code>tests/test_provider.py</code> 已覆盖 provider 基础行为，但还没有 runtime 级的 context retry 集成测试。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>这节课最容易误解的点</h2>
+      <ul>
+        <li>误以为应该把自动重试写进 provider。错，provider 只知道错误类型，不知道 prompt 结构和 session 边界。</li>
+        <li>误以为超长了就直接砍 history。错，Akashic 先删低优先级动态区块，尽量保住最近对话因果链。</li>
+        <li>误以为重试只是“把 messages 列表切短一点”。错，正确做法是重新 render，让 <code>disabled_sections</code>、<code>history_window</code>、上下文块一致生效。</li>
+        <li>误以为 retry 成功就结束了。还没完，成功后的 trim 结果要反映回 session 和观测数据。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>你现在必须能复述的 5 个问题</h2>
+      <ol>
+        <li>为什么 <code>ContextLengthError</code> 的识别在 provider，而 trim / retry 的主控在 reasoner？</li>
+        <li>为什么 Akashic 先删 prompt section，再删 history window？</li>
+        <li>为什么每次 retry 前必须重新 render prompt，而不是直接就地改旧 <code>messages</code>？</li>
+        <li>为什么 retry 成功后还要把成功窗口写回 session，并记录 <code>selected_plan</code>？</li>
+        <li>当前 Amadeus 已经具备哪三块拼图，还缺哪一块主链控制？</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>如果你自己重做一遍，第一步先看什么</h2>
+      <p>
+        第一眼先看 <code>amadeus/runtime.py</code> 的 <code>run_turn()</code>，因为 Lesson 12 的实现不是去改 provider，也不是去改 prompt block，而是把已经存在的预算与渲染能力真正接进被动 turn 主链。
+      </p>
+    </section>
+
+    <section>
+      <h2>继续学习</h2>
+      <p>
+        先复述上面 5 个问题；你能讲清后，我们再进入 <strong>Lesson 12 Part 2：Amadeus passive runtime 的 context retry 实现</strong>。
+      </p>
+      <p>
+        如果术语有点乱，先回看 <a href="../reference/0001-passive-loop-glossary.html">Passive Loop Glossary</a>、<a href="./0003-lesson-11-tool-message-boundary-part-1.html">Lesson 11 Part 1</a> 和 <a href="./0004-lesson-11-tool-message-boundary-part-2.html">Lesson 11 Part 2</a>。
+      </p>
+      <p>
+        Mission 参见 <a href="../MISSION.md">MISSION.md</a>。看完后直接继续追问，不要急着跳进写代码。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

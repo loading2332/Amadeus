@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Passive Loop Glossary</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Noto Sans SC", "Segoe UI", sans-serif;
+      background: #f6f3ec;
+      color: #1d1a16;
+      line-height: 1.7;
+    }
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 36px 20px 56px;
+    }
+    h1, h2 { margin-top: 0; }
+    section {
+      background: #fffdf8;
+      border: 1px solid #ddd3c4;
+      border-radius: 16px;
+      padding: 22px 24px;
+      margin-bottom: 18px;
+    }
+    dl { margin: 0; }
+    dt {
+      font-weight: 700;
+      margin-top: 14px;
+      color: #8b3d2e;
+    }
+    dt:first-child { margin-top: 0; }
+    dd { margin: 6px 0 0 0; color: #49443d; }
+    code {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      background: #f0e7d8;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Passive Loop Glossary</h1>
+      <p>这是 Lesson 10 起步阶段的速查表，用来固定术语，避免同一个词在不同课里意思漂移。</p>
+    </section>
+
+    <section>
+      <h2>核心术语</h2>
+      <dl>
+        <dt>Lesson</dt>
+        <dd>工程推进和教学推进的最小阶段单位。工程 Lesson 和 teach lesson 可以一一对应，但编号独立。</dd>
+
+        <dt>Part</dt>
+        <dd>单节课内部的固定结构。当前项目默认是 Part 1 Akashic 源码课，Part 2 Amadeus 复现练手。</dd>
+
+        <dt>Session</dt>
+        <dd>上下文、历史、持久化和检索的归属边界，不等于网页页签，也不等于一次模型请求。</dd>
+
+        <dt>Turn</dt>
+        <dd>一次用户输入到一次 agent 处理再到一次回复的执行单位。一个 session 里会有很多个 turn。</dd>
+
+        <dt>Passive Loop</dt>
+        <dd>被动回复路径上的多步推理循环：模型回复 tool calls，执行工具，再把结果回灌给模型，直到拿到最终回复。</dd>
+
+        <dt>Reasoner</dt>
+        <dd>持有 passive loop 主控权的运行时协调者。它决定何时调模型、何时执行工具、何时结束。</dd>
+
+        <dt>tool_chain</dt>
+        <dd>运行时观测视角下的工具调用链，用于 trace、持久化、eval 和解释系统行为，不直接等同于 LLM 上下文。</dd>
+
+        <dt>source_ref</dt>
+        <dd>用于把 memory / retrieval / search 的结果回指到原始消息或证据来源的引用标识。</dd>
+
+        <dt>eval</dt>
+        <dd>可复跑的行为验证资产，用来判断当前 Akashic 对齐切片是否稳定，防止后续演化时漂移。</dd>
+
+        <dt>gap audit</dt>
+        <dd>阶段结束时对照 Akashic 做的缺口审计：哪些已经复现，哪些还没复现，哪些边界不能偏离。</dd>
+      </dl>
+    </section>
+  </main>
+</body>
+</html>

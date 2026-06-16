@@ -46,6 +46,56 @@ class Session:
                 continue
             if role == "tool":
                 continue
+            if role == "assistant":
+                tool_chain = message.get("tool_chain") or []
+                if isinstance(tool_chain, list):
+                    for group in tool_chain:
+                        if not isinstance(group, dict):
+                            continue
+                        calls = group.get("calls") or []
+                        if not isinstance(calls, list) or not calls:
+                            continue
+                        assistant_tool_message: dict[str, Any] = {
+                            "role": "assistant",
+                            "content": str(group.get("text") or ""),
+                            "tool_calls": [],
+                        }
+                        for call in calls:
+                            if not isinstance(call, dict):
+                                continue
+                            assistant_tool_message["tool_calls"].append(
+                                {
+                                    "id": str(call.get("call_id") or ""),
+                                    "type": "function",
+                                    "function": {
+                                        "name": str(call.get("name") or ""),
+                                        "arguments": json.dumps(
+                                            call.get("arguments") or {},
+                                            ensure_ascii=False,
+                                        ),
+                                    },
+                                }
+                            )
+                        reasoning_content = group.get("reasoning_content")
+                        if isinstance(reasoning_content, str):
+                            assistant_tool_message["reasoning_content"] = reasoning_content
+                        history.append(assistant_tool_message)  # type: ignore[arg-type]
+                        for call in calls:
+                            if not isinstance(call, dict):
+                                continue
+                            history.append(  # type: ignore[arg-type]
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": str(call.get("call_id") or ""),
+                                    "content": _render_history_tool_result(call.get("result")),
+                                }
+                            )
+                final_reasoning_content = message.get("reasoning_content")
+                final_message: dict[str, Any] = {"role": role, "content": content}
+                if isinstance(final_reasoning_content, str):
+                    final_message["reasoning_content"] = final_reasoning_content
+                history.append(final_message)  # type: ignore[arg-type]
+                continue
             history.append({"role": role, "content": content})  # type: ignore[typeddict-item]
         return history
 
@@ -411,6 +461,15 @@ def _row_to_message(row: sqlite3.Row) -> dict[str, Any]:
 def _extra_fields(message: dict[str, Any]) -> dict[str, Any]:
     reserved = {"id", "session_key", "seq", "role", "content", "timestamp"}
     return {key: value for key, value in message.items() if key not in reserved}
+
+
+def _render_history_tool_result(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return str(value)
 
 
 def _resolve_source_refs(values: list[str]) -> list[str]:

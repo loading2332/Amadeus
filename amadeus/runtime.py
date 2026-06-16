@@ -99,7 +99,12 @@ class PassiveRuntime:
         assistant_response = parsed_response.clean_text
 
         user_record = session.add_message("user", user_message, **(extra or {}))
-        assistant_record = session.add_message("assistant", assistant_response)
+        assistant_extra: dict[str, Any] = {}
+        if tool_chain:
+            assistant_extra["tool_chain"] = tool_chain
+        assistant_record = session.add_message(
+            "assistant", assistant_response, **assistant_extra,
+        )
         self.session_manager.save(session)
         await self.event_bus.emit(
             TurnCommitted(
@@ -108,6 +113,7 @@ class PassiveRuntime:
                 persisted_user_message=user_message,
                 assistant_response=assistant_response,
                 timestamp=datetime.now().astimezone(),
+                extra={"tool_chain": tool_chain} if tool_chain else {},
             )
         )
         return PassiveTurnResult(
