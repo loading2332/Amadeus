@@ -409,10 +409,16 @@ def fetch_messages(
     ids: list[str] | None = None,
     source_ref: str | None = None,
     source_refs: list[str] | None = None,
+    evidence: list[dict[str, Any]] | None = None,
     context: int = 0,
 ) -> list[dict[str, Any]]:
     resolved = _resolve_source_refs(
-        [*(ids or []), *([source_ref] if source_ref else []), *(source_refs or [])]
+        [
+            *(ids or []),
+            *([source_ref] if source_ref else []),
+            *(source_refs or []),
+            *_source_refs_from_evidence(evidence or []),
+        ]
     )
     if context <= 0:
         return store.fetch_by_ids(resolved)
@@ -436,12 +442,13 @@ def search_messages(
         offset=offset,
     )
     next_offset = offset + len(rows)
+    messages = [_build_search_preview(row, query) for row in rows]
     return {
         "count": len(rows),
         "matched_count": total,
         "has_more": next_offset < total,
         "next_offset": next_offset if next_offset < total else None,
-        "messages": rows,
+        "messages": messages,
     }
 
 
@@ -492,6 +499,43 @@ def _resolve_source_refs(values: list[str]) -> list[str]:
                 seen.add(text)
                 resolved.append(text)
     return resolved
+
+
+def _source_refs_from_evidence(evidence: list[dict[str, Any]]) -> list[str]:
+    values: list[str] = []
+    for item in evidence:
+        source_ref = str(item.get("source_ref") or "").strip()
+        if source_ref:
+            values.append(source_ref)
+        refs = item.get("refs")
+        if isinstance(refs, list):
+            values.extend(str(ref).strip() for ref in refs if str(ref).strip())
+    return values
+
+
+def _build_search_preview(message: dict[str, Any], query: str) -> dict[str, Any]:
+    content = str(message.get("content") or "")
+    preview, total_line_count, truncated = _preview_lines(content)
+    terms = [term for term in query.split() if term]
+    return {
+        **message,
+        "source_ref": str(message.get("id") or ""),
+        "preview": preview,
+        "preview_line_count": len(preview.splitlines()) if preview else 0,
+        "total_line_count": total_line_count,
+        "truncated": truncated,
+        "matched_terms": [term for term in terms if term.lower() in content.lower()],
+    }
+
+
+def _preview_lines(content: str, *, max_lines: int = 50) -> tuple[str, int, bool]:
+    lines = content.splitlines() or [content]
+    total = len(lines)
+    truncated = total > max_lines
+    preview_lines = lines[:max_lines]
+    if truncated:
+        preview_lines.append(f"... truncated {total - max_lines} lines; call fetch_messages(source_ref) for full text")
+    return "\n".join(preview_lines), total, truncated
 
 
 def is_real_memory_message(message: dict[str, Any]) -> bool:

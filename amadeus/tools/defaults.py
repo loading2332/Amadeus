@@ -35,6 +35,19 @@ def _optional_string_list(name: str, value: object) -> list[str] | None:
     return value
 
 
+def _optional_dict_list(name: str, value: object) -> list[dict[str, Any]] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise TypeError(f"{name} must be a list of objects")
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise TypeError(f"{name} must contain only objects")
+        result.append(item)
+    return result
+
+
 def _int_arg(name: str, value: object, default: int) -> int:
     if value is None:
         return default
@@ -56,6 +69,8 @@ class FetchMessagesTool:
             "properties": {
                 "ids": {"type": "array", "items": {"type": "string"}},
                 "source_ref": {"type": "string"},
+                "source_refs": {"type": "array", "items": {"type": "string"}},
+                "evidence": {"type": "array", "items": {"type": "object"}},
                 "context": {"type": "integer"},
             },
         }
@@ -66,9 +81,19 @@ class FetchMessagesTool:
             self.store,
             ids=_optional_string_list("ids", kwargs.get("ids")),
             source_ref=_optional_string("source_ref", kwargs.get("source_ref")),
+            source_refs=_optional_string_list("source_refs", kwargs.get("source_refs")),
+            evidence=_optional_dict_list("evidence", kwargs.get("evidence")),
             context=_int_arg("context", kwargs.get("context"), 0),
         )
-        return ToolResult(tool_name=self.name, output={"messages": messages})
+        return ToolResult(
+            tool_name=self.name,
+            output={
+                "count": len(messages),
+                "matched_count": sum(1 for item in messages if item.get("in_source_ref") is True)
+                or len(messages),
+                "messages": messages,
+            },
+        )
 
 
 @dataclass
