@@ -58,9 +58,29 @@ class MemoryIngestResult:
     trace: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class MemoryMutation:
+    kind: str
+    ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MemoryMutationResult:
+    accepted: bool = False
+    status: str = "skipped"
+    affected_ids: list[str] = field(default_factory=list)
+    missing_ids: list[str] = field(default_factory=list)
+    items: list[dict[str, Any]] = field(default_factory=list)
+    trace: dict[str, Any] = field(default_factory=dict)
+
+
 class MemoryEngine(Protocol):
     async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult: ...
 
     async def query(self, query: MemoryQuery) -> MemoryQueryResult: ...
+
+    async def mutate(self, request: MemoryMutation) -> MemoryMutationResult: ...
+
+    def forget(self, ids: list[str]) -> MemoryMutationResult: ...
 
     def render_context_block(self, result: MemoryQueryResult) -> str: ...

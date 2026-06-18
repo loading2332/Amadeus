@@ -11,6 +11,7 @@ from amadeus.memory import (
 from amadeus.memory_engine import (
     EvidenceRef,
     MemoryIngestRequest,
+    MemoryMutation,
     MemoryQuery,
     MemoryQueryResult,
     MemoryRecord,
@@ -137,6 +138,57 @@ def test_vector_memory_context_block_renders_source_refs(tmp_path):
 
     assert "## Retrieved Memory" in block
     assert 'source_ref=["chat:1:0"]#h:abc123' in block
+
+
+def test_vector_memory_forget_marks_item_superseded_and_hides_from_query(tmp_path):
+    store = VectorMemoryStore(tmp_path / "vector_memory.db")
+    engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
+    result = asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="[2026-06-06 10:00] 用户确认迁移 Amadeus 检索记忆。",
+                kind="event",
+                source_ref='["chat:1:0"]#h:abc123',
+            )
+        )
+    )
+    assert result.item_id is not None
+
+    mutation = asyncio.run(
+        engine.mutate(MemoryMutation(kind="forget", ids=(result.item_id,)))
+    )
+    found = asyncio.run(engine.query(MemoryQuery(text="Amadeus 检索", limit=3)))
+
+    assert mutation.accepted is True
+    assert mutation.status == "superseded"
+    assert mutation.affected_ids == [result.item_id]
+    assert mutation.missing_ids == []
+    assert store.get_items_by_ids([result.item_id])[0]["status"] == "superseded"
+    assert found.records == []
+
+
+def test_vector_memory_forget_deduplicates_and_reports_missing(tmp_path):
+    store = VectorMemoryStore(tmp_path / "vector_memory.db")
+    engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
+    result = asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="[2026-06-06 10:00] 用户确认迁移 Amadeus 检索记忆。",
+                kind="event",
+                source_ref='["chat:1:0"]#h:abc123',
+            )
+        )
+    )
+    assert result.item_id is not None
+
+    mutation = asyncio.run(
+        engine.mutate(
+            MemoryMutation(kind="forget", ids=(result.item_id, "missing", result.item_id))
+        )
+    )
+
+    assert mutation.affected_ids == [result.item_id]
+    assert mutation.missing_ids == ["missing"]
 
 
 class FakeConsolidationProvider:

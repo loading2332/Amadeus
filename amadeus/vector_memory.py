@@ -17,6 +17,8 @@ from amadeus.memory_engine import (
     EvidenceRef,
     MemoryIngestRequest,
     MemoryIngestResult,
+    MemoryMutation,
+    MemoryMutationResult,
     MemoryQuery,
     MemoryQueryResult,
     MemoryRecord,
@@ -201,6 +203,39 @@ class VectorMemoryStore:
             ).fetchall()
         return [_row_to_item(row) for row in rows]
 
+    def get_items_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        with self._lock:
+            rows = self._conn.execute(
+                f"""
+                SELECT *
+                FROM memory_items
+                WHERE id IN ({placeholders})
+                ORDER BY updated_at DESC
+                """,
+                tuple(ids),
+            ).fetchall()
+        found = {_row_to_item(row)["id"]: _row_to_item(row) for row in rows}
+        return [found[item_id] for item_id in ids if item_id in found]
+
+    def mark_superseded_batch(self, ids: list[str]) -> None:
+        if not ids:
+            return
+        now = datetime.now().astimezone().isoformat()
+        with self._lock:
+            self._conn.executemany(
+                """
+                UPDATE memory_items
+                SET status = 'superseded',
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                [(now, item_id) for item_id in ids],
+            )
+            self._conn.commit()
+
 
 class VectorMemoryEngine:
     def __init__(
@@ -254,6 +289,31 @@ class VectorMemoryEngine:
         )
         trace.update({"candidate_count": len(rows), "record_count": len(records)})
         return MemoryQueryResult(records=records, trace=trace)
+
+    async def mutate(self, request: MemoryMutation) -> MemoryMutationResult:
+        if request.kind != "forget":
+            return MemoryMutationResult(
+                accepted=False,
+                status="unsupported",
+                missing_ids=list(request.ids),
+                trace={"reason": "unsupported_mutation", "kind": request.kind},
+            )
+        return self.forget(list(request.ids))
+
+    def forget(self, ids: list[str]) -> MemoryMutationResult:
+        clean_ids = _dedupe_ids(ids)
+        items = self.store.get_items_by_ids(clean_ids)
+        found_ids = [str(item["id"]) for item in items if str(item.get("id") or "")]
+        missing_ids = [item_id for item_id in clean_ids if item_id not in set(found_ids)]
+        if found_ids:
+            self.store.mark_superseded_batch(found_ids)
+        return MemoryMutationResult(
+            accepted=bool(found_ids),
+            status="superseded" if found_ids else "skipped",
+            affected_ids=found_ids,
+            missing_ids=missing_ids,
+            items=items,
+        )
 
     def render_context_block(self, result: MemoryQueryResult) -> str:
         if not result.records:
@@ -319,6 +379,17 @@ def _rank_rows(
     ]
 
 
+def _dedupe_ids(ids: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in ids:
+        item_id = str(raw).strip()
+        if item_id and item_id not in seen:
+            seen.add(item_id)
+            result.append(item_id)
+    return result
+
+
 def _row_to_item(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": str(row["id"]),
@@ -328,6 +399,7 @@ def _row_to_item(row: sqlite3.Row) -> dict[str, Any]:
         "source_ref": str(row["source_ref"]),
         "happened_at": row["happened_at"],
         "extra": json.loads(row["extra_json"] or "{}"),
+        "status": str(row["status"]),
         "reinforcement": int(row["reinforcement"] or 1),
     }
 

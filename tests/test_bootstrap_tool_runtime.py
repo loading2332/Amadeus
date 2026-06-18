@@ -32,6 +32,7 @@ def test_build_passive_app_exposes_readonly_tool_runtime(tmp_path):
     assert app.tool_registry is not None
     assert sorted(app.tool_registry.names()) == [
         "fetch_messages",
+        "forget_memory",
         "read_file",
         "recall_memory",
         "search_messages",
