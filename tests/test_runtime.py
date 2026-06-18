@@ -54,6 +54,25 @@ class StageDirectionCompletions(FakeCompletions):
         )
 
 
+class ContextLengthThenSuccessCompletions(FakeCompletions):
+    async def create(self, **kwargs: Any) -> SimpleNamespace:
+        self.calls.append(kwargs)
+        if len(self.calls) == 1:
+            raise Exception("maximum context length exceeded")
+        return SimpleNamespace(
+            id="resp_retry",
+            model=kwargs["model"],
+            choices=[SimpleNamespace(message=SimpleNamespace(content="retry ok"))],
+            usage={},
+        )
+
+
+class AlwaysContextLengthCompletions(FakeCompletions):
+    async def create(self, **kwargs: Any) -> SimpleNamespace:
+        self.calls.append(kwargs)
+        raise Exception("maximum context length exceeded")
+
+
 @dataclass
 class FakeChatNamespace:
     completions: ChatCompletionsClient
@@ -457,3 +476,63 @@ def test_tool_messages_are_not_in_session_history(tmp_path):
     assert history[1]["tool_calls"][0]["function"]["name"] == "echo_tool"
     assert history[2]["tool_call_id"] == "call_1"
     assert history[3]["content"] == result.assistant_response
+
+
+def test_passive_runtime_retries_with_next_context_trim_attempt(tmp_path):
+    client = FakeClient(completions=ContextLengthThenSuccessCompletions())
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    manager = SessionManager(tmp_path)
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=provider,
+        session_manager=manager,
+    )
+
+    result = asyncio.run(
+        runtime.run_turn(
+            session_key="retry:1",
+            user_message="hello",
+            runtime_metadata={"trace": "large runtime metadata"},
+        )
+    )
+
+    assert result.assistant_response == "retry ok"
+    assert len(client.completions.calls) == 2
+    first_messages = client.completions.calls[0]["messages"]
+    retry_messages = client.completions.calls[1]["messages"]
+    assert "large runtime metadata" in first_messages[-2]["content"]
+    assert all("large runtime metadata" not in str(message.get("content", "")) for message in retry_messages)
+    assert result.context_retry["selected_plan"] == "trim_runtime_metadata"
+    assert result.context_retry["trimmed_sections"] == ["runtime_metadata"]
+    assert [attempt["name"] for attempt in result.context_retry["attempts"][:2]] == [
+        "full",
+        "trim_runtime_metadata",
+    ]
+
+
+def test_passive_runtime_persists_fallback_when_all_context_trim_attempts_fail(tmp_path):
+    client = FakeClient(completions=AlwaysContextLengthCompletions())
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    manager = SessionManager(tmp_path)
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=provider,
+        session_manager=manager,
+    )
+
+    result = asyncio.run(
+        runtime.run_turn(session_key="retry:all", user_message="too much context")
+    )
+
+    assert "上下文过长" in result.assistant_response
+    assert len(client.completions.calls) == len(result.context_retry["attempts"])
+    assert result.context_retry["selected_plan"] is None
+    session = manager.get_or_create("retry:all")
+    assert [message["role"] for message in session.messages] == ["user", "assistant"]
+    assert session.messages[-1]["content"] == result.assistant_response

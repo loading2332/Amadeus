@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 12 Part 2: Amadeus Context-Length Fallback 复现练手</title>
+  <style>
+    :root {
+      --bg: #f1f4ee;
+      --panel: #fffefa;
+      --ink: #181915;
+      --muted: #555b4d;
+      --accent: #315f46;
+      --line: #cfd7c8;
+      --code: #e9eddf;
+      --dark: #171b16;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+      background: linear-gradient(180deg, #e3ece1 0%, var(--bg) 36%, #fbfaf5 100%);
+      color: var(--ink);
+      line-height: 1.75;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 20px 72px;
+    }
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px 28px;
+      margin-bottom: 20px;
+      box-shadow: 0 14px 42px rgba(31, 42, 29, 0.08);
+    }
+    h1, h2, h3 { line-height: 1.25; margin-top: 0; }
+    h1 { font-size: 2rem; margin-bottom: 10px; }
+    h2 { font-size: 1.3rem; color: var(--accent); }
+    p.lead { font-size: 1.05rem; color: var(--muted); margin-bottom: 0; }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e1eddf;
+      color: var(--accent);
+      font-size: 0.88rem;
+      letter-spacing: 0.04em;
+    }
+    code {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      background: var(--code);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.92em;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: var(--dark);
+      color: #f6f1e9;
+      padding: 16px;
+      border-radius: 12px;
+      overflow: auto;
+      font-size: 0.95rem;
+    }
+    ul, ol {
+      margin: 10px 0 0 1.2rem;
+      padding: 0;
+    }
+    li + li { margin-top: 8px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: #fffdf4;
+    }
+    .callout {
+      border-left: 4px solid var(--accent);
+      padding-left: 14px;
+      color: var(--muted);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #edf5eb; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">对应总计划 Lesson 12 Part 2</span>
+      <h1>Amadeus Context-Length Fallback 复现练手</h1>
+      <p class="lead">
+        这节课把 Part 1 讲过的 Akashic 机制落到 Amadeus：当 provider 抛出 <code>ContextLengthError</code> 时，runtime 不再直接失败，而是按 trim attempt 重新渲染 prompt、重试，并记录本轮用过的 fallback 计划。
+      </p>
+    </header>
+
+    <section>
+      <h2>本课目标</h2>
+      <p>
+        本课只复现 Akashic 的“应急预算控制链”，不把 compact / consolidation 混进来。也就是说，这节课解决的是：
+      </p>
+      <pre>provider.chat(...)
+-> ContextLengthError
+-> build_context_trim_attempts(...)
+-> disabled_sections + history_window
+-> 重新 render prompt
+-> retry
+-> 成功后记录 context_retry
+-> 全失败时返回可持久化 fallback reply</pre>
+      <p class="callout">
+        与 <a href="../MISSION.md">MISSION.md</a> 的关系：这一步让 Amadeus 从“能跑 tool loop”进到“能在真实上下文压力下退化求生”，这是复杂 agent 架构里必须能讲清的能力。
+      </p>
+    </section>
+
+    <section>
+      <h2>Akashic 对应设计</h2>
+      <ul>
+        <li><a href="../../akashic-agent/agent/core/passive_turn.py"><code>../../akashic-agent/agent/core/passive_turn.py</code></a>：<code>DefaultReasoner.run_turn()</code> 持有 retry 主控权。</li>
+        <li><a href="../../akashic-agent/agent/prompting/budget.py"><code>../../akashic-agent/agent/prompting/budget.py</code></a>：<code>DEFAULT_CONTEXT_TRIM_PLANS</code> 定义降载顺序。</li>
+        <li><a href="../../akashic-agent/agent/provider.py"><code>../../akashic-agent/agent/provider.py</code></a>：provider 只把厂商错误归一成 <code>ContextLengthError</code>。</li>
+      </ul>
+      <p>
+        Amadeus 这次迁移的是核心数据流和生命周期边界：provider 仍然只识别错误；runtime 负责尝试不同 prompt 配置；prompt builder 继续只做渲染。
+      </p>
+    </section>
+
+    <section>
+      <h2>Amadeus 当前改动</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>文件</th>
+            <th>改动</th>
+            <th>职责</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>amadeus/runtime.py</code></td>
+            <td>引入 <code>build_context_trim_attempts()</code> 和 <code>ContextLengthError</code></td>
+            <td>把已有预算计划接进被动 turn 主链</td>
+          </tr>
+          <tr>
+            <td><code>amadeus/runtime.py</code></td>
+            <td><code>PassiveTurnResult</code> 新增 <code>context_retry</code></td>
+            <td>把 selected plan、trimmed sections、attempts 暴露给调用方和测试</td>
+          </tr>
+          <tr>
+            <td><code>amadeus/runtime.py</code></td>
+            <td><code>run_turn()</code> 外层加入 attempt loop</td>
+            <td>每次 retry 前重新构造 <code>RuntimeContext</code> 并重新 render prompt</td>
+          </tr>
+          <tr>
+            <td><code>amadeus/runtime.py</code></td>
+            <td>新增 <code>_trim_session_history()</code></td>
+            <td>当后续 attempt 成功时，把 session raw history 收口到成功窗口</td>
+          </tr>
+          <tr>
+            <td><code>tests/test_runtime.py</code></td>
+            <td>新增两个 runtime 级测试</td>
+            <td>验证“超长后重试成功”和“全部失败后持久化 fallback reply”</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>关键代码精读</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>1. 生成 attempt 表</h3>
+          <p>
+            <code>run_turn()</code> 先用当前 model-facing history 的长度调用 <code>build_context_trim_attempts(len(history))</code>。这里得到的是一组配置，不是直接改 messages。
+          </p>
+        </div>
+        <div class="card">
+          <h3>2. 每次重新 render</h3>
+          <p>
+            每个 attempt 都重新创建 <code>RuntimeContext</code>，传入 <code>disabled_sections</code> 和 <code>history_window</code>，再调用 <code>context_builder.render()</code>。
+          </p>
+        </div>
+        <div class="card">
+          <h3>3. 捕获 provider 边界</h3>
+          <p>
+            只有 <code>ContextLengthError</code> 会进入下一轮 attempt。其他异常不吞掉，因为那不是上下文预算问题。
+          </p>
+        </div>
+        <div class="card">
+          <h3>4. 成功后收口</h3>
+          <p>
+            成功后写入 <code>selected_plan</code> 和 <code>trimmed_sections</code>；如果不是第一个 attempt 成功，还会按成功窗口裁短 session history。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>测试验证</h2>
+      <p>本课新增的两个测试：</p>
+      <ul>
+        <li><code>test_passive_runtime_retries_with_next_context_trim_attempt</code>：第一次调用抛 <code>ContextLengthError</code>，第二次按 <code>trim_runtime_metadata</code> 重新 render 后成功。</li>
+        <li><code>test_passive_runtime_persists_fallback_when_all_context_trim_attempts_fail</code>：所有 attempt 都超长时，runtime 持久化“上下文过长”回复，并保留 attempt trace。</li>
+      </ul>
+      <p>已运行的验证命令：</p>
+      <pre>uv run --extra dev pytest -q tests/test_runtime.py -k "context_trim_attempts or context_trim"
+uv run --extra dev pytest -q tests/test_runtime.py tests/test_session_tool_chain_history.py tests/test_context_builders.py tests/test_prompt_budget.py</pre>
+      <p>验证结果：新增测试 2 个通过；关联测试 27 个通过。</p>
+    </section>
+
+    <section>
+      <h2>当前还没复现的 Akashic 部分</h2>
+      <ul>
+        <li>Amadeus 还没有 Akashic 那套完整 observe 写入，把预算指标沉淀到独立 trace DB。</li>
+        <li>Amadeus 还没有完整 tool_search / preloaded tools 体系，所以 <code>skills_catalog</code> 类型的大块降载还只是 prompt block 级别。</li>
+        <li><code>runtime_metadata</code> 是 Amadeus 当前的简化入口；Akashic 没有同名通用 prompt block，而是把 metadata 分流到 <code>session_context</code>、<code>turn_injection_prompt</code>、<code>extra_hints</code>、session metadata、event/outbound metadata 等链路。后续要拆成 LLM-visible 与 system-visible 两条链。</li>
+        <li>当前 session trim 按成功窗口裁 raw messages，和 Akashic 一样是应急收口，不是 compact。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>常见误区</h2>
+      <ul>
+        <li>误以为 retry 是直接修改旧 <code>messages</code>。本课实现的是重新 render prompt。</li>
+        <li>误以为 trim 是 compact。这里仍然是应急 fallback，不做无损压缩。</li>
+        <li>误以为 provider 应该自己重试。provider 只识别错误，runtime 才知道 prompt 结构。</li>
+        <li>误以为全失败应该抛异常。本课沿 Akashic 思路返回可持久化的 fallback reply，让 turn 生命周期闭合。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>简历可讲述版本</h2>
+      <p>
+        我在 Amadeus 的被动 agent runtime 中复现了 Akashic 的 context-length fallback 机制：provider 只负责归一化上下文超长错误，runtime 根据 trim plan 逐级关闭低优先级 prompt block、缩小 history window 并重新渲染请求；成功后记录 retry trace，失败时返回可持久化的阶段性回复。这个设计把一次模型调用失败转成了可观测、可测试、可恢复的预算控制流程。
+      </p>
+    </section>
+
+    <section>
+      <h2>你必须复述的问题</h2>
+      <ol>
+        <li>为什么本课改的是 <code>PassiveRuntime.run_turn()</code>，而不是 <code>LLMProvider.chat()</code>？</li>
+        <li>为什么 retry 前要重新构造 <code>RuntimeContext</code> 并重新 render prompt？</li>
+        <li><code>context_retry</code> 里 <code>attempts</code>、<code>selected_plan</code>、<code>trimmed_sections</code> 分别解决什么问题？</li>
+        <li>为什么所有 attempt 都失败时，仍然要持久化一个 assistant fallback reply？</li>
+        <li>这次实现和 Akashic 相比，还缺哪些长期预算观测和 prompt 架构优化能力？</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>如果你自己重做一遍，第一步看什么</h2>
+      <p>
+        第一眼看 <code>amadeus/runtime.py</code> 的 <code>run_turn()</code>。确认它的主链是 session history、context render、provider call、tool loop、persist turn；然后把 retry 包在 provider call 和 tool loop 外层，而不是塞进 provider 或 prompt block。
+      </p>
+      <p>
+        继续前可以回看 <a href="./0005-lesson-12-context-trim-and-context-overflow-part-1.html">Lesson 12 Part 1</a>。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

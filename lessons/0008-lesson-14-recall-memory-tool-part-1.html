@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 14 Part 1: Akashic recall_memory Tool 源码课</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "base", themeVariables: {
+      primaryColor: "#f7f0df",
+      primaryBorderColor: "#45624d",
+      primaryTextColor: "#17201a",
+      lineColor: "#45624d",
+      secondaryColor: "#dce9df",
+      tertiaryColor: "#f2dfbd",
+      fontFamily: "Georgia, serif"
+    }});
+  </script>
+  <style>
+    :root {
+      --bg: #f2efe5;
+      --ink: #17201a;
+      --muted: #5d655f;
+      --paper: #fffdf6;
+      --paper-2: #f8f0de;
+      --line: #d8cfbd;
+      --green: #45624d;
+      --green-soft: #dce9df;
+      --amber: #a06520;
+      --amber-soft: #f2dfbd;
+      --blue: #315f73;
+      --blue-soft: #dcebf0;
+      --red: #9b463d;
+      --code: #1e241f;
+      --shadow: 0 20px 60px rgba(45, 50, 41, 0.13);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "LXGW WenKai Screen", "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+      line-height: 1.72;
+      background:
+        linear-gradient(90deg, rgba(23,32,26,0.035) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(23,32,26,0.035) 1px, transparent 1px),
+        radial-gradient(circle at 20% 10%, rgba(69,98,77,0.20), transparent 28rem),
+        radial-gradient(circle at 90% 18%, rgba(160,101,32,0.15), transparent 24rem),
+        var(--bg);
+      background-size: 34px 34px, 34px 34px, auto, auto, auto;
+    }
+
+    a { color: var(--green); text-underline-offset: 0.18em; }
+    code {
+      font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 0.92em;
+      padding: 0.08rem 0.34rem;
+      border: 1px solid rgba(23,32,26,0.09);
+      border-radius: 0.42rem;
+      background: rgba(23,32,26,0.07);
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    pre {
+      margin: 0.8rem 0 0;
+      padding: 1rem;
+      overflow: auto;
+      white-space: pre-wrap;
+      color: #f7f3e8;
+      background: var(--code);
+      border-radius: 1rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+      gap: 1.25rem;
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 1.25rem;
+    }
+
+    aside {
+      position: sticky;
+      top: 1.25rem;
+      align-self: start;
+      display: grid;
+      gap: 1rem;
+    }
+
+    .panel, .hero, .side-card, .mini, details {
+      background: rgba(255,253,246,0.92);
+      border: 1px solid rgba(216,207,189,0.92);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .side-card, .panel, details { border-radius: 1.35rem; }
+    .side-card { padding: 1.15rem; }
+    .hero {
+      overflow: hidden;
+      position: relative;
+      border-radius: 1.8rem;
+      padding: clamp(1.35rem, 3vw, 2.6rem);
+    }
+    .hero::after {
+      content: "recall";
+      position: absolute;
+      right: -1rem;
+      bottom: -2.4rem;
+      color: rgba(69,98,77,0.08);
+      font-size: clamp(5rem, 15vw, 13rem);
+      font-weight: 900;
+      letter-spacing: -0.1em;
+      pointer-events: none;
+    }
+
+    .badge {
+      display: inline-flex;
+      width: fit-content;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .green { color: var(--green); background: var(--green-soft); }
+    .amber { color: var(--amber); background: var(--amber-soft); }
+    .blue { color: var(--blue); background: var(--blue-soft); }
+    .red { color: var(--red); background: #f0d6d0; }
+
+    .hero h1 {
+      max-width: 900px;
+      margin: 0.65rem 0 0.8rem;
+      font-size: clamp(2.1rem, 5vw, 4.8rem);
+      line-height: 0.98;
+      letter-spacing: -0.055em;
+    }
+    .hero p, .panel p, .mini p, .side-card p { color: var(--muted); }
+    .hero p { max-width: 780px; margin: 0; font-size: 1.08rem; }
+
+    main { display: grid; gap: 1.25rem; min-width: 0; }
+    .panel { padding: clamp(1.1rem, 2vw, 1.7rem); }
+    .panel h2 {
+      margin: 0 0 0.8rem;
+      font-size: clamp(1.35rem, 2.6vw, 2.1rem);
+      line-height: 1.15;
+      letter-spacing: -0.035em;
+    }
+    .panel h3, .side-card h2 { margin: 0 0 0.5rem; line-height: 1.25; }
+    .panel p, .mini p, .side-card p { margin: 0.5rem 0 0; }
+    ul, ol { margin: 0.65rem 0 0 1.1rem; padding: 0; }
+    li + li { margin-top: 0.42rem; }
+
+    nav {
+      display: grid;
+      gap: 0.45rem;
+      margin-top: 0.9rem;
+    }
+    nav a {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.7rem;
+      padding: 0.55rem 0.7rem;
+      border-radius: 0.85rem;
+      color: var(--ink);
+      text-decoration: none;
+      background: rgba(255,255,255,0.52);
+      border: 1px solid transparent;
+    }
+    nav a:hover { background: var(--paper); border-color: var(--line); }
+    nav small { color: #8b8476; font-family: "JetBrains Mono", Consolas, monospace; }
+
+    .grid-2, .grid-3, .split {
+      display: grid;
+      gap: 1rem;
+    }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .split { grid-template-columns: 1.1fr 0.9fr; align-items: start; }
+    .mini {
+      border-radius: 1rem;
+      padding: 1rem;
+    }
+    .mini strong { display: block; margin-bottom: 0.35rem; }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .step {
+      min-height: 8.6rem;
+      padding: 1rem;
+      border-radius: 1rem;
+      background: linear-gradient(180deg, #fffdf6, #f8f0de);
+      border: 1px solid var(--line);
+      min-width: 0;
+    }
+    .step span {
+      display: block;
+      margin-bottom: 0.8rem;
+      color: #8b8476;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.78rem;
+    }
+    .step strong { display: block; line-height: 1.25; }
+    .step p { font-size: 0.92rem; overflow-wrap: anywhere; }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      margin: 0 0 1rem;
+    }
+    .tabs button {
+      cursor: pointer;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.5rem 0.78rem;
+      color: var(--ink);
+      background: var(--paper-2);
+      font: inherit;
+    }
+    .tabs button[aria-selected="true"] {
+      color: #fffdf6;
+      background: var(--green);
+      border-color: var(--green);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    details {
+      padding: 1rem;
+      box-shadow: none;
+    }
+    details + details { margin-top: 0.7rem; }
+    summary {
+      cursor: pointer;
+      font-weight: 800;
+      color: var(--ink);
+    }
+
+    .diagram {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 1.1rem;
+      background: #fffdf6;
+      border: 1px solid var(--line);
+      overflow: auto;
+    }
+    .diagram-toolbar {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      padding: 0.65rem;
+      border: 1px solid var(--line);
+      border-radius: 0.9rem;
+      background: rgba(255, 253, 246, 0.9);
+      width: fit-content;
+    }
+    .diagram-toolbar button,
+    .debugger-step {
+      cursor: pointer;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.45rem 0.72rem;
+      color: var(--ink);
+      background: var(--paper-2);
+      font: inherit;
+    }
+    .diagram-toolbar button:hover,
+    .debugger-step:hover {
+      border-color: var(--green);
+      background: var(--green-soft);
+    }
+    .zoom-label {
+      min-width: 4rem;
+      color: var(--muted);
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.86rem;
+      text-align: center;
+    }
+    .diagram pre.mermaid {
+      display: flex;
+      justify-content: center;
+      min-width: 860px;
+      margin: 0;
+      padding: 1rem;
+      color: var(--ink);
+      background: #fffdf6;
+      border: 0;
+      box-shadow: none;
+      white-space: pre;
+    }
+    .diagram svg {
+      max-width: none;
+      min-width: 820px;
+      height: auto;
+      transform-origin: top left;
+      transition: transform 180ms ease;
+    }
+
+    .debugger-lab {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 1.2rem;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(49, 95, 115, 0.12), transparent 18rem),
+        linear-gradient(135deg, #fffdf6, #f7f0df);
+      border: 1px solid var(--line);
+    }
+    .debugger-launch {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 1rem;
+      align-items: center;
+      margin-top: 1rem;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: rgba(255, 253, 246, 0.84);
+    }
+    .debugger-launch p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+    }
+    .debugger-open,
+    .debugger-close {
+      min-height: 2.8rem;
+      cursor: pointer;
+      border: 1px solid var(--green);
+      border-radius: 999px;
+      color: #f7f2e7;
+      background: var(--green);
+      font: inherit;
+      font-weight: 800;
+      padding: 0.72rem 1rem;
+      box-shadow: 0 10px 24px rgba(69, 98, 77, 0.18);
+    }
+    .debugger-close {
+      color: var(--green);
+      background: #fffdf6;
+      box-shadow: none;
+    }
+    .debugger-dialog {
+      width: min(1400px, calc(100vw - 1.5rem));
+      height: min(920px, calc(100dvh - 1.5rem));
+      max-width: none;
+      max-height: none;
+      padding: 0;
+      border: 1px solid rgba(95, 81, 58, 0.28);
+      border-radius: 1.2rem;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 0% 0%, rgba(49, 95, 115, 0.18), transparent 22rem),
+        linear-gradient(135deg, #fffdf6, #f2ead7);
+      box-shadow: 0 28px 80px rgba(31, 38, 33, 0.28);
+    }
+    .debugger-dialog::backdrop {
+      background: rgba(22, 25, 21, 0.62);
+      backdrop-filter: blur(3px);
+    }
+    .debugger-dialog-shell {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      height: 100%;
+      min-height: 0;
+    }
+    .debugger-dialog-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 1rem;
+      padding: 1rem;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 253, 246, 0.92);
+    }
+    .debugger-dialog-header h3 {
+      margin: 0.25rem 0 0;
+    }
+    .debugger-dialog-header p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+    }
+    .debugger-dialog-header .debugger-control {
+      grid-column: 1 / -1;
+      margin: 0;
+    }
+    .debugger-dialog-body {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.28fr) minmax(0, 1fr);
+      gap: 1rem;
+      min-height: 0;
+      padding: 1rem;
+      overflow: hidden;
+    }
+    .debugger-control {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.85rem;
+      align-items: center;
+      margin: 1rem 0;
+      padding: 0.85rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: rgba(255, 253, 246, 0.84);
+    }
+    .debugger-range {
+      width: 100%;
+      accent-color: var(--green);
+    }
+    .debugger-status {
+      min-width: 14rem;
+      color: var(--muted);
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.86rem;
+      text-align: right;
+    }
+    .debugger-timeline {
+      display: grid;
+      gap: 0.55rem;
+      align-content: start;
+      overflow: auto;
+      padding-right: 0.15rem;
+    }
+    .debugger-step {
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.65rem;
+      align-items: start;
+      padding: 0.72rem;
+      border: 1px solid var(--line);
+      border-radius: 0.95rem;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.62);
+      text-align: left;
+      font: inherit;
+    }
+    .debugger-step.done {
+      color: var(--ink);
+      background: rgba(220, 233, 223, 0.5);
+    }
+    .debugger-step.active {
+      color: var(--ink);
+      border-color: var(--green);
+      background: var(--green-soft);
+      box-shadow: 0 10px 28px rgba(69, 98, 77, 0.12);
+    }
+    .debugger-step-index {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.78rem;
+      color: #8b8476;
+    }
+    .debugger-main {
+      display: grid;
+      gap: 1rem;
+      align-content: start;
+      overflow: auto;
+      min-width: 0;
+      padding-right: 0.15rem;
+    }
+    .debugger-card,
+    .debugger-json {
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: rgba(255, 253, 246, 0.82);
+    }
+    .debugger-card h3,
+    .debugger-json h3 {
+      margin: 0 0 0.5rem;
+      line-height: 1.2;
+    }
+    .debugger-card p {
+      margin: 0.45rem 0 0;
+      color: var(--muted);
+    }
+    .json-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+    .debugger-json pre {
+      margin-top: 0.7rem;
+      overflow-x: auto;
+      white-space: pre;
+      font-size: 0.88rem;
+      line-height: 1.55;
+      max-width: 100%;
+    }
+    .source-ref {
+      display: inline-block;
+      margin-top: 0.55rem;
+      padding: 0.3rem 0.55rem;
+      border-radius: 999px;
+      color: var(--blue);
+      background: var(--blue-soft);
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.82rem;
+    }
+
+    .matrix {
+      display: grid;
+      gap: 0.55rem;
+      margin-top: 1rem;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1.25fr 1.25fr 0.85fr;
+      gap: 0.5rem;
+    }
+    .row > div {
+      padding: 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: 0.78rem;
+      background: rgba(255,255,255,0.62);
+    }
+    .head > div {
+      font-weight: 800;
+      color: var(--muted);
+      background: var(--paper-2);
+    }
+
+    .callout {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-left: 0.35rem solid var(--green);
+      border-radius: 0.9rem;
+      color: #34453a;
+      background: rgba(220,233,223,0.72);
+    }
+    .source-list a { display: inline-block; margin-right: 0.6rem; }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { position: static; }
+      .grid-2, .grid-3, .split, .timeline, .row, .json-grid, .debugger-control, .debugger-launch, .debugger-dialog-header, .debugger-dialog-body { grid-template-columns: 1fr; }
+      .debugger-dialog { width: 100vw; height: 100dvh; border-radius: 0; }
+      .debugger-status { text-align: left; }
+      .head { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <section class="side-card">
+        <span class="badge blue">对应总计划 Lesson 14 Part 1</span>
+        <h2>Akashic recall_memory 源码课</h2>
+        <p>这节只做源码理解，不改 Amadeus。你要先分清 pre-retrieval 和 tool retrieval。</p>
+        <nav>
+          <a href="#goal"><span>本课目标</span><small>01</small></a>
+          <a href="#source"><span>源码主链</span><small>02</small></a>
+          <a href="#protocol"><span>工具协议</span><small>03</small></a>
+          <a href="#compare"><span>双轨对照</span><small>04</small></a>
+          <a href="#code"><span>源码精读</span><small>05</small></a>
+          <a href="#recall"><span>复述问题</span><small>06</small></a>
+        </nav>
+      </section>
+      <section class="side-card">
+        <span class="badge amber">本课卡点</span>
+        <p><code>memory_engine.query()</code> 已经能预注入 context，为什么还要做 <code>recall_memory</code> tool？答案是：控制权从应用前置检索，转到模型按需检索。</p>
+      </section>
+    </aside>
+
+    <main>
+      <header class="hero" id="goal">
+        <span class="badge green">Memory Tools / Retrieval Deepening</span>
+        <h1>从“自动塞记忆”到“模型主动召回”</h1>
+        <p>
+          Lesson 14 的任务不是再做一个检索函数，而是复现 Akashic 的边界：retrieval 既可以作为 runtime 的 context 预注入，
+          也可以作为 LLM 可调用的 <code>recall_memory</code> 工具进入 tool loop。后者会产生 tool_call、tool_result、tool_chain 和可审计 evidence。
+        </p>
+      </header>
+
+      <section class="panel">
+        <h2>与 MISSION.md 的关系</h2>
+        <div class="grid-2">
+          <div class="mini">
+            <strong>为什么这节重要</strong>
+            <p>复杂 agent 不只是“有记忆”，还要能决定什么时候查记忆、查什么、查到后如何引用证据。这个能力会直接进入简历项目叙事。</p>
+          </div>
+          <div class="mini">
+            <strong>本课只完成什么</strong>
+            <p>只读 Akashic，讲清 <code>RecallMemoryTool</code> 的输入、查询构造、输出 JSON、evidence 和测试边界。Amadeus 实现留到 Part 2。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="source">
+        <h2>Akashic 源码主链</h2>
+        <div class="timeline">
+          <div class="step"><span>01</span><strong>Tool 注册</strong><p><code>agent/tools/meta/register.py</code> 把 <code>RecallMemoryTool</code> 接进工具集合。</p></div>
+          <div class="step"><span>02</span><strong>描述注入</strong><p>工具 description/parameters 来自 memory engine 的 <code>tool_profile().recall</code>。</p></div>
+          <div class="step"><span>03</span><strong>模型调用</strong><p>LLM 看到 schema 后，决定是否发起 <code>recall_memory(query=...)</code>。</p></div>
+          <div class="step"><span>04</span><strong>执行查询</strong><p><code>execute()</code> 把参数转成 <code>MemoryQuery</code>，调用 memory facade。</p></div>
+          <div class="step"><span>05</span><strong>返回证据</strong><p>工具结果是 JSON：items、trace、evidence、citation rule。</p></div>
+        </div>
+        <div class="diagram">
+          <div class="diagram-toolbar" aria-label="Mermaid zoom controls">
+            <button type="button" data-zoom="out">缩小</button>
+            <span class="zoom-label" id="zoom-label">100%</span>
+            <button type="button" data-zoom="in">放大</button>
+            <button type="button" data-zoom="reset">重置</button>
+          </div>
+          <pre class="mermaid">
+sequenceDiagram
+  participant LLM as LLM
+  participant Runtime as Reasoner/Runtime
+  participant Tool as RecallMemoryTool
+  participant Memory as MemoryRetrievalApi
+  participant Store as Memory Store
+
+  LLM->>Runtime: tool_calls: recall_memory(query, intent, filters)
+  Runtime->>Tool: execute(...)
+  Tool->>Memory: query(MemoryQuery)
+  Memory->>Store: vector/keyword/timeline retrieval
+  Store-->>Memory: MemoryRecord[]
+  Memory-->>Tool: MemoryQueryResult(records, trace)
+  Tool-->>Runtime: JSON {items, evidence, citation_required}
+  Runtime-->>LLM: tool(result)
+  LLM-->>Runtime: final answer with citations
+          </pre>
+        </div>
+        <div class="debugger-lab" id="debugger-lab">
+          <span class="badge blue">交互：Mock Run Debugger</span>
+          <h3>拖动进度条，像调试器一样看 recall_memory 怎么跑</h3>
+          <p>正文只保留入口。完整调试器进入全屏二级弹窗，避免大块 JSON 把课程主线挤乱。</p>
+          <div class="debugger-launch">
+            <div>
+              <span class="badge green">当前 mock run</span>
+              <p id="debugger-launch-summary">1 / 9 · LLM emits assistant(tool_calls)</p>
+            </div>
+            <button class="debugger-open" id="debugger-open" type="button">打开 Mock Run 调试器</button>
+          </div>
+          <dialog class="debugger-dialog" id="debugger-dialog" aria-label="recall_memory mock run debugger">
+            <div class="debugger-dialog-shell">
+              <div class="debugger-dialog-header">
+                <div>
+                  <span class="badge blue">二级全屏弹窗</span>
+                  <h3>recall_memory Mock Run 调试器</h3>
+                  <p>这不是流程目录。每一步都模拟一次真实运行事件：当前函数、输入、输出、以及本步对 <code>messages</code> / <code>tool_chain</code> / <code>MemoryQuery</code> 的状态改动。</p>
+                </div>
+                <button class="debugger-close" id="debugger-close" type="button">关闭</button>
+                <div class="debugger-control">
+                  <input class="debugger-range" id="debugger-range" type="range" min="0" max="8" value="0" step="1" aria-label="Mock run progress">
+                  <span class="debugger-status" id="debugger-status">1 / 9 · LLM emits assistant(tool_calls)</span>
+                </div>
+              </div>
+              <div class="debugger-dialog-body">
+                <div class="debugger-timeline" id="debugger-timeline" aria-label="mock run timeline"></div>
+                <div class="debugger-main">
+                  <div class="debugger-card">
+                    <span class="badge green">Now Running</span>
+                    <h3 id="debugger-running">LLM emits assistant(tool_calls)</h3>
+                    <p id="debugger-explanation">模型决定主动查记忆，生成工具调用。</p>
+                    <span class="source-ref" id="debugger-source">LLM response</span>
+                  </div>
+                  <div class="json-grid">
+                    <div class="debugger-json">
+                      <h3>Input</h3>
+                      <pre id="debugger-input"></pre>
+                    </div>
+                    <div class="debugger-json">
+                      <h3>Output</h3>
+                      <pre id="debugger-output"></pre>
+                    </div>
+                    <div class="debugger-json">
+                      <h3>State Delta</h3>
+                      <pre id="debugger-delta"></pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </dialog>
+        </div>
+      </section>
+
+      <section class="panel" id="protocol">
+        <h2>外部协议参考：为什么它是 tool，而不是普通函数</h2>
+        <p>
+          OpenAI 的 function calling 文档把通用模式讲得很清楚：模型根据工具 schema 生成函数调用参数，应用代码执行函数，再把结果回传给模型继续生成答案。
+          这份资料只帮助理解“工具调用协议”，不替代 Akashic 源码。
+        </p>
+        <div class="source-list">
+          <a href="https://developers.openai.com/api/docs/guides/function-calling">OpenAI Function Calling Guide</a>
+          <a href="../RESOURCES.md">RESOURCES.md</a>
+        </div>
+        <div class="callout">
+          人话版：<code>recall_memory</code> 必须是 tool，因为“要不要查、用什么 query 查、查几条、按什么意图查”应该由模型在推理过程中决定，而不是每轮 runtime 都提前替它查完。
+        </div>
+      </section>
+
+      <section class="panel" id="compare">
+        <h2>两条 retrieval 链路不要混</h2>
+        <div class="tabs" role="tablist" aria-label="retrieval modes">
+          <button role="tab" aria-selected="true" data-tab="pre">Pre-retrieval</button>
+          <button role="tab" aria-selected="false" data-tab="tool">Tool retrieval</button>
+          <button role="tab" aria-selected="false" data-tab="why">为什么两条都要</button>
+        </div>
+        <div id="tab-pre" class="tab-panel active">
+          <pre>runtime.run_turn(...)
+  -> memory_engine.query(MemoryQuery(text=user_message))
+  -> render_context_block(...)
+  -> retrieved_memory prompt block
+  -> provider.chat(messages)</pre>
+          <p>这是 Amadeus 当前已有的能力：应用在模型调用前自动查一点记忆，作为 context block 塞给 LLM。</p>
+        </div>
+        <div id="tab-tool" class="tab-panel">
+          <pre>LLM sees tool schema
+  -> LLM emits tool_call: recall_memory(...)
+  -> runtime executes tool
+  -> tool result appended to messages
+  -> LLM uses result to answer
+  -> tool_chain persists execution facts</pre>
+          <p>这是 Lesson 14 要复现的能力：模型在推理中主动查记忆，结果进入 tool loop 和 tool_chain。</p>
+        </div>
+        <div id="tab-why" class="tab-panel">
+          <p>两条链解决的问题不同。Pre-retrieval 是“默认给模型一点可能相关的背景”；tool retrieval 是“模型发现缺事实时主动查，并留下可审计调用链”。后者更适合回答历史事实、偏好、做过什么、证据引用。</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Akashic vs Amadeus 当前状态</h2>
+        <div class="matrix">
+          <div class="row head">
+            <div>能力</div>
+            <div>Akashic</div>
+            <div>Amadeus 当前</div>
+            <div>Lesson 14 目标</div>
+          </div>
+          <div class="row">
+            <div>Memory query API</div>
+            <div><code>MemoryRetrievalApi.query(MemoryQuery)</code></div>
+            <div><code>MemoryEngine.query(MemoryQuery)</code> 已有</div>
+            <div><span class="badge green">复用</span></div>
+          </div>
+          <div class="row">
+            <div>Context pre-injection</div>
+            <div>retrieval pipeline 产出 prompt block</div>
+            <div>runtime 已可 <code>render_context_block()</code></div>
+            <div><span class="badge green">保留</span></div>
+          </div>
+          <div class="row">
+            <div>Recall tool</div>
+            <div><code>RecallMemoryTool</code> 正式工具</div>
+            <div>还没有 tool 形态</div>
+            <div><span class="badge amber">Part 2 实现</span></div>
+          </div>
+          <div class="row">
+            <div>Evidence/citation</div>
+            <div>返回 evidence、source_ref、citation rule</div>
+            <div>record/evidence 数据结构已有，引用规则未接入 tool</div>
+            <div><span class="badge amber">分步复现</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="code">
+        <h2>源码精读：先抓 4 个点</h2>
+        <details open>
+          <summary>1. description / parameters 不写死在工具类里</summary>
+          <p><code>RecallMemoryTool.__init__()</code> 接收 <code>MemoryToolSpec</code>，把 <code>description</code> 和 <code>parameters</code> 从 memory engine profile 注入。这说明 Akashic 不把工具描述当静态常量，而是让 memory engine 决定工具能力怎么暴露。</p>
+        </details>
+        <details>
+          <summary>2. execute() 的核心职责是把 tool args 转成 MemoryQuery</summary>
+          <p><code>query</code>、<code>intent</code>、<code>memory_kind</code>、<code>time_filter</code>、<code>limit</code>、<code>channel/chat_id</code> 都会被规整进 <code>MemoryQuery</code>、<code>MemoryScope</code> 和 <code>MemoryQueryFilters</code>。工具层不直接碰底层 store。</p>
+        </details>
+        <details>
+          <summary>3. 输出不是一段自然语言，而是结构化 JSON</summary>
+          <p><code>_render_records()</code> 返回 <code>count</code>、<code>items</code>、<code>trace</code>、<code>citation_required</code>、<code>cited_item_ids</code>。这让 LLM 能继续推理，也让系统能审计。</p>
+        </details>
+        <details>
+          <summary>4. evidence 是后续 fetch_messages 的桥</summary>
+          <p><code>_render_evidence()</code> 会保留 <code>kind</code>、<code>refs</code>、<code>resolver</code>、<code>source_ref</code>、<code>metadata</code>。Lesson 15 会继续讲为什么 recall 结果不是最终证据，必要时还要回源。</p>
+        </details>
+      </section>
+
+      <section class="panel">
+        <h2>Akashic 测试告诉我们什么</h2>
+        <div class="grid-3">
+          <div class="mini">
+            <strong>空 query / 空结果</strong>
+            <p>空输入不应炸掉；返回 count=0 的结构化结果。</p>
+          </div>
+          <div class="mini">
+            <strong>intent / time_filter</strong>
+            <p>不同意图会影响检索路径；时间过滤要能解析 today、recent_Nd、日期范围。</p>
+          </div>
+          <div class="mini">
+            <strong>fallback</strong>
+            <p>embedding 失败或超时不能让工具整体不可用；可以退到 keyword 路径。</p>
+          </div>
+          <div class="mini">
+            <strong>evidence 保留</strong>
+            <p>返回项要带 source_ref/evidence，方便后续 fetch_messages 回源。</p>
+          </div>
+          <div class="mini">
+            <strong>citation rule</strong>
+            <p>使用记忆时必须留下引用标记，避免“像事实但没证据”。</p>
+          </div>
+          <div class="mini">
+            <strong>profile backed</strong>
+            <p>工具描述来自 profile，不应在 tool class 中硬编码成永久规则。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>常见误区</h2>
+        <ul>
+          <li>误区：已有 <code>memory_engine.query()</code>，所以不需要 recall tool。纠正：一个是 runtime 预注入，一个是模型主动调用。</li>
+          <li>误区：recall tool 直接返回自然语言就行。纠正：Akashic 返回结构化 JSON，保留 trace、evidence 和 citation rule。</li>
+          <li>误区：tool 层可以直接查数据库。纠正：tool 应该依赖 memory API/facade，不应该越过 retrieval 抽象。</li>
+          <li>误区：source_ref 就是最终答案证据。纠正：source_ref 是回源桥，Lesson 15 会接 <code>fetch_messages</code>。</li>
+        </ul>
+      </section>
+
+      <section class="panel" id="recall">
+        <h2>你必须复述的问题</h2>
+        <ol>
+          <li>为什么 <code>recall_memory</code> 是 tool，而不是继续放在 context builder 里自动执行？</li>
+          <li>Akashic 的 <code>RecallMemoryTool.execute()</code> 输入哪些参数，最后构造成什么查询对象？</li>
+          <li>为什么工具结果要返回 JSON，而不是直接返回一段总结文本？</li>
+          <li><code>evidence</code> / <code>source_ref</code> 在 Lesson 14 里解决什么问题，又为什么 Lesson 15 还要继续做回源？</li>
+          <li>Amadeus Part 2 实现时，应该复用 <code>MemoryEngine.query()</code> 还是绕过它直接查 vector store？为什么？</li>
+        </ol>
+        <div class="callout">
+          如果你自己重做一遍，第一步看 <code>../akashic-agent/agent/tools/recall_memory.py</code> 的 <code>execute()</code>，第二步看 <code>tests/test_recall_memory_tool.py</code> 的行为测试，第三步回到 <code>amadeus/memory_engine.py</code> 判断已有 API 能不能承接。
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let mermaidZoom = 1;
+    const zoomLabel = document.getElementById("zoom-label");
+    const diagram = document.querySelector(".diagram");
+    const applyMermaidZoom = () => {
+      const svg = diagram?.querySelector("svg");
+      if (!svg) return;
+      svg.style.transform = `scale(${mermaidZoom})`;
+      svg.style.marginBottom = `${Math.max(0, (mermaidZoom - 1) * 260)}px`;
+      if (zoomLabel) zoomLabel.textContent = `${Math.round(mermaidZoom * 100)}%`;
+    };
+    document.querySelectorAll("[data-zoom]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.zoom;
+        if (action === "in") mermaidZoom = Math.min(2, mermaidZoom + 0.15);
+        if (action === "out") mermaidZoom = Math.max(0.65, mermaidZoom - 0.15);
+        if (action === "reset") mermaidZoom = 1;
+        applyMermaidZoom();
+      });
+    });
+    window.setTimeout(applyMermaidZoom, 800);
+
+    const buttons = document.querySelectorAll("[data-tab]");
+    const panels = {
+      pre: document.getElementById("tab-pre"),
+      tool: document.getElementById("tab-tool"),
+      why: document.getElementById("tab-why")
+    };
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.tab;
+        buttons.forEach((item) => item.setAttribute("aria-selected", String(item === button)));
+        Object.entries(panels).forEach(([name, panel]) => {
+          panel.classList.toggle("active", name === key);
+        });
+      });
+    });
+
+    const debuggerSteps = [
+      {
+        label: "LLM emits assistant(tool_calls)",
+        running: "provider.chat(...) -> LLMResponse(tool_calls)",
+        sourceRef: "OpenAI tool calling shape / Akashic Reasoner response",
+        explanation: "模型没有直接回答，而是输出一个 assistant(tool_calls)。这一步仍然只是协议消息，还没有执行任何工具。",
+        input: {
+          messages_tail: [
+            { role: "user", content: "我之前怎么理解 context fallback？" }
+          ],
+          tools_available: ["recall_memory"]
+        },
+        output: {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: "call_01",
+              type: "function",
+              function: {
+                name: "recall_memory",
+                arguments: {
+                  query: "用户之前怎么理解 context fallback？",
+                  intent: "answer",
+                  limit: 5
+                }
+              }
+            }
+          ]
+        },
+        stateDelta: {
+          loop_messages: ["append assistant(tool_calls)"],
+          tool_chain: "not yet changed",
+          database: "not touched"
+        }
+      },
+      {
+        label: "runtime builds ToolExecutionRequest",
+        running: "Reasoner/Runtime dispatches tool call",
+        sourceRef: "Amadeus equivalent: _ToolLoopReasoner.run(...)",
+        explanation: "runtime 把 LLM 的协议消息转成内部执行请求。关键是保留 call_id，因为后面的 tool(result) 必须回到同一个 tool_call_id。",
+        input: {
+          assistant_tool_call: {
+            id: "call_01",
+            name: "recall_memory",
+            arguments: { query: "用户之前怎么理解 context fallback？", intent: "answer", limit: 5 }
+          }
+        },
+        output: {
+          call_id: "call_01",
+          tool_name: "recall_memory",
+          arguments: { query: "用户之前怎么理解 context fallback？", intent: "answer", limit: 5 },
+          tool_batch: 1,
+          tool_batch_index: 0
+        },
+        stateDelta: {
+          emitted_event: "ToolCallStarted(call_01, recall_memory)",
+          loop_messages: "unchanged after assistant(tool_calls)",
+          tool_chain: "not yet changed"
+        }
+      },
+      {
+        label: "RecallMemoryTool.execute() receives args",
+        running: "RecallMemoryTool.execute(query, intent, limit, ...)",
+        sourceRef: "../akashic-agent/agent/tools/recall_memory.py",
+        explanation: "工具开始执行。它不直接拼 SQL 或查 vector store，而是先把工具参数规整成 memory API 能理解的查询。",
+        input: {
+          query: "用户之前怎么理解 context fallback？",
+          intent: "answer",
+          memory_kind: "",
+          time_filter: "",
+          limit: 5,
+          channel: null,
+          chat_id: null
+        },
+        output: {
+          normalized_text: "用户之前怎么理解 context fallback？",
+          normalized_intent: "answer",
+          parsed_time_window: null,
+          normalized_limit: 5
+        },
+        stateDelta: {
+          local_variables: ["text", "time_window"],
+          external_state: "no mutation"
+        }
+      },
+      {
+        label: "execute() builds MemoryQuery",
+        running: "MemoryQuery(...) construction",
+        sourceRef: "Akashic: MemoryQuery / MemoryScope / MemoryQueryFilters",
+        explanation: "这是 recall_memory 的核心变形点：tool args 变成 retrieval 层的查询对象。后续 Amadeus Part 2 应该复用 MemoryEngine.query()，而不是绕过它。",
+        input: {
+          normalized_tool_args: {
+            text: "用户之前怎么理解 context fallback？",
+            intent: "answer",
+            limit: 5,
+            time_window: null
+          }
+        },
+        output: {
+          MemoryQuery: {
+            text: "用户之前怎么理解 context fallback？",
+            intent: "answer",
+            scope: { session_key: "", channel: "", chat_id: "" },
+            filters: { kinds: [], time_start: null, time_end: null },
+            limit: 5,
+            context: {}
+          }
+        },
+        stateDelta: {
+          memory_api_call: "await memory.query(MemoryQuery)",
+          tool_chain: "not yet changed"
+        }
+      },
+      {
+        label: "memory.query() returns MemoryQueryResult",
+        running: "MemoryRetrievalApi.query(...)",
+        sourceRef: "Amadeus equivalent: amadeus/memory_engine.py",
+        explanation: "memory engine 内部可以走 vector、keyword、timeline 或 fallback。tool 层只接收标准结果，不关心底层检索细节。",
+        input: {
+          MemoryQuery: {
+            text: "用户之前怎么理解 context fallback？",
+            intent: "answer",
+            limit: 5
+          }
+        },
+        output: {
+          records: [
+            {
+              id: "mem_12",
+              kind: "event",
+              summary: "用户已经区分 trim 是 runtime fallback，compact 是长期状态维护。",
+              score: 0.91,
+              source_ref: "[\"chat:1:8\",\"chat:1:9\"]#h:a18f...",
+              evidence: [
+                {
+                  kind: "message",
+                  refs: ["chat:1:8", "chat:1:9"],
+                  resolver: "session",
+                  source_ref: "[\"chat:1:8\",\"chat:1:9\"]#h:a18f..."
+                }
+              ]
+            }
+          ],
+          trace: { route: "vector", candidate_count: 42, record_count: 1 }
+        },
+        stateDelta: {
+          retrieval_trace_created: true,
+          memory_store_mutated: false
+        }
+      },
+      {
+        label: "_render_records() builds tool JSON",
+        running: "RecallMemoryTool._render_records(records, trace)",
+        sourceRef: "../akashic-agent/agent/tools/recall_memory.py",
+        explanation: "工具输出不是自然语言，而是给 LLM 继续推理的结构化 JSON。这里加入 citation_required 和 cited_item_ids。",
+        input: {
+          records: ["mem_12"],
+          trace: { route: "vector", candidate_count: 42, record_count: 1 }
+        },
+        output: {
+          count: 1,
+          items: [
+            {
+              id: "mem_12",
+              memory_type: "event",
+              summary: "用户已经区分 trim 是 runtime fallback，compact 是长期状态维护。",
+              score: 0.91,
+              evidence: [
+                {
+                  kind: "message",
+                  refs: ["chat:1:8", "chat:1:9"],
+                  resolver: "session",
+                  source_ref: "[\"chat:1:8\",\"chat:1:9\"]#h:a18f..."
+                }
+              ],
+              source_ref: "[\"chat:1:8\",\"chat:1:9\"]#h:a18f..."
+            }
+          ],
+          trace: { route: "vector", candidate_count: 42, record_count: 1 },
+          citation_required: true,
+          citation_format: "§cited:[id1,id2,...]§",
+          cited_item_ids: ["mem_12"]
+        },
+        stateDelta: {
+          tool_result_string: "JSON.stringify(output)",
+          final_answer_not_generated_yet: true
+        }
+      },
+      {
+        label: "runtime append_tool_result()",
+        running: "append_tool_result(loop_messages, call_id, result)",
+        sourceRef: "Amadeus equivalent: amadeus/tool_runtime.py",
+        explanation: "runtime 把工具结果按协议放回 messages。注意它必须使用同一个 call_id，才能和 assistant(tool_calls) 对上。",
+        input: {
+          call_id: "call_01",
+          tool_result_content: "{ count: 1, items: [...], citation_required: true }"
+        },
+        output: {
+          role: "tool",
+          tool_call_id: "call_01",
+          content: "{ count: 1, items: [...], citation_required: true }"
+        },
+        stateDelta: {
+          loop_messages: ["append tool(result)"],
+          next_action: "provider.chat(loop_messages)",
+          database: "not touched"
+        }
+      },
+      {
+        label: "tool_chain.append(...)",
+        running: "Reasoner records executed tool facts",
+        sourceRef: "Akashic tool_chain / Amadeus assistant.extra.tool_chain",
+        explanation: "这一步把执行事实压缩成可持久化结构。它不是给当前 API 看的协议消息，而是未来 session history 能重建协议消息的事实来源。",
+        input: {
+          assistant_text_before_tool: "",
+          executed_call: {
+            call_id: "call_01",
+            name: "recall_memory",
+            arguments: { query: "用户之前怎么理解 context fallback？", intent: "answer", limit: 5 },
+            status: "success",
+            result: "{ count: 1, items: [...] }"
+          }
+        },
+        output: {
+          tool_chain_group: {
+            text: "",
+            calls: [
+              {
+                call_id: "call_01",
+                name: "recall_memory",
+                arguments: { query: "用户之前怎么理解 context fallback？", intent: "answer", limit: 5 },
+                status: "success",
+                result: "{ count: 1, items: [...] }"
+              }
+            ]
+          }
+        },
+        stateDelta: {
+          tool_chain: ["append group"],
+          persisted_later_on: "assistant.extra.tool_chain"
+        }
+      },
+      {
+        label: "LLM receives tool(result) and answers",
+        running: "provider.chat(loop_messages) -> final assistant content",
+        sourceRef: "Reasoner final response",
+        explanation: "模型现在能看到工具结果，并基于结构化记忆生成最终回答。最终只持久化 user + assistant；tool 中间消息由 tool_chain 重建。",
+        input: {
+          loop_messages_tail: [
+            { role: "assistant", tool_calls: ["call_01: recall_memory(...)"] },
+            { role: "tool", tool_call_id: "call_01", content: "{ count: 1, items: [...] }" }
+          ]
+        },
+        output: {
+          role: "assistant",
+          content: "你之前的判断是：trim 是本轮 payload 超长后的应急降载，compact 是长期压缩治理。§cited:[mem_12]§"
+        },
+        stateDelta: {
+          persisted_messages: ["user", "assistant"],
+          assistant_extra: {
+            tool_chain: "contains call_01 recall_memory execution facts"
+          }
+        }
+      }
+    ];
+    let debuggerIndex = 0;
+    const debuggerDialog = document.getElementById("debugger-dialog");
+    const debuggerOpen = document.getElementById("debugger-open");
+    const debuggerClose = document.getElementById("debugger-close");
+    const debuggerLaunchSummary = document.getElementById("debugger-launch-summary");
+    const debuggerRange = document.getElementById("debugger-range");
+    const debuggerStatus = document.getElementById("debugger-status");
+    const debuggerTimeline = document.getElementById("debugger-timeline");
+    const debuggerRunning = document.getElementById("debugger-running");
+    const debuggerExplanation = document.getElementById("debugger-explanation");
+    const debuggerSource = document.getElementById("debugger-source");
+    const debuggerInput = document.getElementById("debugger-input");
+    const debuggerOutput = document.getElementById("debugger-output");
+    const debuggerDelta = document.getElementById("debugger-delta");
+
+    debuggerRange.max = String(debuggerSteps.length - 1);
+    debuggerTimeline.innerHTML = debuggerSteps.map((step, index) => `
+      <button class="debugger-step" type="button" data-debugger-step="${index}">
+        <span class="debugger-step-index">${String(index + 1).padStart(2, "0")}</span>
+        <span>${step.label}</span>
+      </button>
+    `).join("");
+
+    const renderDebuggerStep = (index) => {
+      debuggerIndex = Math.max(0, Math.min(debuggerSteps.length - 1, Number(index)));
+      const step = debuggerSteps[debuggerIndex];
+      debuggerRange.value = String(debuggerIndex);
+      debuggerStatus.textContent = `${debuggerIndex + 1} / ${debuggerSteps.length} · ${step.label}`;
+      debuggerLaunchSummary.textContent = `${debuggerIndex + 1} / ${debuggerSteps.length} · ${step.label}`;
+      debuggerRunning.textContent = step.running;
+      debuggerExplanation.textContent = step.explanation;
+      debuggerSource.textContent = step.sourceRef;
+      debuggerInput.textContent = JSON.stringify(step.input, null, 2);
+      debuggerOutput.textContent = JSON.stringify(step.output, null, 2);
+      debuggerDelta.textContent = JSON.stringify(step.stateDelta, null, 2);
+      document.querySelectorAll("[data-debugger-step]").forEach((node) => {
+        const nodeIndex = Number(node.dataset.debuggerStep);
+        node.classList.toggle("active", nodeIndex === debuggerIndex);
+        node.classList.toggle("done", nodeIndex < debuggerIndex);
+      });
+    };
+
+    debuggerRange.addEventListener("input", (event) => {
+      renderDebuggerStep(event.target.value);
+    });
+    document.querySelectorAll("[data-debugger-step]").forEach((button) => {
+      button.addEventListener("click", () => renderDebuggerStep(button.dataset.debuggerStep));
+    });
+    debuggerOpen.addEventListener("click", () => {
+      renderDebuggerStep(debuggerIndex);
+      if (typeof debuggerDialog.showModal === "function") {
+        debuggerDialog.showModal();
+      } else {
+        debuggerDialog.setAttribute("open", "");
+      }
+    });
+    debuggerClose.addEventListener("click", () => {
+      debuggerDialog.close();
+    });
+    renderDebuggerStep(0);
+  </script>
+</body>
+</html>

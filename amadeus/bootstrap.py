@@ -13,6 +13,7 @@ from amadeus.session import SessionManager
 from amadeus.tools.defaults import FetchMessagesTool, ReadFileTool, SearchMessagesTool
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.hooks import ReadOnlyFilesystemHook
+from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.registry import ToolRegistry
 from amadeus.vector_memory import (
     OpenAIEmbeddingConfig,
@@ -137,6 +138,7 @@ def build_passive_app(
         keep_count=config.memory_keep_count,
         vector_memory=vector_memory,
     )
+    tool_registry.register(RecallMemoryTool(memory_engine=vector_memory))
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
         provider=provider,

@@ -30,6 +30,11 @@ def test_build_passive_app_exposes_readonly_tool_runtime(tmp_path):
     app = build_passive_app(workspace_root=tmp_path, env_path=env_path, client=FakeClient())
 
     assert app.tool_registry is not None
-    assert sorted(app.tool_registry.names()) == ["fetch_messages", "read_file", "search_messages"]
+    assert sorted(app.tool_registry.names()) == [
+        "fetch_messages",
+        "read_file",
+        "recall_memory",
+        "search_messages",
+    ]
     assert app.runtime.tool_registry is app.tool_registry
     assert app.runtime.tool_executor is app.tool_executor

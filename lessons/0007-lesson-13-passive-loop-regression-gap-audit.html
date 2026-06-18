@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 13: Passive Loop 回归验证与 Akashic Gap Audit</title>
+  <style>
+    :root {
+      --bg: #eef0eb;
+      --paper: #fffdf7;
+      --paper-2: #f7f2e7;
+      --ink: #1c241f;
+      --muted: #5d665f;
+      --faint: #8a928b;
+      --line: #d5d1c3;
+      --green: #2e6b4f;
+      --green-soft: #dbe9df;
+      --amber: #a56b1f;
+      --amber-soft: #f2e2c3;
+      --red: #9d3f34;
+      --red-soft: #efd2cc;
+      --blue: #2f5f73;
+      --blue-soft: #d7e7ec;
+      --code-bg: #20251f;
+      --shadow: 0 18px 50px rgba(32, 39, 33, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "LXGW WenKai Screen", "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+      line-height: 1.72;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(46, 107, 79, 0.16), transparent 28rem),
+        radial-gradient(circle at 88% 12%, rgba(165, 107, 31, 0.14), transparent 24rem),
+        linear-gradient(135deg, #e8ece5 0%, #f9f6ed 50%, #ece5d9 100%);
+    }
+
+    a { color: var(--green); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+    code {
+      font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 0.92em;
+      background: rgba(32, 37, 31, 0.08);
+      border: 1px solid rgba(32, 37, 31, 0.09);
+      border-radius: 0.45rem;
+      padding: 0.08rem 0.34rem;
+    }
+    pre {
+      margin: 1rem 0 0;
+      padding: 1rem;
+      overflow: auto;
+      color: #f7f4ea;
+      background: var(--code-bg);
+      border-radius: 1rem;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      white-space: pre-wrap;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: minmax(240px, 310px) minmax(0, 1fr);
+      gap: 1.25rem;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 1.25rem;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 1.25rem;
+      align-self: start;
+      display: grid;
+      gap: 1rem;
+    }
+
+    .lesson-card,
+    .panel,
+    .hero,
+    .audit-card,
+    .flow-step,
+    .mini-card {
+      background: rgba(255, 253, 247, 0.9);
+      border: 1px solid rgba(213, 209, 195, 0.9);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .lesson-card {
+      padding: 1.25rem;
+      border-radius: 1.4rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      width: fit-content;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+    }
+    .badge.green { color: var(--green); background: var(--green-soft); border-color: rgba(46, 107, 79, 0.18); }
+    .badge.amber { color: var(--amber); background: var(--amber-soft); border-color: rgba(165, 107, 31, 0.18); }
+    .badge.red { color: var(--red); background: var(--red-soft); border-color: rgba(157, 63, 52, 0.18); }
+    .badge.blue { color: var(--blue); background: var(--blue-soft); border-color: rgba(47, 95, 115, 0.18); }
+
+    .sidebar h2 {
+      margin: 0.8rem 0 0.25rem;
+      font-size: 1.2rem;
+      line-height: 1.25;
+    }
+    .sidebar p {
+      margin: 0.4rem 0 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+    .nav {
+      display: grid;
+      gap: 0.45rem;
+      margin-top: 1rem;
+    }
+    .nav a {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.7rem;
+      padding: 0.55rem 0.7rem;
+      color: var(--ink);
+      text-decoration: none;
+      border: 1px solid transparent;
+      border-radius: 0.8rem;
+      background: rgba(255, 255, 255, 0.5);
+    }
+    .nav a:hover {
+      border-color: var(--line);
+      background: var(--paper);
+    }
+    .nav small { color: var(--faint); font-family: "JetBrains Mono", Consolas, monospace; }
+
+    .score {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .score div {
+      padding: 0.65rem 0.55rem;
+      border-radius: 0.9rem;
+      text-align: center;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .score strong {
+      display: block;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 1.3rem;
+      line-height: 1.1;
+    }
+    .score span { display: block; color: var(--muted); font-size: 0.78rem; }
+
+    main {
+      display: grid;
+      gap: 1.25rem;
+      min-width: 0;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(1.4rem, 3vw, 2.5rem);
+      border-radius: 1.8rem;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -5rem;
+      top: -6rem;
+      width: 22rem;
+      height: 22rem;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(46, 107, 79, 0.18), transparent 70%);
+      pointer-events: none;
+    }
+    .hero h1 {
+      max-width: 850px;
+      margin: 0.7rem 0 0.75rem;
+      font-size: clamp(2.1rem, 4.8vw, 4.6rem);
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+    }
+    .hero p {
+      max-width: 760px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .hero-grid,
+    .two-col,
+    .three-col {
+      display: grid;
+      gap: 1rem;
+    }
+    .hero-grid { grid-template-columns: 1.2fr 0.8fr; margin-top: 1.4rem; }
+    .two-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .three-col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .panel {
+      padding: clamp(1.1rem, 2vw, 1.65rem);
+      border-radius: 1.4rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem;
+      font-size: clamp(1.35rem, 2.5vw, 2rem);
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+    }
+    .panel h3 {
+      margin: 0 0 0.55rem;
+      font-size: 1.05rem;
+    }
+    .panel p { margin: 0.55rem 0 0; }
+    .panel ul, .panel ol { margin: 0.65rem 0 0 1.1rem; padding: 0; }
+    .panel li + li { margin-top: 0.42rem; }
+
+    .mini-card {
+      padding: 0.95rem;
+      border-radius: 1rem;
+    }
+    .mini-card strong {
+      display: block;
+      margin-bottom: 0.35rem;
+      font-size: 0.98rem;
+    }
+    .mini-card p { color: var(--muted); font-size: 0.95rem; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .flow-step {
+      position: relative;
+      min-height: 9.5rem;
+      padding: 1rem;
+      border-radius: 1.1rem;
+      overflow: hidden;
+    }
+    .flow-step::before {
+      content: attr(data-step);
+      display: block;
+      margin-bottom: 1rem;
+      color: var(--faint);
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 0.78rem;
+    }
+    .flow-step strong { display: block; line-height: 1.25; }
+    .flow-step span { display: block; margin-top: 0.5rem; color: var(--muted); font-size: 0.9rem; }
+
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .audit-card {
+      border-radius: 1.15rem;
+      padding: 1rem;
+    }
+    .audit-card h3 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin: 0 0 0.65rem;
+    }
+    .audit-card ul { margin-left: 1.05rem; }
+
+    .matrix {
+      display: grid;
+      gap: 0.55rem;
+      margin-top: 1rem;
+    }
+    .matrix-row {
+      display: grid;
+      grid-template-columns: 1.05fr 1.25fr 1.25fr 0.75fr;
+      gap: 0.5rem;
+      align-items: stretch;
+    }
+    .matrix-row > div {
+      padding: 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: 0.8rem;
+      background: rgba(255, 255, 255, 0.58);
+    }
+    .matrix-head > div {
+      color: var(--muted);
+      font-weight: 700;
+      background: rgba(247, 242, 231, 0.9);
+    }
+
+    .callout {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 1rem;
+      border: 1px solid rgba(47, 95, 115, 0.2);
+      background: linear-gradient(135deg, rgba(215, 231, 236, 0.75), rgba(255, 253, 247, 0.92));
+    }
+
+    .quote {
+      margin-top: 1rem;
+      padding: 1rem 1.2rem;
+      border-left: 0.35rem solid var(--green);
+      border-radius: 0.8rem;
+      background: rgba(219, 233, 223, 0.65);
+      color: #34433a;
+    }
+
+    .test-board {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .test-board .mini-card {
+      border-color: rgba(46, 107, 79, 0.22);
+      background: linear-gradient(180deg, #fffdf7, #f2f8f3);
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+      margin-top: 1rem;
+    }
+    .footer-links a {
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--paper);
+      text-decoration: none;
+    }
+
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: relative; top: 0; }
+      .hero-grid, .two-col, .three-col, .audit-grid, .test-board { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr; }
+      .matrix-row { grid-template-columns: 1fr; }
+      .matrix-head { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <section class="lesson-card">
+        <span class="badge blue">对应总计划 Lesson 13</span>
+        <h2>Passive Loop 阶段收口课</h2>
+        <p>这节不新增生产能力，而是验证当前主链是否稳定，并把 Akashic 对齐差距标出来。</p>
+        <div class="score">
+          <div><strong>99</strong><span>全量测试通过</span></div>
+          <div><strong>27</strong><span>主链 focused 回归</span></div>
+          <div><strong>3</strong><span>审计等级</span></div>
+        </div>
+        <nav class="nav" aria-label="lesson navigation">
+          <a href="#map"><span>阶段地图</span><small>01</small></a>
+          <a href="#akashic"><span>Akashic 源码课</span><small>02</small></a>
+          <a href="#amadeus"><span>Amadeus 对照</span><small>03</small></a>
+          <a href="#audit"><span>Gap Audit</span><small>04</small></a>
+          <a href="#tests"><span>回归验证</span><small>05</small></a>
+          <a href="#review"><span>复述与收口</span><small>06</small></a>
+        </nav>
+      </section>
+      <section class="lesson-card">
+        <span class="badge amber">读课方式</span>
+        <p>先看状态流，再看矩阵。不要先背文件名；先说清“谁拥有 loop、谁只提供边界、哪些事实持久化”。</p>
+      </section>
+    </aside>
+
+    <main>
+      <header class="hero">
+        <span class="badge green">Lesson 13 · Part 1 + Part 2</span>
+        <h1>Passive Agent Loop 回归验证与 Akashic Gap Audit</h1>
+        <p>
+          目标不是继续堆功能，而是确认 Amadeus 的 Passive Loop 已经能作为后续 Memory Tools 的稳定主链：
+          provider 边界、tool loop、tool_chain 持久化、context fallback、session history 重建都必须能被测试和讲清。
+        </p>
+        <div class="hero-grid">
+          <div class="mini-card">
+            <strong>与 MISSION.md 的关系</strong>
+            <p>你的目标是亲手复现 Akashic，而不是做一个表面能跑的 chatbot。Lesson 13 是阶段验收：哪些设计已经复现，哪些还不能在简历里夸大。</p>
+          </div>
+          <div class="mini-card">
+            <strong>本课结论先放前面</strong>
+            <p>Passive Loop 已经能作为 Amadeus 新主链；但生命周期事件、预算观测、prompt block 分层和 tool discovery 仍是下一阶段前的明确 gap。</p>
+          </div>
+        </div>
+      </header>
+
+      <section id="map" class="panel">
+        <h2>当前阶段地图</h2>
+        <div class="flow" aria-label="stage map">
+          <div class="flow-step" data-step="L08">
+            <strong>Provider Tool-Call Shape</strong>
+            <span>provider 只负责官方 API 形状与错误归一。</span>
+          </div>
+          <div class="flow-step" data-step="L09">
+            <strong>Tool Message 回灌</strong>
+            <span>assistant(tool_calls) 先于 tool(result)，完成单步闭环。</span>
+          </div>
+          <div class="flow-step" data-step="L10">
+            <strong>多步 Reasoner Loop</strong>
+            <span>runtime 持有 LLM -> tool -> LLM 的主控权。</span>
+          </div>
+          <div class="flow-step" data-step="L11">
+            <strong>持久化边界</strong>
+            <span>tool 细节压进 assistant.extra.tool_chain，再由 history 重建。</span>
+          </div>
+          <div class="flow-step" data-step="L12">
+            <strong>Context Fallback</strong>
+            <span>上下文超长时 trim prompt blocks / history window 并重试。</span>
+          </div>
+        </div>
+        <div class="quote">
+          Lesson 13 的位置：不改变主链，只审计主链。做完这节，你应该能判断“后面做 memory tool 时，应该接在哪个稳定接口上”。
+        </div>
+      </section>
+
+      <section id="akashic" class="panel">
+        <h2>Part 1：Akashic 源码课</h2>
+        <p>Akashic 这阶段不是一个函数能讲完，而是三层配合：Reasoner 主控 loop，Session/History 持久化事实，AfterTurn 把结果变成可观测事件。</p>
+        <div class="two-col">
+          <div class="mini-card">
+            <strong>1. Reasoner 拥有主控权</strong>
+            <p><code>../akashic-agent/agent/core/passive_turn.py</code> 里的 <code>DefaultReasoner.run_turn()</code> 控制 provider 调用、tool 执行、tool result 回灌、max iteration 和 context retry。</p>
+          </div>
+          <div class="mini-card">
+            <strong>2. tool_chain 是事实压缩层</strong>
+            <p>Akashic 不把 tool messages 当普通聊天内容长期堆在 history 里，而是把执行事实压到 assistant message 的 <code>tool_chain</code>，未来再重建给模型。</p>
+          </div>
+          <div class="mini-card">
+            <strong>3. Context retry 是 turn 内应急</strong>
+            <p><code>DEFAULT_CONTEXT_TRIM_PLANS</code> 决定先删哪些 prompt block，再缩 history window；这是 fallback，不是长期 compact。</p>
+          </div>
+          <div class="mini-card">
+            <strong>4. AfterTurn 是收口层</strong>
+            <p><code>agent/lifecycle/phases/after_turn.py</code> 会构造 <code>TurnCommitted</code>，把 tool_chain、预算、react stats 等事实交给后续观察和后台处理。</p>
+          </div>
+        </div>
+        <div class="callout">
+          人话版：Akashic 的被动 loop 不是“问一次模型，跑一次工具”。它是一个 turn 生命周期：模型请求、工具执行、消息回灌、重试降载、事实提交、后置处理，每一步都有边界。
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Akashic 主链缩略图</h2>
+        <pre>Passive turn
+  -> DefaultReasoner.run_turn(...)
+       -> render prompt + history window
+       -> provider.chat(...)
+       -> if tool_calls:
+            assistant(tool_calls) -> tool(result) -> provider.chat(...)
+       -> if ContextLengthError:
+            next trim plan -> render again -> retry
+       -> if max_iterations:
+            return staged summary, not crash
+  -> persist assistant message with tool_chain / context_retry
+  -> after_turn phase builds TurnCommitted
+  -> observe / memory / background workers consume committed facts</pre>
+      </section>
+
+      <section id="amadeus" class="panel">
+        <h2>Part 2：Amadeus 当前对照</h2>
+        <p>Amadeus 已经不是 single-shot runtime。当前主链可以概括为：</p>
+        <pre>PassiveRuntime.run_turn(...)
+  -> session.get_history()
+  -> build_context_trim_attempts(...)
+  -> ContextBuilder.render(RuntimeContext)
+  -> Provider.chat(messages, tools)
+  -> _ToolLoopReasoner.run(...)
+       -> execute tools
+       -> append assistant(tool_calls)
+       -> append tool(result)
+       -> call provider again
+  -> persist assistant message extra.tool_chain / extra.context_retry
+  -> append Event(..., extra={tool_chain, context_retry})</pre>
+        <div class="matrix">
+          <div class="matrix-row matrix-head">
+            <div>机制</div>
+            <div>Akashic</div>
+            <div>Amadeus 当前</div>
+            <div>状态</div>
+          </div>
+          <div class="matrix-row">
+            <div>Loop 主控</div>
+            <div><code>DefaultReasoner.run_turn()</code> 持有工具循环和 retry。</div>
+            <div><code>PassiveRuntime.run_turn()</code> 外层控 context retry，<code>_ToolLoopReasoner.run()</code> 控 tool loop。</div>
+            <div><span class="badge green">已对齐</span></div>
+          </div>
+          <div class="matrix-row">
+            <div>tool message 顺序</div>
+            <div>先 assistant(tool_calls)，后 tool(result)，再回到模型。</div>
+            <div>runtime 通过 <code>loop_messages</code> 明确追加 assistant/tool 两类消息。</div>
+            <div><span class="badge green">已对齐</span></div>
+          </div>
+          <div class="matrix-row">
+            <div>tool_chain 持久化</div>
+            <div>assistant message 上保存执行事实，history 再重建协议消息。</div>
+            <div><code>session.get_history()</code> 会从 assistant <code>tool_chain</code> 重建 assistant/tool 序列。</div>
+            <div><span class="badge green">已对齐</span></div>
+          </div>
+          <div class="matrix-row">
+            <div>context fallback</div>
+            <div>捕获 <code>ContextLengthError</code>，按 trim plan 重渲染和重试。</div>
+            <div>已有 <code>context_retry</code>、trim sections、history window 和 fallback reply。</div>
+            <div><span class="badge green">已对齐</span></div>
+          </div>
+          <div class="matrix-row">
+            <div>预算观测</div>
+            <div><code>after_turn</code> 构造 budget / react stats / committed event。</div>
+            <div>目前只把 <code>context_retry</code> 写入 assistant extra 和 Event extra。</div>
+            <div><span class="badge amber">半成品</span></div>
+          </div>
+          <div class="matrix-row">
+            <div>Prompt block 分层</div>
+            <div>有 <code>session_context</code>、<code>active_skills</code>、<code>retrieved_memory</code> 等更细块。</div>
+            <div>仍有 <code>runtime_metadata</code> 这种简化入口，需要拆成 LLM-visible 与 system-visible。</div>
+            <div><span class="badge amber">半成品</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="audit" class="panel">
+        <h2>Akashic Gap Audit</h2>
+        <p>这里不要把“能跑”误判成“完整复现”。按三类审计：</p>
+        <div class="audit-grid">
+          <article class="audit-card">
+            <h3>可作为主链 <span class="badge green">Green</span></h3>
+            <ul>
+              <li>provider 和 loop 编排层已经解耦。</li>
+              <li>多步 tool loop 已经进入正式 runtime。</li>
+              <li>tool_chain 持久化和 history 重建已经有测试。</li>
+              <li>context fallback 已经覆盖成功 retry 和全失败路径。</li>
+              <li>max_iterations 返回阶段性总结，而不是未闭合错误。</li>
+            </ul>
+          </article>
+          <article class="audit-card">
+            <h3>下一阶段前要补强 <span class="badge amber">Yellow</span></h3>
+            <ul>
+              <li>prompt block 渲染时目前是先 render 再过滤，Akashic 更接近禁用块不参与构建。</li>
+              <li><code>runtime_metadata</code> 需要拆成更明确的上下文注入和系统元数据。</li>
+              <li>fallback 次数还没有形成长期统计，无法识别长期 block fallback。</li>
+              <li>Event 只是轻量日志，还不是 Akashic 的 <code>TurnCommitted</code> 生命周期事件。</li>
+            </ul>
+          </article>
+          <article class="audit-card">
+            <h3>不能假装已完成 <span class="badge red">Red</span></h3>
+            <ul>
+              <li>完整 lifecycle phase pipeline 还没有迁移。</li>
+              <li>observe writer / dashboard 级预算查询还没有。</li>
+              <li>tool discovery / preloaded tools / skill catalog 体系还没有。</li>
+              <li>memory post-response worker 还没有接到 committed turn。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="tests" class="panel">
+        <h2>回归验证证据</h2>
+        <p>这次验证没有使用项目内临时目录，沿用外部 <code>C:\Users\Zinc\AppData\Local\amadeus-pytest-temp</code> 作为 pytest 临时目录。</p>
+        <div class="test-board">
+          <div class="mini-card">
+            <strong>Focused 主链回归</strong>
+            <pre>uv run --extra dev pytest -q tests/test_runtime.py tests/test_session_tool_chain_history.py tests/test_context_builders.py tests/test_prompt_budget.py</pre>
+            <p>结果：<code>27 passed in 1.60s</code></p>
+          </div>
+          <div class="mini-card">
+            <strong>全量测试</strong>
+            <pre>uv run --extra dev pytest -q</pre>
+            <p>结果：<code>99 passed in 3.28s</code></p>
+          </div>
+        </div>
+        <div class="callout">
+          这组测试覆盖的是行为回归，不是“形式上有代码”。判断一个 agent loop 稳不稳定，至少要看：无工具、多工具、工具失败、步数上限、history 重建、context fallback。
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>关键代码定位</h2>
+        <div class="three-col">
+          <div class="mini-card">
+            <strong>Amadeus loop 主控</strong>
+            <p><a href="../amadeus/runtime.py"><code>amadeus/runtime.py</code></a>：<code>PassiveRuntime.run_turn()</code> 和 <code>_ToolLoopReasoner.run()</code>。</p>
+          </div>
+          <div class="mini-card">
+            <strong>History 重建</strong>
+            <p><a href="../amadeus/session.py"><code>amadeus/session.py</code></a>：<code>Session.get_history()</code> 从 <code>tool_chain</code> 还原协议消息。</p>
+          </div>
+          <div class="mini-card">
+            <strong>Context 预算</strong>
+            <p><a href="../amadeus/prompting/budget.py"><code>amadeus/prompting/budget.py</code></a>：trim plans 和 history ratios。</p>
+          </div>
+          <div class="mini-card">
+            <strong>Context 渲染</strong>
+            <p><a href="../amadeus/context.py"><code>amadeus/context.py</code></a>：<code>RuntimeContext</code>、<code>disabled_sections</code>、<code>history_window</code>。</p>
+          </div>
+          <div class="mini-card">
+            <strong>Akashic reasoner</strong>
+            <p><a href="../../akashic-agent/agent/core/passive_turn.py"><code>agent/core/passive_turn.py</code></a>：<code>DefaultReasoner</code>、tool loop、context retry。</p>
+          </div>
+          <div class="mini-card">
+            <strong>Akashic after_turn</strong>
+            <p><a href="../../akashic-agent/agent/lifecycle/phases/after_turn.py"><code>lifecycle/phases/after_turn.py</code></a>：<code>TurnCommitted</code> 和 post-reply budget。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>常见误区</h2>
+        <div class="two-col">
+          <div class="mini-card">
+            <strong>误区 1：测试过就等于完整复现</strong>
+            <p>不对。测试证明当前主链行为稳定，不证明 Akashic 的 lifecycle、observe、tool discovery 都复现了。</p>
+          </div>
+          <div class="mini-card">
+            <strong>误区 2：Event extra 就是 TurnCommitted</strong>
+            <p>不对。Amadeus 现在只是轻量事件记录；Akashic 的 committed event 是生命周期边界和后台处理入口。</p>
+          </div>
+          <div class="mini-card">
+            <strong>误区 3：runtime_metadata 可以一直混用</strong>
+            <p>不能。短期可用，长期会让 LLM-visible prompt、system metadata、outbound metadata 混在一起。</p>
+          </div>
+          <div class="mini-card">
+            <strong>误区 4：Lesson 13 应该继续加功能</strong>
+            <p>这节的价值是收口。不做 gap audit，后面 memory tool 会接到不稳定边界上。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>简历可讲述版本</h2>
+        <p>
+          我在 Amadeus 中复现了 Akashic 被动 Agent Loop 的核心主链：provider 只负责 LLM API 和错误归一，
+          runtime 持有多步 tool loop 与 context-length fallback，session 通过 assistant message 的 tool_chain
+          持久化工具执行事实，并在后续 history 中重建模型协议消息。阶段验收通过 focused 回归和全量测试，
+          同时明确保留了 lifecycle event、预算观测、tool discovery 等与 Akashic 的差距，作为后续迁移边界。
+        </p>
+      </section>
+
+      <section id="review" class="panel">
+        <h2>你必须复述的问题</h2>
+        <ol>
+          <li>现在 Amadeus 的 Passive Loop 主链是什么？从 <code>run_turn()</code> 开始按顺序说。</li>
+          <li>哪些地方已经可以说“对齐了 Akashic 的核心设计”？不要只报文件名，要说职责。</li>
+          <li><code>tool_chain</code>、<code>context_retry</code>、<code>Event extra</code> 三者分别保存什么事实？</li>
+          <li>为什么 Lesson 13 不急着进入 memory tool，而是先做 gap audit？</li>
+          <li>下一步如果做 Lesson 14 <code>recall_memory</code> tool，应该接到哪个边界上？为什么？</li>
+        </ol>
+        <div class="quote">
+          如果你自己重做一遍，第一步看 <code>amadeus/runtime.py</code> 的 <code>PassiveRuntime.run_turn()</code>，第二步看 <code>session.get_history()</code> 怎么重建 tool messages，第三步跑 focused 回归确认主链没断。
+        </div>
+        <div class="footer-links">
+          <a href="./0006-lesson-12-context-trim-and-context-overflow-part-2.html">上一课：Lesson 12 Part 2</a>
+          <a href="../MISSION.md">Mission</a>
+          <a href="../RESOURCES.md">Resources</a>
+          <a href="../NOTES.md">Notes</a>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

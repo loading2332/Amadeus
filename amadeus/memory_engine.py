@@ -28,6 +28,7 @@ class MemoryRecord:
 @dataclass(frozen=True)
 class MemoryQuery:
     text: str
+    intent: str = "answer"
     kinds: tuple[str, ...] = ()
     limit: int = 8
     time_start: datetime | None = None

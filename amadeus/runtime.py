@@ -9,8 +9,10 @@ from typing import Any
 from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
 from amadeus.events import EventBus, ToolCallCompleted, ToolCallStarted, TurnCommitted
 from amadeus.memory_engine import MemoryEngine, MemoryQuery
-from amadeus.provider import LLMProvider, LLMResponse
+from amadeus.prompting import build_context_trim_attempts
+from amadeus.provider import ContextLengthError, LLMProvider, LLMResponse
 from amadeus.response_parser import parse_response
+from amadeus.session import Session
 from amadeus.session import SessionManager
 from amadeus.tool_runtime import (
     append_assistant_tool_calls,
@@ -31,6 +33,7 @@ class PassiveTurnResult:
     context: ContextRenderResult
     provider_raw: Any = None
     tool_chain: list[dict[str, Any]] = field(default_factory=list)
+    context_retry: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -65,35 +68,75 @@ class PassiveRuntime:
                 resolved_retrieved_memory = self.memory_engine.render_context_block(memory_result)
             except Exception:
                 resolved_retrieved_memory = None
-        context = RuntimeContext(
-            workspace_root=self.workspace_root,
-            history=history,
-            current_user_message=user_message,
-            retrieved_memory=resolved_retrieved_memory,
-            active_skills=active_skills or [],
-            runtime_metadata=runtime_metadata or {},
-        )
-        rendered = self.context_builder.render(context)
         tool_schemas = (
             self.tool_registry.export_openai_tools() if self.tool_registry is not None else None
         )
-        messages = [dict(message) for message in rendered.messages]
-        response = await self.provider.chat(messages, tools=tool_schemas)
         tool_chain: list[dict[str, Any]] = []
-        provider_raw = response.raw
-        if response.tool_calls:
-            reasoner_result = await self._run_tool_loop(
-                messages=messages,
-                response=response,
-                tool_schemas=tool_schemas,
-                session_key=session_key,
+        provider_raw: Any = None
+        assistant_content: str
+        rendered: ContextRenderResult | None = None
+        context_retry: dict[str, Any] = {
+            "attempts": [],
+            "selected_plan": None,
+            "trimmed_sections": [],
+        }
+
+        attempts = build_context_trim_attempts(len(history))
+        for attempt_index, attempt in enumerate(attempts):
+            context_retry["attempts"].append(
+                {
+                    "name": attempt.name,
+                    "history_window": attempt.history_window,
+                    "disabled_sections": sorted(attempt.disabled_sections),
+                }
             )
-            assistant_content = reasoner_result.reply
-            tool_chain = reasoner_result.tool_chain
+            context = RuntimeContext(
+                workspace_root=self.workspace_root,
+                history=history,
+                current_user_message=user_message,
+                retrieved_memory=resolved_retrieved_memory,
+                active_skills=active_skills or [],
+                runtime_metadata=runtime_metadata or {},
+                disabled_sections=set(attempt.disabled_sections),
+                history_window=attempt.history_window,
+            )
+            rendered = self.context_builder.render(context)
+            messages = [dict(message) for message in rendered.messages]
+            try:
+                response = await self.provider.chat(messages, tools=tool_schemas)
+                provider_raw = response.raw
+                if response.tool_calls:
+                    reasoner_result = await self._run_tool_loop(
+                        messages=messages,
+                        response=response,
+                        tool_schemas=tool_schemas,
+                        session_key=session_key,
+                    )
+                    assistant_content = reasoner_result.reply
+                    tool_chain = reasoner_result.tool_chain
+                else:
+                    if response.content is None:
+                        raise ValueError("LLM response did not include assistant content")
+                    assistant_content = response.content
+                context_retry["selected_plan"] = attempt.name
+                context_retry["trimmed_sections"] = sorted(attempt.disabled_sections)
+                if attempt_index > 0:
+                    self._trim_session_history(session, attempt.history_window)
+                break
+            except ContextLengthError:
+                continue
         else:
-            if response.content is None:
-                raise ValueError("LLM response did not include assistant content")
-            assistant_content = response.content
+            assistant_content = "上下文过长无法处理，请尝试新建对话。"
+            if rendered is None:
+                context = RuntimeContext(
+                    workspace_root=self.workspace_root,
+                    history=history,
+                    current_user_message=user_message,
+                    retrieved_memory=resolved_retrieved_memory,
+                    active_skills=active_skills or [],
+                    runtime_metadata=runtime_metadata or {},
+                )
+                rendered = self.context_builder.render(context)
 
         parsed_response = parse_response(assistant_content, tool_chain=[])
         assistant_response = parsed_response.clean_text
@@ -102,6 +145,8 @@ class PassiveRuntime:
         assistant_extra: dict[str, Any] = {}
         if tool_chain:
             assistant_extra["tool_chain"] = tool_chain
+        if context_retry["attempts"]:
+            assistant_extra["context_retry"] = context_retry
         assistant_record = session.add_message(
             "assistant", assistant_response, **assistant_extra,
         )
@@ -113,7 +158,10 @@ class PassiveRuntime:
                 persisted_user_message=user_message,
                 assistant_response=assistant_response,
                 timestamp=datetime.now().astimezone(),
-                extra={"tool_chain": tool_chain} if tool_chain else {},
+                extra={
+                    **({"tool_chain": tool_chain} if tool_chain else {}),
+                    "context_retry": context_retry,
+                },
             )
         )
         return PassiveTurnResult(
@@ -124,7 +172,15 @@ class PassiveRuntime:
             context=rendered,
             provider_raw=provider_raw,
             tool_chain=tool_chain,
+            context_retry=context_retry,
         )
+
+    def _trim_session_history(self, session: Session, history_window: int) -> None:
+        if history_window <= 0:
+            session.messages.clear()
+        else:
+            session.messages = session.messages[-history_window:]
+        session.last_consolidated = 0
 
     async def _run_tool_loop(
         self,
