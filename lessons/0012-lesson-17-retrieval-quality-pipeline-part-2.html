@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 17 Part 2：检索质量主链复现</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <header class="lesson-header">
+    <div class="lesson-meta">LESSON 17 · PART 2</div>
+    <span class="badge">对应总计划 Lesson 17 / Part 2</span>
+    <span class="badge badge-red">Amadeus 复现练手</span>
+    <h1>从两路召回到主动记忆：复现真实接入主链</h1>
+    <p>本课不是把 Akashic 仓库里的所有检索类都搬进来，而是追踪真实调用链，只复现当前已经接入生产路径的能力。</p>
+  </header>
+
+  <div class="lesson-wrapper">
+    <nav class="toc toc-sidebar" aria-label="目录导航">
+      <div class="toc-title">目录</div>
+      <ul class="toc-list">
+        <li><a href="#goal">目标与 Mission</a></li>
+        <li><a href="#source">Part 1 主链校正</a></li>
+        <li><a href="#implementation">Part 2 实现</a></li>
+        <li><a href="#flow">被动与主动数据流</a></li>
+        <li><a href="#deadlock">主动工具死锁修复</a></li>
+        <li><a href="#verification">验证证据</a></li>
+        <li><a href="#mistakes">常见误区</a></li>
+        <li><a href="#audit">Coverage / Gap Audit</a></li>
+        <li><a href="#retell">必须复述</a></li>
+      </ul>
+    </nav>
+
+    <div class="lesson-content">
+      <section id="goal">
+        <h2>本课目标与 MISSION.md 的关系</h2>
+        <p>MISSION 要求你能从 Akashic 真实源码解释设计来源，再在 Amadeus 中亲手复现。本课完成后，你应能沿着 <code>PassiveRuntime / RecallMemoryTool → MemoryQuery → VectorMemoryEngine → lanes → RRF → block/JSON</code> 讲清输入、输出和失败边界。</p>
+        <ul>
+          <li>被动查询明确使用 <code>intent=context</code>。</li>
+          <li>主动 answer 查询使用 raw query + event/general 两条 hypothesis。</li>
+          <li>procedure 查询生成多条变体，并对同 ID 结果 max-pool。</li>
+          <li>dense 与 lexical 各自排名后用确定性 RRF 融合。</li>
+          <li>被动结果按类别和字符预算形成 context block；主动结果保持 tool JSON。</li>
+        </ul>
+      </section>
+
+      <section id="source">
+        <h2>Part 1：Akashic 源码课的主链校正</h2>
+        <p>复核后确认：<code>QueryRewriter</code>、<code>HyDEEnhancer</code>、<code>SufficiencyChecker</code> 虽然存在源码和独立测试，但当前没有在生产检索主链中实例化。不能把“仓库里有类”误写成“线上主链正在使用”。</p>
+        <table>
+          <tr><th>机制</th><th>当前 Akashic 主链</th><th>本课处理</th></tr>
+          <tr><td>dense + lexical + RRF</td><td>已接入共享 retriever</td><td>复现</td></tr>
+          <tr><td>answer 双 hypothesis</td><td><code>_gen_hypothesis(event/general)</code></td><td>复现并 fail-open</td></tr>
+          <tr><td>procedure multi-query</td><td><code>build_procedure_queries</code> + max-pool</td><td>复现</td></tr>
+          <tr><td>structured injection</td><td><code>build_injection_block</code></td><td>复现类别与预算边界</td></tr>
+          <tr><td>QueryRewriter / Sufficiency / HyDEEnhancer</td><td>孤立资产，未接主链</td><td>不接入，保留 gap</td></tr>
+        </table>
+      </section>
+
+      <section id="implementation">
+        <h2>Part 2：Amadeus 复现练手</h2>
+        <h3>1. Query plan 按 intent 分流</h3>
+        <p><code>_build_query_plan()</code> 负责决定查询集合、kind 限制以及是否生成 hypothesis。调用方不再把所有检索都当成默认 answer。</p>
+        <pre><code>context   → 当前消息或 context["queries"]
+answer    → raw + event hypothesis + general hypothesis
+procedure → raw + “执行…的步骤” + “…流程”，只查 procedure/preference</code></pre>
+
+        <h3>2. 两路排名与 RRF</h3>
+        <p><code>_rank_rows()</code> 分别产生 vector 和 lexical 排名，<code>_rrf_merge()</code> 使用 <code>k=60</code>、<code>keyword_weight=0.5</code> 融合名次。相同分数按 ID 稳定排序，避免测试和线上结果随机抖动。</p>
+        <pre><code>rrf(id) = Σ lane_weight / (60 + rank_in_lane)</code></pre>
+        <p><code>signals</code> 同时保留 <code>lanes</code>、<code>vector_score</code>、<code>lexical_score</code> 和 <code>rrf_score</code>，不会再用一个 dominant lane 掩盖双路命中。</p>
+
+        <h3>3. CJK lexical terms</h3>
+        <p><code>_extract_terms()</code> 保留英文词和数字，对较长中文片段生成 bigram，并过滤少量停用词。这里是 Akashic 风格的 OR-LIKE lexical lane，不宣称实现了标准 BM25。</p>
+
+        <h3>4. 多查询 max-pool</h3>
+        <p>每条查询复用同一套 lanes + RRF。同一个 memory ID 被多条 query 命中时，只保留最高融合分，并记录命中的 query index，避免主动 hypothesis 产生重复 JSON 条目。</p>
+
+        <h3>5. 结构化注入</h3>
+        <p><code>render_context_block()</code> 按 Applicable Procedures、User Profile、Relevant History 分组。预算不足时丢弃完整低优先级条目，不截断成无法回源的半条记录；trace 记录 <code>injected_ids</code>、<code>omitted_ids</code> 和字符数。</p>
+      </section>
+
+      <section id="flow">
+        <h2>真实数据流</h2>
+        <h3>被动线路</h3>
+        <pre><code>PassiveRuntime
+  → MemoryQuery(intent="context", context={history, session_key})
+  → dense + lexical → RRF
+  → structured context block
+  → RetrievedMemoryPromptBlock
+  → context frame</code></pre>
+
+        <h3>主动线路</h3>
+        <pre><code>LLM tool_call(recall_memory)
+  → MemoryQuery(intent="answer")
+  → raw + event/general hypothesis
+  → shared dense + lexical → RRF → max-pool
+  → structured JSON
+  → role=tool
+  → 下一轮 LLM</code></pre>
+        <p>两条线路可能看到同一 ID，但不做跨 message 去重：被动 block 是预先背景，主动 JSON 是模型带着具体意图查出的工具证据。事实冲突仍要通过 source_ref/evidence 回源。</p>
+      </section>
+
+      <section id="deadlock">
+        <h2>实现中发现的真实 bug：主动 recall 死锁</h2>
+        <p>原实现从正在运行的 event loop 内执行同步 tool，然后用 <code>run_coroutine_threadsafe(..., same_loop).result()</code> 等待同一个 loop。当前线程被 <code>result()</code> 阻塞后，loop 永远无法推进 query coroutine。</p>
+        <p>本课没有用 worker thread 绕过问题，因为 bootstrap 中的 hypothesis provider 与主 runtime 共享异步 LLM client，跨 event loop 使用仍可能失败。最终修复是让 <code>ToolExecutor</code> 增加原生 <code>execute_async()</code>：同步工具直接返回，异步工具由 runtime 在当前 loop 中 <code>await</code>。<code>RecallMemoryTool.execute()</code> 因而成为真正的 async tool。</p>
+      </section>
+
+      <section id="verification">
+        <h2>验证步骤与当前证据</h2>
+        <ol>
+          <li>运行 focused：<code>uv run --extra dev pytest tests/test_vector_memory.py tests/test_runtime_vector_memory.py -q</code>。预期看到 RRF、hypothesis fail-open、预算、被动+主动同轮用例通过。</li>
+          <li>运行全量：<code>uv run --extra dev pytest -q</code>。当前证据：<strong>119 passed</strong>。</li>
+          <li>运行规范检查：<code>uv run --extra dev ruff check amadeus tests</code>。当前证据：<strong>All checks passed</strong>。</li>
+          <li>运行类型检查：<code>uv run --extra dev mypy amadeus</code>。当前证据：<strong>Success: no issues found in 31 source files</strong>。</li>
+        </ol>
+        <p>联合测试会检查第一次 provider payload 已含被动 Relevant History，第二次 payload 仍保留它并新增一条 <code>role=tool</code> JSON。这证明两条线路不是用单元测试分别“假装存在”。</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>常见误区</h2>
+        <ul>
+          <li><strong>有类就等于已接入：</strong>错误。必须追实例化和调用位置。</li>
+          <li><strong>RRF 融合相似度：</strong>错误。RRF 融合的是各 lane 名次。</li>
+          <li><strong>双路命中只留 dominant lane：</strong>会丢可解释性，应保留两路原始信号。</li>
+          <li><strong>主动和被动重叠就是冲突：</strong>重复 ID 只是不同阶段再次命中；冲突指两个事实内容不一致。</li>
+          <li><strong>embedding 失败就没有检索：</strong>当前设计 fail-open 到 lexical lane。</li>
+        </ul>
+      </section>
+
+      <section id="audit">
+        <h2>Coverage / Gap Audit</h2>
+        <table>
+          <tr><th>机制</th><th>本课状态</th><th>剩余 gap</th><th>明确落点</th></tr>
+          <tr><td>dense + lexical + RRF</td><td>已复现，内存候选排名</td><td>Akashic 的数据库级 vector/keyword candidate retrieval</td><td>Lesson 18 阶段验收决定是否成为下一性能切片</td></tr>
+          <tr><td>结构化注入</td><td>已复现分类、整条目预算、injected IDs</td><td>更完整的 procedure 强制优先级</td><td>Lesson 18 gap audit</td></tr>
+          <tr><td>answer hypotheses</td><td>已复现 event/general + fail-open</td><td>模型质量 eval</td><td>Lesson 39 retrieval eval</td></tr>
+          <tr><td>procedure multi-query</td><td>已复现稳定查询变体 + max-pool</td><td>真实 procedure 语料 eval</td><td>Lesson 18 seed，Lesson 39 harness</td></tr>
+          <tr><td>retrieval trace</td><td>已有 intent/query/lane/fallback/error/injection 字段</td><td>统一跨模块 schema</td><td>Lesson 36</td></tr>
+          <tr><td>QueryRewriter / Sufficiency / HyDEEnhancer</td><td>明确未接入</td><td>Akashic 当前也是孤立实验模块</td><td>Lesson 40 复核 Akashic 届时主链</td></tr>
+          <tr><td>标准 BM25 / reranker</td><td>不宣称实现</td><td>Akashic 当前主链无对应实现</td><td>仅在用户确认 Amadeus 扩展后另行设计</td></tr>
+        </table>
+        <p><strong>本课 eval seed：</strong>双路中等名次的同一条目应高于只在单路出现的高分条目；hypothesis 失败仍应返回 raw-query lexical 结果；字符预算不能产生半条 source_ref。</p>
+      </section>
+
+      <section id="retell">
+        <h2>必须复述的问题</h2>
+        <ol>
+          <li>从用户消息到被动 context block，依次经过哪些函数和数据类型？</li>
+          <li>主动 recall 为什么会多出 event/general hypothesis？失败时为什么不能让整个工具失败？</li>
+          <li>RRF 使用的输入是什么？为什么必须保留 vector/lexical 两路原始 signals？</li>
+          <li>原主动 recall 为什么会死锁？<code>execute_async()</code> 怎样让 query 留在同一个 event loop？</li>
+          <li>哪些 Akashic 检索类当前没有接入主链？为什么本课不迁移它们？</li>
+        </ol>
+        <p>请先用自己的话讲清这五题。确认理解后，才创建 learning record 并进入 Lesson 18。</p>
+      </section>
+
+      <section id="follow-up">
+        <h2>继续追问提示</h2>
+        <p>如果某段还不稳，可以继续问：“画出被动与主动 payload 的差异”“用三个条目手算一次 RRF”“为什么同步 ToolExecutor 会卡 async query”“怎样从 trace 判断 lexical fallback 是否发生”。</p>
+      </section>
+    </div>
+  </div>
+</main>
+</body>
+</html>

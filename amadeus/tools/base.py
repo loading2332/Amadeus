@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -34,7 +35,7 @@ class Tool(Protocol):
     description: str
     parameters: dict[str, Any]
 
-    def execute(self, **kwargs: Any) -> ToolResult:
+    def execute(self, **kwargs: Any) -> ToolResult | Awaitable[ToolResult]:
         ...
 
 

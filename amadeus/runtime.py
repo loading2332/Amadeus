@@ -12,8 +12,7 @@ from amadeus.memory_engine import MemoryEngine, MemoryQuery
 from amadeus.prompting import build_context_trim_attempts
 from amadeus.provider import ContextLengthError, LLMProvider, LLMResponse
 from amadeus.response_parser import parse_response
-from amadeus.session import Session
-from amadeus.session import SessionManager
+from amadeus.session import Session, SessionManager
 from amadeus.tool_runtime import (
     append_assistant_tool_calls,
     append_tool_result,
@@ -64,7 +63,13 @@ class PassiveRuntime:
         resolved_retrieved_memory = retrieved_memory
         if resolved_retrieved_memory is None and self.memory_engine is not None:
             try:
-                memory_result = await self.memory_engine.query(MemoryQuery(text=user_message))
+                memory_result = await self.memory_engine.query(
+                    MemoryQuery(
+                        text=user_message,
+                        intent="context",
+                        context={"history": history, "session_key": session_key},
+                    )
+                )
                 resolved_retrieved_memory = self.memory_engine.render_context_block(memory_result)
             except Exception:
                 resolved_retrieved_memory = None
@@ -232,7 +237,7 @@ class PassiveRuntime:
                         )
                     )
 
-                result, trace = self.tool_executor.execute(
+                result, trace = await self.tool_executor.execute_async(
                     tool_call.name,
                     tool_call.arguments,
                     call_id=tool_call.id,

@@ -55,7 +55,7 @@ class Session:
                         calls = group.get("calls") or []
                         if not isinstance(calls, list) or not calls:
                             continue
-                        assistant_tool_message: dict[str, Any] = {
+                        assistant_tool_message: Message = {
                             "role": "assistant",
                             "content": str(group.get("text") or ""),
                             "tool_calls": [],
@@ -79,11 +79,11 @@ class Session:
                         reasoning_content = group.get("reasoning_content")
                         if isinstance(reasoning_content, str):
                             assistant_tool_message["reasoning_content"] = reasoning_content
-                        history.append(assistant_tool_message)  # type: ignore[arg-type]
+                        history.append(assistant_tool_message)
                         for call in calls:
                             if not isinstance(call, dict):
                                 continue
-                            history.append(  # type: ignore[arg-type]
+                            history.append(
                                 {
                                     "role": "tool",
                                     "tool_call_id": str(call.get("call_id") or ""),

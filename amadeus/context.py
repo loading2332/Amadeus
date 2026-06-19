@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Protocol, TypedDict, cast
+from typing import Any, Literal, NotRequired, Protocol, TypedDict, cast
 
 from amadeus.prompting.assembler import (
     PromptAssembler,
@@ -12,7 +12,10 @@ from amadeus.prompting.assembler import (
 
 class Message(TypedDict):
     role: Literal["system", "user", "assistant", "tool"]
-    content: str
+    content: Any
+    tool_call_id: NotRequired[str]
+    tool_calls: NotRequired[list[dict[str, Any]]]
+    reasoning_content: NotRequired[str]
 
 
 @dataclass

@@ -9,6 +9,8 @@ from amadeus.memory_engine import (
     MemoryEngine,
     MemoryIngestRequest,
     MemoryIngestResult,
+    MemoryMutation,
+    MemoryMutationResult,
     MemoryQuery,
     MemoryQueryResult,
 )
@@ -20,6 +22,9 @@ from amadeus.provider import (
 )
 from amadeus.runtime import PassiveRuntime
 from amadeus.session import SessionManager
+from amadeus.tools.executor import ToolExecutor
+from amadeus.tools.recall_memory import RecallMemoryTool
+from amadeus.tools.registry import ToolRegistry
 from amadeus.vector_memory import VectorMemoryEngine, VectorMemoryStore
 
 
@@ -31,9 +36,12 @@ class FakeEmbeddingProvider:
 class FakeCompletions:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.responses: list[SimpleNamespace] = []
 
     async def create(self, **kwargs: Any) -> SimpleNamespace:
         self.calls.append(kwargs)
+        if self.responses:
+            return self.responses.pop(0)
         return SimpleNamespace(
             id="resp",
             model=kwargs["model"],
@@ -79,9 +87,9 @@ def test_runtime_retrieves_memory_into_context_frame(tmp_path):
 
     sent_messages = client.completions.calls[0]["messages"]
     assert result.assistant_response == "assistant reply"
-    assert any("Retrieved Memory" in message["content"] for message in sent_messages)
+    assert any("Relevant History" in message["content"] for message in sent_messages)
     assert not any(
-        message["role"] == "system" and "Retrieved Memory" in message["content"]
+        message["role"] == "system" and "Relevant History" in message["content"]
         for message in sent_messages
     )
 
@@ -93,6 +101,12 @@ def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
 
         async def query(self, query: MemoryQuery) -> MemoryQueryResult:
             raise RuntimeError("embedding unavailable")
+
+        async def mutate(self, request: MemoryMutation) -> MemoryMutationResult:
+            return MemoryMutationResult()
+
+        def forget(self, ids: list[str]) -> MemoryMutationResult:
+            return MemoryMutationResult()
 
         def render_context_block(self, result: MemoryQueryResult) -> str:
             return "should not render"
@@ -109,3 +123,112 @@ def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
     result = asyncio.run(runtime.run_turn(session_key="chat:1", user_message="hello"))
 
     assert result.assistant_response == "assistant reply"
+
+
+def test_runtime_marks_pre_retrieval_as_context_intent(tmp_path):
+    class RecordingMemory(MemoryEngine):
+        def __init__(self) -> None:
+            self.queries: list[MemoryQuery] = []
+
+        async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult:
+            return MemoryIngestResult(status="skipped")
+
+        async def query(self, query: MemoryQuery) -> MemoryQueryResult:
+            self.queries.append(query)
+            return MemoryQueryResult()
+
+        async def mutate(self, request: MemoryMutation) -> MemoryMutationResult:
+            return MemoryMutationResult()
+
+        def forget(self, ids: list[str]) -> MemoryMutationResult:
+            return MemoryMutationResult()
+
+        def render_context_block(self, result: MemoryQueryResult) -> str:
+            return ""
+
+    memory = RecordingMemory()
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake"), client=client
+        ),
+        session_manager=SessionManager(tmp_path),
+        memory_engine=memory,
+    )
+
+    asyncio.run(runtime.run_turn(session_key="chat:1", user_message="hello"))
+
+    assert memory.queries[0].intent == "context"
+    assert memory.queries[0].context == {"history": [], "session_key": "chat:1"}
+
+
+def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path):
+    vector = VectorMemoryEngine(
+        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+    asyncio.run(
+        vector.ingest(
+            MemoryIngestRequest(
+                summary="用户完成 Amadeus 检索重构",
+                source_ref='["chat:1:0"]',
+            )
+        )
+    )
+    client = FakeClient()
+    client.completions.responses = [
+        SimpleNamespace(
+            id="tool",
+            model="fake",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call-memory",
+                                function=SimpleNamespace(
+                                    name="recall_memory",
+                                    arguments='{"query":"Amadeus 检索重构"}',
+                                ),
+                            )
+                        ],
+                    )
+                )
+            ],
+            usage={},
+        ),
+        SimpleNamespace(
+            id="final",
+            model="fake",
+            choices=[SimpleNamespace(message=SimpleNamespace(content="done"))],
+            usage={},
+        ),
+    ]
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake"), client=client
+    )
+    registry = ToolRegistry()
+    registry.register(RecallMemoryTool(memory_engine=vector))
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=provider,
+        session_manager=SessionManager(tmp_path),
+        memory_engine=vector,
+        tool_registry=registry,
+        tool_executor=ToolExecutor(registry=registry),
+    )
+
+    result = asyncio.run(
+        runtime.run_turn(session_key="chat:1", user_message="Amadeus 检索做到哪了？")
+    )
+
+    assert result.assistant_response == "done"
+    first_messages = client.completions.calls[0]["messages"]
+    second_messages = client.completions.calls[1]["messages"]
+    assert any("## Relevant History" in str(message["content"]) for message in first_messages)
+    assert any("## Relevant History" in str(message["content"]) for message in second_messages)
+    tool_messages = [message for message in second_messages if message["role"] == "tool"]
+    assert len(tool_messages) == 1
+    assert '"count": 1' in tool_messages[0]["content"]
