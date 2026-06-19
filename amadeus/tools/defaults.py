@@ -62,7 +62,10 @@ def _int_arg(name: str, value: object, default: int) -> int:
 class FetchMessagesTool:
     store: SessionStore
     name: str = "fetch_messages"
-    description: str = "Fetch persisted session messages by ids or source_ref."
+    description: str = (
+        "Fetch persisted original session messages by ids, source_ref, or recall evidence. "
+        "这是 recall_memory、search_messages 和被动记忆注入之后唯一可作为最终证据的原文工具。"
+    )
     parameters: ToolParameters = field(
         default_factory=lambda: {
             "type": "object",
@@ -100,7 +103,10 @@ class FetchMessagesTool:
 class SearchMessagesTool:
     store: SessionStore
     name: str = "search_messages"
-    description: str = "Search persisted session messages by substring."
+    description: str = (
+        "Search persisted session messages by substring and return candidate previews with source_ref. "
+        "预览不是最终证据；使用结果回答前必须调用 fetch_messages(source_ref=...) 读取原文。"
+    )
     parameters: ToolParameters = field(
         default_factory=lambda: {
             "type": "object",
