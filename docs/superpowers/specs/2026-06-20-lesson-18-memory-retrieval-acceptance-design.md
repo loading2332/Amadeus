@@ -139,3 +139,9 @@ Part 1 不因为缺少 UI 而虚构点击验证；当前真实接口是 Python r
 - 不把标准 BM25、reranker 或数据库级 vector index 冒充当前 Akashic 对齐要求。
 - 不因验收课而改写完整 memory architecture。
 - 不把单元测试通过等同于联合链路验收。
+
+## 11. Part 2 源码精读新增 Gap：engine-owned tool profile
+
+Lesson 18 Part 2 对照源码确认：Akashic 的 memory engine 通过 `tool_profile()` 返回 `MemoryToolProfile`，每个 `MemoryToolSpec` 声明 description、parameters、risk、search_hint 与可选 tool class；`register_memory_meta_tools()` 在注册阶段把 spec 注入工具实例，registry 再把 schema 通过 function-calling 的 `tools` 参数提供给 LLM。Behavior prompt 仍是另一条独立通道，只负责跨工具协作顺序。
+
+Amadeus 当前把 description/parameters 定义在具体 memory tool 类上，并由 `ToolRegistry.export_openai_tools()` 输出。Lesson 18 已对齐候选/证据等描述内容，但尚未对齐“由具体 memory engine 声明配套工具能力”的扩展边界。这不是本阶段 correctness failure，因此不在验收修复中临时新增 profile；如果后续支持多个 memory engine/plugin，应把它作为独立 Akashic 对齐切片，迁移能力声明、可选工具、risk/search metadata 与注册生命周期，并复用现有工具 JSON 和 source_ref resolver。

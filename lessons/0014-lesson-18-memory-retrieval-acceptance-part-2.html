@@ -24,6 +24,7 @@
         <li><a href="#part1">Part 1 结论</a></li>
         <li><a href="#flow">完整调用链</a></li>
         <li><a href="#prompt">行为协议层</a></li>
+        <li><a href="#tool-profile">Tool Profile 扩展边界</a></li>
         <li><a href="#recall">Recall 候选层</a></li>
         <li><a href="#fetch">Fetch 证据层</a></li>
         <li><a href="#forget">Forget 纠错层</a></li>
@@ -88,6 +89,25 @@ LLM 选择 fetch_messages
 recall insufficient → search → fetch → factual answer
 correction → locate memory ID → fetch → forget memory ID</code></pre>
         <p>它负责告诉模型策略，不负责执行查询，也不能保证模型一定遵守。这里最容易犯的错误是把 prompt 文本误认为状态机。</p>
+      </section>
+
+      <section id="tool-profile">
+        <h2>补充源码发现：Tool Profile 不是 Prompt Block</h2>
+        <p>Akashic 的 memory 工具 description 和 parameters 由具体 memory engine 的 <code>tool_profile()</code> 提供，而不是固定写死在工具类中：</p>
+        <pre><code>DefaultMemoryEngine.tool_profile()
+  → MemoryToolProfile(recall / memorize / forget)
+  → register_memory_meta_tools()
+  → Tool(engine, MemoryToolSpec)
+  → tool.description / tool.parameters
+  → ToolRegistry.get_schemas()
+  → provider.chat(..., tools=schemas)</code></pre>
+        <p><code>MemoryToolSpec</code> 还携带 <code>risk</code>、<code>search_hint</code> 和可选 <code>tool_class</code>；某个 spec 为 <code>None</code> 时，对应工具不会注册。因此 Tool Profile 的核心价值是让 engine 声明“我支持哪些工具，以及这些工具应如何向模型暴露”。</p>
+        <table>
+          <tr><th>机制</th><th>回答的问题</th><th>进入 LLM 的位置</th></tr>
+          <tr><td>Tool Profile / schema</td><td>单个工具能做什么、参数是什么</td><td>function-calling 的 <code>tools</code> 参数</td></tr>
+          <tr><td>Behavior prompt</td><td>多个工具应该按什么顺序协作</td><td>behavior-rules prompt block</td></tr>
+        </table>
+        <p>Amadeus 当前由 <code>RecallMemoryTool</code> 等具体类持有 description/parameters，再由 <code>ToolRegistry.export_openai_tools()</code> 输出。内容已经对齐，但所有权仍在工具类：替换 memory engine 时，工具 schema 可能与新 engine 的能力不匹配。</p>
       </section>
 
       <section id="recall">
@@ -163,6 +183,7 @@ WHERE id = ?</code></pre>
         <ul>
           <li><strong>已对齐：</strong>候选/原文分层、evidence/source_ref handoff、memory/message ID 边界、soft-delete、citation 输出合同。</li>
           <li><strong>同一机制未完成：</strong>Amadeus 没有 citation plugin 式运行时 enforcement。</li>
+          <li><strong>扩展边界 gap：</strong>Akashic 由 memory engine 的 <code>tool_profile()</code> 声明工具能力；Amadeus 仍在具体工具类中硬编码 schema。当前描述内容已对齐，不等于插件边界已对齐。</li>
           <li><strong>性能 gap：</strong>数据库级独立 candidate retrieval 尚未复现，但当前验收没有 correctness failure。</li>
           <li><strong>不能偏离：</strong>未来无论加状态机还是 citation hook，都必须复用当前 tool JSON 和 source_ref resolver，不能让第二套临时 parser 出现。</li>
           <li><strong>明确不迁移：</strong>Akashic 未接生产主链的 QueryRewriter、SufficiencyChecker、HyDEEnhancer。</li>
@@ -176,6 +197,7 @@ WHERE id = ?</code></pre>
           <li><code>RecallMemoryTool</code>、<code>fetch_messages()</code>、<code>VectorMemoryEngine.forget()</code> 各自输入输出和职责是什么？</li>
           <li>为什么 <code>_resolve_source_refs()</code> 应位于确定性运行时代码，而不能交给 LLM 解析？</li>
           <li>如果要把“fetch 后才能 forget”升级为运行时强制，你会把状态检查放在哪一层？为什么？</li>
+          <li><code>tool_profile</code> 和 behavior prompt 分别进入 LLM 的哪个通道？为什么不能互相替代？</li>
         </ol>
         <p>如果你自己重做一遍，第一步先看联合验收测试，再沿失败断言追到 tool → engine → store，而不是先改 prompt。</p>
       </section>
