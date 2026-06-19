@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 18 Part 1：Memory / Retrieval 阶段验收</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <header class="lesson-header">
+    <div class="lesson-meta">LESSON 18 · PART 1</div>
+    <span class="badge">对应总计划 Lesson 18 / Part 1</span>
+    <span class="badge badge-red">Akashic 源码课</span>
+    <h1>从候选记忆回到原始证据：验收检索闭环</h1>
+    <p>本课不预设新功能。我们先用 Akashic 的真实工具合同审计 Amadeus：摘要和预览只负责定位，原始消息才是最终证据；纠错时必须先回源，再按 memory ID 清除旧记忆。</p>
+  </header>
+
+  <div class="lesson-wrapper">
+    <nav class="toc toc-sidebar" aria-label="目录导航">
+      <div class="toc-title">目录</div>
+      <ul class="toc-list">
+        <li><a href="#goal">目标与 Mission</a></li>
+        <li><a href="#map">当前阶段地图</a></li>
+        <li><a href="#akashic">Part 1：Akashic 源码课</a></li>
+        <li><a href="#evidence">候选与证据等级</a></li>
+        <li><a href="#ids">Memory ID 与 Message ID</a></li>
+        <li><a href="#boundaries">运行时与 Prompt 边界</a></li>
+        <li><a href="#acceptance">Amadeus 验收与最小修复</a></li>
+        <li><a href="#verification">验证步骤与证据</a></li>
+        <li><a href="#mistakes">常见误区</a></li>
+        <li><a href="#audit">Akashic Gap Audit</a></li>
+        <li><a href="#retell">必须复述</a></li>
+      </ul>
+    </nav>
+
+    <div class="lesson-content">
+      <section id="goal">
+        <h2>本课目标与 MISSION.md 的关系</h2>
+        <p>MISSION 要求你不仅会调用 memory tool，还能解释复杂 agent 为什么需要“候选定位”和“原文取证”两个阶段。本课完成后，你应能独立追踪 <code>recall/search → source_ref/evidence → fetch → original messages</code>，并判断删除操作使用的是哪一层 ID。</p>
+        <ul>
+          <li>理解摘要、搜索预览、定位合同和原始消息的证据等级。</li>
+          <li>理解主动 recall、关键词 search、原文 fetch、记忆 forget 的职责边界。</li>
+          <li>知道哪些规则由代码强制，哪些仍依靠 prompt 约束模型。</li>
+          <li>用联合测试证明工具之间的数据合同真实可衔接。</li>
+        </ul>
+      </section>
+
+      <section id="map">
+        <h2>当前阶段地图</h2>
+        <table>
+          <tr><th>层次</th><th>已实现</th><th>本课验收重点</th></tr>
+          <tr><td>被动检索</td><td>结构化 memory block 进入 context frame</td><td>它是背景候选，不冒充原始消息</td></tr>
+          <tr><td>主动检索</td><td><code>recall_memory</code> 返回结构化 JSON</td><td>evidence/source_ref 能否直接交给 fetch</td></tr>
+          <tr><td>消息查找</td><td><code>search_messages</code> 与 <code>fetch_messages</code></td><td>预览与原文是否有明确边界</td></tr>
+          <tr><td>纠错</td><td><code>forget_memory</code> 失效记忆条目</td><td>先 fetch，再删除 memory ID</td></tr>
+          <tr><td>质量管线</td><td>dense/lexical、RRF、hypothesis、fallback、trace</td><td>不重复实现算法，只验收证据闭环</td></tr>
+        </table>
+        <p><strong>下一个切片为什么是验收：</strong>Lesson 14–17 已经分别实现多个模块。继续堆算法之前，必须先证明模块之间的 ID、schema 和证据边界一致，否则单测全绿也可能无法完成真实回源。</p>
+      </section>
+
+      <section id="akashic">
+        <h2>Part 1：Akashic 源码课</h2>
+        <h3>关键源码与测试地图</h3>
+        <table>
+          <tr><th>职责</th><th>Akashic 定位</th><th>要观察的合同</th></tr>
+          <tr><td>主动记忆候选</td><td><code>agent/tools/recall_memory.py</code></td><td>memory ID、evidence、source_ref、citation metadata</td></tr>
+          <tr><td>搜索与原文读取</td><td><code>agent/tools/message_lookup.py</code></td><td>search 返回预览；fetch 接收 evidence/source_ref</td></tr>
+          <tr><td>删除记忆</td><td><code>agent/tools/forget_memory.py</code></td><td>只接收 memory ID</td></tr>
+          <tr><td>行为顺序</td><td><code>prompts/agent.py</code></td><td>recall → fetch；不足时 search → fetch；纠错先 fetch 后 forget</td></tr>
+          <tr><td>合同验证</td><td><code>tests/test_recall_memory_tool.py</code>、<code>test_message_lookup_tool.py</code>、<code>test_forget_memory_tool.py</code></td><td>跨工具字段可消费</td></tr>
+          <tr><td>引用约束</td><td><code>tests/test_citation_plugin.py</code></td><td>引用 ID 必须来自实际使用的记忆</td></tr>
+          <tr><td>检索基线</td><td><code>tests/test_memory2_retrieval_baseline.py</code></td><td>检索失败路径与基线行为</td></tr>
+        </table>
+
+        <h3>真实主动链路</h3>
+        <pre><code>用户询问具体历史事实
+  → recall_memory(query)
+  → 候选 MemoryRecord + memory ID + evidence/source_ref
+  → fetch_messages(evidence 或 source_ref)
+  → 原始 session messages + 上下文
+  → 基于原文回答
+
+recall 不足
+  → search_messages(query)
+  → 候选预览 + source_ref
+  → fetch_messages(source_ref)
+  → 基于原文回答</code></pre>
+        <p>Akashic 把工具描述当作 schema 的语义部分：字段类型只说明“能传什么”，description 还必须说明“什么时候允许把结果当证据”。</p>
+      </section>
+
+      <section id="evidence">
+        <h2>候选与证据等级</h2>
+        <table>
+          <tr><th>产物</th><th>作用</th><th>能否直接作为最终证据</th></tr>
+          <tr><td>被动 memory block</td><td>给模型预先背景，帮助决定关注方向</td><td>否；它是整理后的记忆</td></tr>
+          <tr><td>recall summary</td><td>语义检索候选，带 memory ID</td><td>否；可能压缩、过时或互相冲突</td></tr>
+          <tr><td>search preview</td><td>关键词定位候选消息</td><td>否；预览可能截断且缺少上下文</td></tr>
+          <tr><td>evidence/source_ref</td><td>把候选连接到原始消息</td><td>否；它是定位合同，不是正文</td></tr>
+          <tr><td>fetch original messages</td><td>返回持久化原文及邻近上下文</td><td>是；这是本链路的最终证据</td></tr>
+        </table>
+        <p>资深工程师会先检查“证据能否回源”，而不是先看召回分数。分数只表示候选相关性，不证明候选内容真实、完整或仍然有效。</p>
+      </section>
+
+      <section id="ids">
+        <h2>Memory ID 与 Message ID</h2>
+        <dl>
+          <dt><strong>Memory ID</strong></dt>
+          <dd>标识整理后的记忆条目。它由 <code>recall_memory</code> 返回，也是 <code>forget_memory</code> 的删除目标。</dd>
+          <dt><strong>Message ID</strong></dt>
+          <dd>标识原始会话消息。它由 <code>source_ref/evidence</code> 解析并交给 <code>fetch_messages</code>，用于读取原文。</dd>
+        </dl>
+        <pre><code>memory ID  → forget_memory → supersede 记忆条目
+message ID → fetch_messages → 读取原始消息
+
+禁止：forget_memory(message ID)</code></pre>
+        <p>纠错不是删除历史。正确流程是定位旧记忆、回看来源、确认错误，再失效派生出来的 memory record；原始 session message 仍然保留，作为审计依据。</p>
+      </section>
+
+      <section id="boundaries">
+        <h2>运行时强制与 Prompt 强制的边界</h2>
+        <table>
+          <tr><th>规则</th><th>当前强制位置</th><th>风险</th></tr>
+          <tr><td>fetch 可解析 evidence/source_ref</td><td>运行时代码与联合测试</td><td>低；不兼容会直接失败</td></tr>
+          <tr><td>forget 只接收 memory ID</td><td>工具 schema、存储操作和测试</td><td>低；错误 ID 不应命中记忆</td></tr>
+          <tr><td>回答前必须回源</td><td>工具 description + behavior prompt</td><td>中；模型仍可能违反顺序</td></tr>
+          <tr><td>只引用实际使用的 memory ID</td><td>返回 metadata；Akashic 另有 citation plugin</td><td>Amadeus 尚无运行时 citation enforcement</td></tr>
+        </table>
+        <p>工具 schema 能强制字段形状，却不能单独强制跨多次 tool call 的时序。当前 Amadeus 用 prompt 明确顺序，用验收测试锁定描述合同；如果后续需要强一致性，应迁移 Akashic citation/runtime policy 的对应扩展点，而不是继续堆提示词。</p>
+      </section>
+
+      <section id="acceptance">
+        <h2>Amadeus 验收与最小修复</h2>
+        <p>先写六个联合验收场景。首次运行时，三个数据路径测试通过，三个语义合同测试失败：</p>
+        <table>
+          <tr><th>场景</th><th>首次结果</th><th>结论</th></tr>
+          <tr><td>recall evidence → fetch 原文</td><td>通过</td><td>resolver 数据链已接通</td></tr>
+          <tr><td>search source_ref → fetch 原文</td><td>通过</td><td>lookup 工具合同可消费</td></tr>
+          <tr><td>纠错后仅失效 memory ID</td><td>通过</td><td>原始 session 与 message ID 保留</td></tr>
+          <tr><td>工具描述区分候选与证据</td><td>失败</td><td>模型看不到明确 evidence boundary</td></tr>
+          <tr><td>behavior prompt 固化调用顺序</td><td>失败</td><td>跨工具时序没有显式协议</td></tr>
+          <tr><td>recall 输出完整引用 metadata</td><td>失败</td><td>Amadeus 输出合同弱于 Akashic</td></tr>
+        </table>
+
+        <h3>最小修复范围</h3>
+        <ul>
+          <li><code>amadeus/tools/recall_memory.py</code>：声明 summary 是候选；evidence 补齐 <code>source_ref</code> 与 <code>metadata</code>；返回 citation metadata。</li>
+          <li><code>amadeus/tools/defaults.py</code>：明确 search preview 不能直接作证，fetch 才返回最终原文。</li>
+          <li><code>amadeus/prompts/__init__.py</code>：新增 History Retrieval Protocol，固化 recall/search/fetch/forget 顺序。</li>
+          <li><code>tests/test_memory_retrieval_acceptance.py</code>：用生产工具和真实 SQLite store 验收跨工具合同；没有用 fake 替代生产机制。</li>
+        </ul>
+        <p><strong>取舍：</strong>本次选择局部合同修复，不重写 memory architecture。优点是失败与修复一一对应；代价是调用时序仍部分依赖模型遵守 prompt，citation runtime enforcement 留作明确 gap。</p>
+      </section>
+
+      <section id="verification">
+        <h2>验证步骤与当前证据</h2>
+        <ol>
+          <li>运行验收：<code>uv run --extra dev pytest tests/test_memory_retrieval_acceptance.py -q</code>。预期 <strong>6 passed</strong>。</li>
+          <li>运行 memory/retrieval focused suite。当前证据：<strong>38 passed</strong>。</li>
+          <li>运行全量：<code>uv run --extra dev pytest -q</code>。当前证据：<strong>125 passed</strong>。</li>
+          <li>运行规范检查：<code>uv run --extra dev ruff check .</code>。当前证据：<strong>All checks passed</strong>。</li>
+          <li>运行类型检查：<code>uv run --extra dev mypy</code>。当前证据：<strong>59 source files，无错误</strong>。</li>
+        </ol>
+        <p>手工观察时不要只看“测试通过”：检查 recall JSON 是否同时有 memory ID、evidence.source_ref 和 citation metadata；检查 fetch 输出是否出现完整 content；检查 forget 后原始 session message 是否仍可读取。</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>常见误区与排错顺序</h2>
+        <ul>
+          <li><strong>召回分高就是真相：</strong>分数只排序候选，矛盾或关键事实必须回源。</li>
+          <li><strong>source_ref 就是原文：</strong>它只是定位器；必须交给 fetch 解析。</li>
+          <li><strong>search preview 足够回答：</strong>预览可能被截断，也没有相邻上下文。</li>
+          <li><strong>纠错就删除消息：</strong>消息是历史证据；应失效由它派生的 memory record。</li>
+          <li><strong>schema 能保证工具顺序：</strong>schema 只能约束单次参数，跨调用顺序需要 prompt 或 runtime policy。</li>
+        </ul>
+        <p><strong>自己排错的前三步：</strong>先看 tool 输出的 ID 属于哪一层；再检查 source_ref/evidence 能否被 fetch 消费；最后检查 prompt 或 runtime 是否要求模型按正确顺序调用。</p>
+      </section>
+
+      <section id="audit">
+        <h2>Akashic Gap Audit</h2>
+        <table>
+          <tr><th>能力</th><th>Amadeus 当前状态</th><th>后续边界</th></tr>
+          <tr><td>recall/search → fetch 证据闭环</td><td>已用联合测试对齐</td><td>不得把摘要或 preview 升格为最终证据</td></tr>
+          <tr><td>citation metadata</td><td>输出合同已对齐</td><td>尚无 Akashic citation plugin 式运行时强制</td></tr>
+          <tr><td>候选检索</td><td>内存行级 dense/lexical 排名可用</td><td>数据库级独立 candidate retrieval 与性能仍是 gap，但不是本课 correctness failure</td></tr>
+          <tr><td>QueryRewriter / SufficiencyChecker / HyDEEnhancer</td><td>未接入</td><td>Akashic 当前也是未接生产主链的实验模块，不在本课复现范围</td></tr>
+          <tr><td>统一 retrieval eval harness</td><td>已有可复跑测试 seed</td><td>Lesson 39 统一收口</td></tr>
+        </table>
+        <p><strong>Eval seeds：</strong>recall summary 不足时沿 evidence fetch；search preview 命中后沿 source_ref fetch；两条矛盾记忆必须回源；纠错只失效 memory ID；message ID 仍可读取；citation IDs 只能来自最终实际使用的候选。</p>
+
+        <h3>简历可讲述版本</h3>
+        <p>参考 Akashic 的 evidence-first memory retrieval 设计，在 Amadeus 中建立 recall/search 候选到原始 session message 的可追溯链路；通过联合验收锁定 source_ref、memory ID 与 message ID 的边界，并补齐候选/证据描述和引用 metadata。全量 125 个测试、静态检查与类型检查通过，同时明确保留 citation runtime enforcement 和数据库级检索性能 gap。</p>
+      </section>
+
+      <section id="retell">
+        <h2>必须复述的问题</h2>
+        <ol>
+          <li>为什么 recall summary 和 search preview 都不能直接作为最终证据？</li>
+          <li>从 <code>recall_memory</code> 到原始消息，数据依次经过哪些字段和工具？recall 不足时如何降级？</li>
+          <li>memory ID 与 message ID 分别标识什么？纠错时为什么只能把前者交给 forget？</li>
+          <li>哪些规则已经由运行时代码强制，哪些仍依赖工具描述和 behavior prompt？</li>
+          <li>首次六项验收为什么是 3 绿 3 红？本课具体修了什么，又刻意没修什么？</li>
+        </ol>
+        <p>请先用自己的话讲清这五题，并指出 Amadeus 仍缺少的 citation runtime enforcement。确认理解后才创建 Lesson 18 learning record；此时不推进下一课。</p>
+      </section>
+
+      <section id="follow-up">
+        <h2>继续追问提示</h2>
+        <p>如果某段还不稳，可以继续问：“用一条具体 JSON 走完 recall → fetch”“画出 memory ID 和 message ID 的生命周期”“为什么 citation metadata 不等于 runtime enforcement”“如何把 prompt 时序升级成状态机策略”。</p>
+      </section>
+    </div>
+  </div>
+</main>
+</body>
+</html>

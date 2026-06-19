@@ -51,7 +51,8 @@ class RecallMemoryTool:
     description: str = (
         "从长期记忆中检索与当前对话相关的历史信息。"
         "当你需要回忆用户的偏好、习惯、过往事件或任何历史记录时调用此工具。"
-        "返回匹配的记忆条目及其来源引用。"
+        "返回的是候选摘要，不是原始消息最终证据。"
+        "回答依赖具体历史事实时，必须把 evidence 或 source_ref 交给 fetch_messages 回源。"
     )
     parameters: ToolParameters = field(
         default_factory=lambda: {
@@ -134,6 +135,8 @@ class RecallMemoryTool:
                         "kind": e.kind,
                         "refs": e.refs,
                         "resolver": e.resolver,
+                        "source_ref": e.source_ref,
+                        "metadata": e.metadata,
                     }
                     for e in (r.evidence or [])
                 ],
@@ -141,9 +144,14 @@ class RecallMemoryTool:
             for r in result.records
         ]
 
+        cited_item_ids = [str(item["id"]) for item in items if str(item.get("id", "")).strip()]
         output = {
             "count": len(items),
             "items": items,
             "trace": dict(result.trace),
+            "citation_required": True,
+            "citation_format": "§cited:[id1,id2,...]§",
+            "cited_item_ids": cited_item_ids,
+            "citation_rule": "Only cite memory IDs actually used in the final answer.",
         }
         return ToolResult(tool_name=self.name, output=output)
