@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 18 Part 2：Amadeus 证据链代码精读</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <header class="lesson-header">
+    <div class="lesson-meta">LESSON 18 · PART 2</div>
+    <span class="badge">对应总计划 Lesson 18 / Part 2</span>
+    <span class="badge badge-red">Amadeus 复现练手</span>
+    <h1>候选不是证据：精读 Amadeus 的回源与纠错链</h1>
+    <p>Part 1 已证明底层数据链可用，并补齐了 LLM 侧语义合同。Part 2 不再新增功能，而是沿真实代码逐层解释：谁负责决策、谁负责查询、谁负责解析 ID、谁负责修改记忆状态。</p>
+  </header>
+
+  <div class="lesson-wrapper">
+    <nav class="toc toc-sidebar" aria-label="目录导航">
+      <div class="toc-title">目录</div>
+      <ul class="toc-list">
+        <li><a href="#goal">目标与 Mission</a></li>
+        <li><a href="#part1">Part 1 结论</a></li>
+        <li><a href="#flow">完整调用链</a></li>
+        <li><a href="#prompt">行为协议层</a></li>
+        <li><a href="#recall">Recall 候选层</a></li>
+        <li><a href="#fetch">Fetch 证据层</a></li>
+        <li><a href="#forget">Forget 纠错层</a></li>
+        <li><a href="#tests">联合验收怎么读</a></li>
+        <li><a href="#tradeoff">方案权衡</a></li>
+        <li><a href="#verify">验证步骤</a></li>
+        <li><a href="#audit">Gap Audit</a></li>
+        <li><a href="#retell">本课复述</a></li>
+      </ul>
+    </nav>
+
+    <div class="lesson-content">
+      <section id="goal">
+        <h2>本课目标与 MISSION.md 的关系</h2>
+        <p>MISSION 要求你能把 Amadeus 讲成有真实架构来源和验证闭环的项目。本课的 tangible win 是：面对一条错误记忆，你能从 prompt block 一直追到 SQLite 状态变化，并解释为什么原始消息不能被一起删除。</p>
+        <ul>
+          <li>说清行为规则、工具执行、检索、解析和存储各自职责。</li>
+          <li>能从工具返回 JSON 判断下一步应调用 fetch 还是 forget。</li>
+          <li>能解释联合测试为什么比单个工具测试更重要。</li>
+        </ul>
+      </section>
+
+      <section id="part1">
+        <h2>Part 1：Akashic 源码课结论</h2>
+        <p>Akashic 把 recall summary 和 search preview 定义为候选，把 <code>source_ref/evidence</code> 定义为定位合同，把 fetch 返回的原始消息定义为最终证据。Amadeus 复现的是这组接口、数据流和删除边界，而不是照搬目录结构。</p>
+        <pre><code>候选层：recall_memory / search_messages
+定位层：memory ID + source_ref + evidence
+证据层：fetch_messages → original messages
+纠错层：forget_memory(memory ID) → memory status=superseded</code></pre>
+      </section>
+
+      <section id="flow">
+        <h2>Part 2：Amadeus 完整调用链</h2>
+        <pre><code>BehaviorRulesPromptBlock.render()
+  → build_behavior_rules_prompt()
+  → LLM 选择 recall_memory
+  → Runtime 调 ToolExecutor.execute_async()
+  → RecallMemoryTool.execute()
+  → VectorMemoryEngine.query(MemoryQuery)
+  → tool JSON: memory ID + summary + evidence/source_ref
+
+LLM 选择 fetch_messages
+  → FetchMessagesTool.execute()
+  → session.fetch_messages()
+  → _source_refs_from_evidence()
+  → _resolve_source_refs()
+  → SessionStore.fetch_by_ids()
+  → original messages
+
+若确认旧记忆错误
+  → ForgetMemoryTool.execute(ids=[memory_id])
+  → VectorMemoryEngine.forget()
+  → VectorMemoryStore.mark_superseded_batch()
+  → memory status='superseded'</code></pre>
+        <p>这条链没有传统 Controller/Service/Mapper 命名，但存在等价分层：runtime 是编排层，tool 是接口适配层，engine 是领域服务层，store 是持久化层。</p>
+      </section>
+
+      <section id="prompt">
+        <h2>1. 行为协议层：决定“应该怎么做”</h2>
+        <p><code>amadeus/prompts/__init__.py::build_behavior_rules_prompt()</code> 声明历史检索顺序；<code>BehaviorRulesPromptBlock.render()</code> 把它作为稳定 behavior-rules block 加入 prompt frame。</p>
+        <pre><code>recall → fetch → factual answer
+recall insufficient → search → fetch → factual answer
+correction → locate memory ID → fetch → forget memory ID</code></pre>
+        <p>它负责告诉模型策略，不负责执行查询，也不能保证模型一定遵守。这里最容易犯的错误是把 prompt 文本误认为状态机。</p>
+      </section>
+
+      <section id="recall">
+        <h2>2. Recall 候选层：返回可追溯候选</h2>
+        <p><code>amadeus/tools/recall_memory.py::RecallMemoryTool.execute()</code> 把工具参数转换成 <code>MemoryQuery</code>，异步等待 <code>MemoryEngine.query()</code>，再把领域对象序列化成 tool JSON。</p>
+        <table>
+          <tr><th>输出字段</th><th>职责</th></tr>
+          <tr><td><code>id</code></td><td>memory ID，后续纠错的删除目标</td></tr>
+          <tr><td><code>summary/score</code></td><td>用于筛选候选，不证明事实成立</td></tr>
+          <tr><td><code>source_ref/evidence</code></td><td>供 fetch 定位原始消息</td></tr>
+          <tr><td><code>citation_*</code></td><td>声明输出引用合同；当前不负责运行时强制</td></tr>
+        </table>
+        <p><code>ToolExecutor.execute_async()</code> 会检测返回值是否 awaitable：async recall 在当前 event loop 中等待，同步 fetch/forget 则直接返回。这延续了 Lesson 17 已确认的异步边界。</p>
+      </section>
+
+      <section id="fetch">
+        <h2>3. Fetch 证据层：把定位合同变成原文</h2>
+        <p><code>amadeus/tools/defaults.py::FetchMessagesTool.execute()</code> 只是工具适配器，真正的解析位于 <code>amadeus/session.py::fetch_messages()</code>：</p>
+        <ol>
+          <li><code>_source_refs_from_evidence()</code> 从 evidence 提取 <code>source_ref</code> 和 refs。</li>
+          <li><code>_resolve_source_refs()</code> 去掉 hash 后缀，解析 JSON message-ID 数组并去重。</li>
+          <li><code>SessionStore.fetch_by_ids()</code> 按 message IDs 读取持久化原文。</li>
+          <li>若传入 <code>context &gt; 0</code>，改用 <code>fetch_by_ids_with_context()</code> 带回邻近消息。</li>
+        </ol>
+        <p>解析放在 session 层而不是 LLM 或 tool description 中，意味着同一个 source_ref 合同可以被测试和其他调用方确定性复用。</p>
+      </section>
+
+      <section id="forget">
+        <h2>4. Forget 纠错层：失效派生记忆，不删除历史</h2>
+        <p><code>ForgetMemoryTool.execute()</code> 清洗 memory IDs 后调用 <code>VectorMemoryEngine.forget()</code>。engine 分出 found/missing IDs，store 最终执行：</p>
+        <pre><code>UPDATE memory_items
+SET status = 'superseded', updated_at = ?
+WHERE id = ?</code></pre>
+        <p>这是 soft-delete：后续 active query 只看 active memory，旧记录仍可审计。session messages 位于另一套存储路径，完全不会被这条 SQL 修改。</p>
+      </section>
+
+      <section id="tests">
+        <h2>5. 联合验收怎么读</h2>
+        <p><code>tests/test_memory_retrieval_acceptance.py</code> 不是检查实现细节，而是检查模块边界能否组合：</p>
+        <ul>
+          <li>把 recall 原样返回的 evidence 直接交给 fetch，必须得到原始消息。</li>
+          <li>把 search 原样返回的 source_ref 直接交给 fetch，必须得到完整 content。</li>
+          <li>forget memory ID 后，该 memory 被 supersede，但原始 message IDs 仍可 fetch。</li>
+          <li>工具描述、behavior rules 与 citation/evidence JSON 必须表达同一证据等级。</li>
+        </ul>
+        <p>测试使用真实 <code>SessionManager</code>、SQLite store、<code>VectorMemoryEngine</code> 和生产工具；只用稳定 embedding provider 隔离外部模型 nondeterminism，没有用 fake 替代证据链。</p>
+      </section>
+
+      <section id="tradeoff">
+        <h2>方案权衡</h2>
+        <table>
+          <tr><th>选择</th><th>收益</th><th>代价 / 失效条件</th></tr>
+          <tr><td>工具描述 + behavior prompt</td><td>改动小，与 Akashic 当前合同对齐</td><td>模型可能不遵守；强一致时必须上 runtime policy</td></tr>
+          <tr><td>source_ref 集中解析</td><td>调用方不重复写 parser</td><td>格式扩展必须保持 resolver 向后兼容</td></tr>
+          <tr><td>memory soft-delete</td><td>保留审计与回滚依据</td><td>长期需要归档/清理策略</td></tr>
+          <tr><td>联合测试走生产边界</td><td>能发现 schema 可组合性问题</td><td>比纯单测更慢，但当前规模成本很低</td></tr>
+        </table>
+      </section>
+
+      <section id="verify">
+        <h2>验证步骤</h2>
+        <ol>
+          <li>运行 <code>uv run --extra dev pytest tests/test_memory_retrieval_acceptance.py -q</code>，应看到 <strong>6 passed</strong>。</li>
+          <li>在 correction 测试中观察 <code>superseded_ids == [memory_id]</code>。</li>
+          <li>观察 message ID 被 forget 时进入 <code>missing_ids</code>。</li>
+          <li>再次 fetch 同一 source_ref，确认原始消息数量仍为 2。</li>
+          <li>阶段门证据：focused 38 passed、全量 125 passed、ruff 和 mypy 通过。</li>
+        </ol>
+      </section>
+
+      <section id="audit">
+        <h2>Akashic Gap Audit 与下一步边界</h2>
+        <ul>
+          <li><strong>已对齐：</strong>候选/原文分层、evidence/source_ref handoff、memory/message ID 边界、soft-delete、citation 输出合同。</li>
+          <li><strong>同一机制未完成：</strong>Amadeus 没有 citation plugin 式运行时 enforcement。</li>
+          <li><strong>性能 gap：</strong>数据库级独立 candidate retrieval 尚未复现，但当前验收没有 correctness failure。</li>
+          <li><strong>不能偏离：</strong>未来无论加状态机还是 citation hook，都必须复用当前 tool JSON 和 source_ref resolver，不能让第二套临时 parser 出现。</li>
+          <li><strong>明确不迁移：</strong>Akashic 未接生产主链的 QueryRewriter、SufficiencyChecker、HyDEEnhancer。</li>
+        </ul>
+        <p><strong>简历表达：</strong>参考 Akashic evidence-first 设计，将长期记忆候选与原始会话证据解耦，通过 source_ref/evidence 建立可追溯回源链，并用跨工具集成测试验证纠错只 soft-delete 派生记忆、不破坏历史消息。</p>
+      </section>
+
+      <section id="retell">
+        <h2>本课结束前必须复述</h2>
+        <ol>
+          <li><code>RecallMemoryTool</code>、<code>fetch_messages()</code>、<code>VectorMemoryEngine.forget()</code> 各自输入输出和职责是什么？</li>
+          <li>为什么 <code>_resolve_source_refs()</code> 应位于确定性运行时代码，而不能交给 LLM 解析？</li>
+          <li>如果要把“fetch 后才能 forget”升级为运行时强制，你会把状态检查放在哪一层？为什么？</li>
+        </ol>
+        <p>如果你自己重做一遍，第一步先看联合验收测试，再沿失败断言追到 tool → engine → store，而不是先改 prompt。</p>
+      </section>
+
+      <section id="follow-up">
+        <h2>继续追问提示</h2>
+        <p>可以继续问：“逐行精读 correction 测试”“画出 source_ref 解析例子”“citation runtime hook 应放在 executor 还是 response assembler”“soft-delete 与物理删除怎么选”。</p>
+      </section>
+    </div>
+  </div>
+</main>
+</body>
+</html>
