@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 19 Part 1：Akashic Lifecycle Phase Model</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <header class="lesson-header">
+    <div class="lesson-meta">LESSON 19 · PART 1</div>
+    <span class="badge">对应总计划 Lesson 19 / Part 1</span>
+    <span class="badge badge-red">Akashic 源码课</span>
+    <h1>Lifecycle Phase Model：给主循环建立正式插入点</h1>
+    <p>本课先读完整七阶段主链，再深挖 <code>before_turn</code>、<code>prompt_render</code>、<code>after_turn</code>。目标不是记住七个名字，而是判断一个扩展应该影响控制流，还是只观察已经形成的事实。</p>
+  </header>
+
+  <div class="lesson-wrapper">
+    <nav class="toc toc-sidebar" aria-label="目录导航">
+      <div class="toc-title">目录</div>
+      <ul class="toc-list">
+        <li><a href="#goal">目标与 Mission</a></li>
+        <li><a href="#stage-map">当前阶段地图</a></li>
+        <li><a href="#full-map">完整七阶段地图</a></li>
+        <li><a href="#vocabulary">核心对象关系</a></li>
+        <li><a href="#gate-tap">Gate 与 Tap</a></li>
+        <li><a href="#before-turn">before_turn</a></li>
+        <li><a href="#prompt-render">prompt_render</a></li>
+        <li><a href="#after-turn">after_turn</a></li>
+        <li><a href="#tests">如何从测试验证</a></li>
+        <li><a href="#mistakes">常见误区</a></li>
+        <li><a href="#part2">Part 2 复现边界</a></li>
+        <li><a href="#audit">Coverage / Gap Audit</a></li>
+        <li><a href="#retell">必须复述</a></li>
+      </ul>
+    </nav>
+
+    <div class="lesson-content">
+      <section id="goal">
+        <h2>本课目标与 MISSION.md 的关系</h2>
+        <p>MISSION 要求你能解释复杂 agent 为什么这样分层，而不是只会往主循环里加代码。Lifecycle 的价值是把“什么时候允许扩展、扩展能改什么、失败会影响谁”变成正式合同。</p>
+        <ul>
+          <li>按真实嵌套顺序复述 Akashic 七个 phase。</li>
+          <li>根据控制流区分 Gate 与 Tap，而不是根据 before/after 名字猜。</li>
+          <li>沿 module chain 讲清三个重点 phase 的输入、状态变化和输出。</li>
+          <li>知道 Lesson 19 只复现哪三个 seam，以及为什么不提前迁移完整 plugin system。</li>
+        </ul>
+      </section>
+
+      <section id="stage-map">
+        <h2>当前阶段地图</h2>
+        <table>
+          <tr><th>能力</th><th>Amadeus 当前状态</th><th>Lesson 19 判断</th></tr>
+          <tr><td>Passive turn 主链</td><td><code>PassiveRuntime.run_turn()</code> 已串起 session、memory、prompt、LLM/tool、persist</td><td>主链能跑，但扩展点仍内嵌</td></tr>
+          <tr><td>事件</td><td><code>EventBus.emit()</code> 已发送 tool-call 与 <code>TurnCommitted</code></td><td>已有原语，缺正式 lifecycle facade</td></tr>
+          <tr><td>Tool hooks</td><td>executor 有 before/after hook</td><td>只覆盖一次工具执行，不等于 turn lifecycle</td></tr>
+          <tr><td>Prompt</td><td>ContextBuilder 支持 block、frame、disabled section、trim retry</td><td>缺渲染前的注册式 Gate</td></tr>
+          <tr><td>Plugin core</td><td>没有 registry/loader/slot 协议</td><td>Lesson 20–23 分步建立</td></tr>
+        </table>
+        <p><strong>本课 Akashic 对齐切片：</strong>先建立三个 turn-level seam，因为它们包围输入准备、Prompt 渲染和最终提交，能形成最小闭环。直接上完整插件管理器，会让你看到大量抽象却说不清它们挂在哪里。</p>
+      </section>
+
+      <section id="full-map">
+        <h2>Part 1：Akashic 完整七阶段地图</h2>
+        <p>先读 <a href="../../akashic-agent/agent/core/passive_turn.py">agent/core/passive_turn.py</a> 文件头和 <code>PassiveTurnPipeline.run()</code>。真实结构不是七个平铺函数，其中三个 phase 位于 Reasoner 内部：</p>
+        <pre><code>InboundMessage
+└─ PassiveTurnPipeline
+   ├─ 1. before_turn
+   │     session acquire + ContextStore.prepare
+   ├─ 2. before_reasoning
+   │     tool context sync + prompt warmup
+   ├─ Reasoner.run_turn
+   │  ├─ 3. prompt_render
+   │  │     ContextBuilder.render
+   │  └─ reasoning loop
+   │     ├─ 4. before_step
+   │     ├─ provider response + tool execution
+   │     └─ 5. after_step
+   ├─ 6. after_reasoning
+   │     reply modification + persist + outbound build
+   └─ 7. after_turn
+         TurnCommitted + observation + dispatch</code></pre>
+
+        <table>
+          <tr><th>Phase</th><th>主要职责</th><th>控制语义</th></tr>
+          <tr><td><code>before_turn</code></td><td>准备 session/context，允许短路</td><td>Gate</td></tr>
+          <tr><td><code>before_reasoning</code></td><td>同步 tool context、skills、memory、prompt warmup</td><td>Gate</td></tr>
+          <tr><td><code>prompt_render</code></td><td>追加 prompt sections/hints，再统一渲染</td><td>Gate</td></tr>
+          <tr><td><code>before_step</code></td><td>每轮 token estimate、hint、early stop</td><td>Gate</td></tr>
+          <tr><td><code>after_step</code></td><td>观察当前轮 partial reply、tools、telemetry</td><td>Tap</td></tr>
+          <tr><td><code>after_reasoning</code></td><td>修改最终 reply/media/metadata，持久化并构建 outbound</td><td>Gate</td></tr>
+          <tr><td><code>after_turn</code></td><td>发布 commit/telemetry，最后 dispatch</td><td>Tap</td></tr>
+        </table>
+        <p><strong>关键校正：</strong><code>after_reasoning</code> 虽然名字带 after，却仍然能改 reply 和 outbound，所以它是 Gate。分类依据是“能否改变后续事实”，不是名字。</p>
+      </section>
+
+      <section id="vocabulary">
+        <h2>Phase、Module、Frame、Context、Facade 各做什么</h2>
+        <p>核心源码位于 <a href="../../akashic-agent/agent/lifecycle/phase.py">agent/lifecycle/phase.py</a>、<a href="../../akashic-agent/agent/lifecycle/types.py">types.py</a> 和 <a href="../../akashic-agent/agent/lifecycle/facade.py">facade.py</a>。</p>
+        <table>
+          <tr><th>对象</th><th>职责</th><th>不要误解成</th></tr>
+          <tr><td><code>Phase</code></td><td>按已确定顺序运行 module chain，要求最终产生 output</td><td>业务插件本身</td></tr>
+          <tr><td><code>PhaseModule</code></td><td>完成一个小步骤，声明 slot/requires/produces</td><td>整个 phase</td></tr>
+          <tr><td><code>PhaseFrame</code></td><td>携带 input、共享 slots 和最终 output</td><td>任意全局字典</td></tr>
+          <tr><td>Typed Context</td><td>只暴露该 phase 合理拥有和修改的数据</td><td>整个 AgentCore/Runtime</td></tr>
+          <tr><td><code>TurnLifecycle</code></td><td>给插件提供稳定的 <code>on_before_turn()</code> 等注册入口</td><td>具体执行引擎</td></tr>
+          <tr><td><code>EventBus</code></td><td>执行有序 Gate 或隔离的观察者</td><td>插件发现/加载器</td></tr>
+        </table>
+
+        <pre><code>Input
+  → PhaseFrame(input, slots={}, output=None)
+  → builtin module
+  → plugin module
+  → builtin finalize module
+  → frame.output
+  → Phase.run() 返回 output</code></pre>
+        <p><code>slot/requires/produces</code> 的深度实现属于 Lesson 21。本课只需知道：它让插件声明依赖而不是依赖手写注册顺序；缺失插件依赖会禁用相关模块，循环依赖会拒绝启动，数据 slot 未闭合会给出警告。</p>
+      </section>
+
+      <section id="gate-tap">
+        <h2>Gate 与 Tap：最重要的控制流区别</h2>
+        <p>阅读 <a href="../../akashic-agent/bus/event_bus.py">bus/event_bus.py</a> 的 <code>emit()</code> 与 <code>fanout()</code>：</p>
+        <table>
+          <tr><th>维度</th><th>Gate / emit</th><th>Tap / fanout</th></tr>
+          <tr><td>目的</td><td>干预后续执行</td><td>观察已经形成的事实</td></tr>
+          <tr><td>顺序</td><td>按注册顺序串行</td><td>观察者并发</td></tr>
+          <tr><td>数据</td><td>handler 可返回新 context，传给下一个 handler</td><td>收到观察快照，不重写主结果</td></tr>
+          <tr><td>异常</td><td>向调用链传播，不能带半修改状态继续</td><td>单个观察者记录异常，其他观察者继续</td></tr>
+          <tr><td>典型 phase</td><td>before_turn、prompt_render、after_reasoning</td><td>after_step、after_turn</td></tr>
+        </table>
+        <pre><code>Gate:
+ctx0 → handler A → ctx1 → handler B → ctx2 → 主链继续
+
+Tap:
+                         ┌→ observer A（失败，仅记录）
+committed snapshot ──────┼→ observer B（正常）
+                         └→ observer C（正常）</code></pre>
+        <p>“插件失败隔离”不能一概而论：Akashic 的 fanout observer 会隔离；PhaseModule 本身抛错仍可能传播。完整 plugin health/failure policy 留到 Lesson 23。</p>
+      </section>
+
+      <section id="before-turn">
+        <h2>重点一：before_turn</h2>
+        <p>源码：<a href="../../akashic-agent/agent/lifecycle/phases/before_turn.py">phases/before_turn.py</a>。</p>
+        <pre><code>TurnState
+  → acquire_session
+  → prepare_context
+  → build_ctx
+  → EventBus.emit(BeforeTurnCtx)
+  → collect_exports
+  → return BeforeTurnCtx</code></pre>
+        <table>
+          <tr><th>阶段</th><th>具体变化</th></tr>
+          <tr><td><code>acquire_session</code></td><td>根据 session key 获取 session，并写回 <code>TurnState.session</code></td></tr>
+          <tr><td><code>prepare_context</code></td><td>读取 history、skill mentions、retrieved memory 与 retrieval trace</td></tr>
+          <tr><td><code>build_ctx</code></td><td>把主链内部对象压缩为插件可理解的 typed context</td></tr>
+          <tr><td><code>emit</code></td><td>插件按顺序修改 skills、hints、metadata，或设置 abort</td></tr>
+          <tr><td><code>collect_exports</code></td><td>把 module slots 导出的 hints/abort reply 收回 context</td></tr>
+        </table>
+        <p><strong>为什么不是收到消息后立刻 emit？</strong>因为插件常需要 session、history 和 retrieval 状态才能判断。Akashic 先准备这些稳定输入，再开放 Gate。</p>
+        <p><strong>abort：</strong>Akashic 可以设置 <code>abort=True</code> 和 <code>abort_reply</code>，让主链走 control outbound，不进入 reasoning。Amadeus Part 2 暂不迁 abort，因为当前 <code>PassiveTurnResult</code> 要求真实 message IDs，不能用空 ID 假装对齐。</p>
+      </section>
+
+      <section id="prompt-render">
+        <h2>重点二：prompt_render</h2>
+        <p>源码：<a href="../../akashic-agent/agent/lifecycle/phases/prompt_render.py">phases/prompt_render.py</a>。</p>
+        <pre><code>PromptRenderInput
+  → build PromptRenderCtx
+  → EventBus.emit(PromptRenderCtx)
+  → collect section/hint exports
+  → ContextBuilder.render(...)
+  → PromptRenderResult(messages)</code></pre>
+        <p>Gate 发生在真正渲染之前。插件能追加：</p>
+        <ul>
+          <li><code>system_sections_top</code>：高层系统段落。</li>
+          <li><code>system_sections_bottom</code>：靠后的系统段落。</li>
+          <li><code>extra_hints</code>：以受控 context hint 进入消息。</li>
+        </ul>
+        <p>最终仍由 <code>ContextBuilder.render()</code> 统一处理 history、disabled sections 和 prompt assembly。插件不能绕开 builder 自己拼一份 messages，否则 trim/retry、预算和 system/context-frame 边界会失效。</p>
+        <p><strong>与 Lesson 18 的 tool schema 区别：</strong>prompt-render 修改 messages；tool profile/schema 通过 provider 的 <code>tools</code> 参数进入模型。两条通道不能混写。</p>
+      </section>
+
+      <section id="after-turn">
+        <h2>重点三：after_turn</h2>
+        <p>源码：<a href="../../akashic-agent/agent/lifecycle/phases/after_turn.py">phases/after_turn.py</a>。进入它之前，<code>after_reasoning</code> 已经完成 user/assistant 持久化并构建 outbound。</p>
+        <pre><code>TurnSnapshot
+  → build budget/react/tool-chain work
+  → collect turn extra exports
+  → build TurnCommitted
+  → fanout TurnCommitted
+  → build AfterTurnCtx(will_dispatch=...)
+  → collect telemetry
+  → fanout AfterTurnCtx
+  → dispatch outbound（如果允许）
+  → return OutboundMessage</code></pre>
+        <p><code>AfterTurnCtx.will_dispatch</code> 是“准备发送”的意图快照。handler 运行时真正 dispatch 还没有发生，因此 observer 可以记录发送前状态，但不能宣称消息已经成功送达。</p>
+        <table>
+          <tr><th>时间点</th><th>已经成立的事实</th><th>尚未成立的事实</th></tr>
+          <tr><td>TurnCommitted fanout</td><td>reasoning 与持久化完成，commit payload 已构建</td><td>outbound 未必已发送</td></tr>
+          <tr><td>AfterTurn fanout</td><td>最终 reply/tool/telemetry 快照稳定</td><td>dispatch 仍在后面</td></tr>
+          <tr><td>dispatch 后</td><td>outbound port 已返回结果</td><td>不属于当前 AfterTurnCtx 的观察时点</td></tr>
+        </table>
+      </section>
+
+      <section id="tests">
+        <h2>如何从测试验证，而不是只看类名</h2>
+        <table>
+          <tr><th>测试</th><th>证明什么</th></tr>
+          <tr><td><a href="../../akashic-agent/tests/test_lifecycle_phase.py">test_lifecycle_phase.py</a></td><td>module 按顺序运行、必须产生 output、依赖缺失/循环怎样处理</td></tr>
+          <tr><td><code>test_before_turn_chain_can_abort</code></td><td>Gate 修改后的 abort 会被主链读取</td></tr>
+          <tr><td><code>test_prompt_render_chain_appends_bottom_section</code></td><td>插件 section 经过 ContextBuilder 后真的进入 messages</td></tr>
+          <tr><td><code>test_prompt_render_chain_respects_disabled_sections</code></td><td>插件扩展不能绕过禁用 section 边界</td></tr>
+          <tr><td><code>test_after_turn_collects_extra_and_telemetry_slots</code></td><td>commit extra 与 after-turn telemetry 在正确 fanout 前被收集</td></tr>
+          <tr><td><a href="../../akashic-agent/tests/test_turn_pipelines.py">test_turn_pipelines.py</a></td><td>独立 phase 测试之外，真实 passive pipeline 确实接线</td></tr>
+        </table>
+        <p>读测试时先问三件事：输入 context 是什么；handler 改了什么；最终由哪个生产调用点消费。只断言 handler 被调用，不足以证明 lifecycle 真正改变了主链。</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>常见误区与排错思路</h2>
+        <ul>
+          <li><strong>所有 after phase 都是观察者：</strong>错误。after_reasoning 能改最终输出，是 Gate。</li>
+          <li><strong>EventBus 就是 plugin system：</strong>错误。它只负责执行 handler，不负责发现、配置、依赖和健康状态。</li>
+          <li><strong>ToolHook 等于 lifecycle：</strong>错误。ToolHook 包围一次工具调用，turn lifecycle 包围整轮会话。</li>
+          <li><strong>插件可以直接拼 messages：</strong>会绕过 disabled sections、预算和 trim/retry，应把数据交回 prompt-render/context builder。</li>
+          <li><strong>after_turn 表示已经发送：</strong>错误。Akashic 的 AfterTurn fanout 在 dispatch 前。</li>
+          <li><strong>所有插件异常都会被隔离：</strong>只有 observer fanout 明确隔离；Gate/module 错误可能传播。</li>
+        </ul>
+        <p><strong>资深工程师的排错顺序：</strong>先定位 phase 调用点，再看 typed context 的可写字段，然后看 handler 使用 emit 还是 fanout，最后追最终消费者或持久化变化。</p>
+      </section>
+
+      <section id="part2">
+        <h2>Part 2：Amadeus 复现练手预告</h2>
+        <p>通过复述门后，只复现三个 seam：</p>
+        <pre><code>memory/history prepare
+  → BeforeTurnContext → ordered Gate
+
+RuntimeContext per retry attempt
+  → PromptRenderContext → ordered Gate
+  → ContextBuilder.render
+
+persist + TurnCommitted
+  → AfterTurnContext → isolated Tap
+  → PassiveTurnResult</code></pre>
+        <p>采用现有 EventBus + typed <code>TurnLifecycle</code> facade。Gate 异常传播，Tap observer 异常隔离。每次 prompt retry 创建新 context，避免上一次 handler 修改泄漏或重复累积。</p>
+        <p>Part 2 不实现 before-turn abort：Amadeus 当前结果类型要求 user/assistant message IDs。必须先设计统一 control-outbound/result contract，不能为了接口看起来相似而填空 ID。</p>
+      </section>
+
+      <section id="audit">
+        <h2>Coverage / Gap Audit</h2>
+        <table>
+          <tr><th>机制</th><th>Lesson 19 状态</th><th>后续落点</th></tr>
+          <tr><td>完整七 phase 认知地图</td><td>Part 1 全部讲清</td><td>后续课程持续复用</td></tr>
+          <tr><td>before-turn / prompt-render / after-turn</td><td>Part 1 源码课；Part 2 复现 seam</td><td>Lesson 19</td></tr>
+          <tr><td>before-reasoning / before-step / after-step / after-reasoning</td><td>只定位，不实现</td><td>Lesson 20–23 gap audit</td></tr>
+          <tr><td>plugin registry / loader / config</td><td>未实现</td><td>Lesson 20</td></tr>
+          <tr><td>slot / requires / produces</td><td>只讲概念，不实现</td><td>Lesson 21</td></tr>
+          <tr><td>prompt section plugin</td><td>未实现</td><td>Lesson 22</td></tr>
+          <tr><td>tool hook + plugin failure isolation</td><td>未实现</td><td>Lesson 23</td></tr>
+          <tr><td>tool visibility / deferred tools / tool_search / MCP boundary</td><td>明确保留，不与 lifecycle 混同</td><td>Lesson 19–23；Lesson 23 必须给最终落点</td></tr>
+          <tr><td>before-turn abort</td><td>Akashic 已讲，Amadeus 暂不实现</td><td>outbound/result contract 后续切片</td></tr>
+        </table>
+        <p><strong>本课 eval seeds：</strong>两个 Gate 依次修改同一字段；prompt retry 每次只出现一个插件标记；after-turn observer 抛错但成功回复不受影响；无 handler 时 payload 与改造前一致；phase trace 顺序为 before-turn → prompt-render → commit → after-turn。</p>
+      </section>
+
+      <section id="retell">
+        <h2>必须复述的问题</h2>
+        <ol>
+          <li>按真实嵌套关系讲出七个 phase；哪些位于 Reasoner 内部？</li>
+          <li>Gate 与 Tap 在执行顺序、数据修改和异常处理上有什么区别？为什么 after_reasoning 是 Gate？</li>
+          <li>before-turn、prompt-render、after-turn 各自的输入、关键步骤和输出是什么？</li>
+          <li>AfterTurn fanout、TurnCommitted、持久化和 dispatch 的先后顺序是什么？</li>
+          <li>为什么 Lesson 19 不直接迁移 slot、plugin loader、tool discovery 和 before-turn abort？</li>
+        </ol>
+        <p>请用自己的话回答。确认你能讲清 Akashic 主链后，才进入 Amadeus Part 2 生产实现；此时不创建 Lesson 19 learning record。</p>
+      </section>
+
+      <section id="sources">
+        <h2>Primary Sources</h2>
+        <ul>
+          <li><a href="../../akashic-agent/agent/core/passive_turn.py">Akashic passive_turn.py</a>：帮助理解七 phase 的真实嵌套和 commit/dispatch 边界。</li>
+          <li><a href="../../akashic-agent/agent/lifecycle/phase.py">Akashic phase.py</a>：帮助理解 module chain 与 PhaseFrame。</li>
+          <li><a href="../../akashic-agent/bus/event_bus.py">Akashic event_bus.py</a>：帮助理解 Gate/Tap 语义。</li>
+        </ul>
+        <p>有不清楚的地方可以继续问：“用一条消息走完整 phase map”“为什么 after_reasoning 不是 Tap”“画出 commit 和 dispatch 的时间线”“Phase 和 EventBus 为什么要同时存在”。</p>
+      </section>
+    </div>
+  </div>
+</main>
+</body>
+</html>
