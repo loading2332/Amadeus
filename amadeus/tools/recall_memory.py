@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -32,6 +31,17 @@ def _string_list(value: object) -> tuple[str, ...]:
         result = tuple(v.strip() for v in value.split(",") if v.strip())
         return result
     return ()
+
+
+def _positive_limit(value: object, default: int = 8) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float, str)):
+        try:
+            return max(1, int(value))
+        except (TypeError, ValueError):
+            return default
+    return default
 
 
 @dataclass
@@ -79,7 +89,7 @@ class RecallMemoryTool:
         }
     )
 
-    def execute(self, **kwargs: object) -> ToolResult:
+    async def execute(self, **kwargs: object) -> ToolResult:
         if self.memory_engine is None:
             return ToolResult(
                 tool_name=self.name,
@@ -105,19 +115,12 @@ class RecallMemoryTool:
             text=query_text.strip(),
             intent=str(kwargs.get("intent", "answer")),
             kinds=_string_list(kwargs.get("kinds")),
-            limit=int(kwargs.get("limit", 8)) if kwargs.get("limit") is not None else 8,
+            limit=_positive_limit(kwargs.get("limit")),
             time_start=datetime.fromisoformat(time_start) if time_start else None,
             time_end=datetime.fromisoformat(time_end) if time_end else None,
         )
 
-        try:
-            loop = asyncio.get_running_loop()
-            future = asyncio.run_coroutine_threadsafe(
-                self.memory_engine.query(memory_query), loop
-            )
-            result = future.result()
-        except RuntimeError:
-            result = asyncio.run(self.memory_engine.query(memory_query))
+        result = await self.memory_engine.query(memory_query)
 
         items = [
             {

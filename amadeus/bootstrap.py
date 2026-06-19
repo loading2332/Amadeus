@@ -17,6 +17,7 @@ from amadeus.tools.hooks import ReadOnlyFilesystemHook
 from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.registry import ToolRegistry
 from amadeus.vector_memory import (
+    LLMHypothesisProvider,
     OpenAIEmbeddingConfig,
     OpenAIEmbeddingProvider,
     VectorMemoryEngine,
@@ -128,6 +129,7 @@ def build_passive_app(
                     timeout_seconds=config.provider.timeout_seconds,
                 )
             ),
+            hypothesis_provider=LLMHypothesisProvider(provider=provider),
             top_k=config.vector_memory_top_k,
         )
     memory = build_markdown_memory_runtime(
