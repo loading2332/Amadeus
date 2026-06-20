@@ -8,6 +8,12 @@ from typing import Any
 
 from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
 from amadeus.events import EventBus, ToolCallCompleted, ToolCallStarted, TurnCommitted
+from amadeus.lifecycle import (
+    AfterTurnContext,
+    BeforeTurnContext,
+    PromptRenderContext,
+    TurnLifecycle,
+)
 from amadeus.memory_engine import MemoryEngine, MemoryQuery
 from amadeus.prompting import build_context_trim_attempts
 from amadeus.provider import ContextLengthError, LLMProvider, LLMResponse
@@ -47,6 +53,10 @@ class PassiveRuntime:
     tool_registry: ToolRegistry | None = None
     tool_executor: ToolExecutor | None = None
     max_tool_iterations: int = 10
+    lifecycle: TurnLifecycle = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.lifecycle = TurnLifecycle(self.event_bus)
 
     async def run_turn(
         self,
@@ -73,6 +83,21 @@ class PassiveRuntime:
                 resolved_retrieved_memory = self.memory_engine.render_context_block(memory_result)
             except Exception:
                 resolved_retrieved_memory = None
+
+        before_turn_context = BeforeTurnContext(
+            session_key=session_key,
+            user_message=user_message,
+            history=list(history),
+            retrieved_memory=resolved_retrieved_memory,
+            active_skills=list(active_skills or []),
+            runtime_metadata=dict(runtime_metadata or {}),
+        )
+        before_turn_context = await self.lifecycle.before_turn(before_turn_context)
+        history = before_turn_context.history
+        resolved_retrieved_memory = before_turn_context.retrieved_memory
+        resolved_active_skills = before_turn_context.active_skills
+        resolved_runtime_metadata = before_turn_context.runtime_metadata
+
         tool_schemas = (
             self.tool_registry.export_openai_tools() if self.tool_registry is not None else None
         )
@@ -100,12 +125,21 @@ class PassiveRuntime:
                 history=history,
                 current_user_message=user_message,
                 retrieved_memory=resolved_retrieved_memory,
-                active_skills=active_skills or [],
-                runtime_metadata=runtime_metadata or {},
+                active_skills=resolved_active_skills,
+                runtime_metadata=resolved_runtime_metadata,
                 disabled_sections=set(attempt.disabled_sections),
                 history_window=attempt.history_window,
             )
-            rendered = self.context_builder.render(context)
+            prompt_render_context = PromptRenderContext(
+                session_key=session_key,
+                attempt_index=attempt_index,
+                attempt_name=attempt.name,
+                runtime_context=context,
+            )
+            prompt_render_context = await self.lifecycle.prompt_render(
+                prompt_render_context
+            )
+            rendered = self.context_builder.render(prompt_render_context.runtime_context)
             messages = [dict(message) for message in rendered.messages]
             try:
                 response = await self.provider.chat(messages, tools=tool_schemas)
@@ -138,8 +172,8 @@ class PassiveRuntime:
                     history=history,
                     current_user_message=user_message,
                     retrieved_memory=resolved_retrieved_memory,
-                    active_skills=active_skills or [],
-                    runtime_metadata=runtime_metadata or {},
+                    active_skills=resolved_active_skills,
+                    runtime_metadata=resolved_runtime_metadata,
                 )
                 rendered = self.context_builder.render(context)
 
@@ -169,7 +203,7 @@ class PassiveRuntime:
                 },
             )
         )
-        return PassiveTurnResult(
+        result = PassiveTurnResult(
             session_key=session_key,
             user_message_id=str(user_record["id"]),
             assistant_message_id=str(assistant_record["id"]),
@@ -179,6 +213,17 @@ class PassiveRuntime:
             tool_chain=tool_chain,
             context_retry=context_retry,
         )
+        await self.lifecycle.after_turn(
+            AfterTurnContext(
+                session_key=session_key,
+                user_message_id=result.user_message_id,
+                assistant_message_id=result.assistant_message_id,
+                assistant_response=result.assistant_response,
+                tool_chain=tuple(dict(step) for step in result.tool_chain),
+                context_retry=dict(result.context_retry),
+            )
+        )
+        return result
 
     def _trim_session_history(self, session: Session, history_window: int) -> None:
         if history_window <= 0:

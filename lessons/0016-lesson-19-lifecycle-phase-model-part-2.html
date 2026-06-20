@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 19 Part 2：Amadeus Lifecycle 纵向切片</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <header class="lesson-header">
+    <div class="lesson-meta">LESSON 19 · PART 2</div>
+    <span class="badge">对应总计划 Lesson 19 / Part 2</span>
+    <span class="badge badge-red">Amadeus 复现练手</span>
+    <h1>三个 seam：把 Lifecycle 真正接进运行主链</h1>
+    <p>本课不复刻 Akashic 的完整 Phase 引擎，而是先复现最小可运行纵向切片：两个可修改主链的 Gate，加一个只观察已提交事实的 Tap。</p>
+  </header>
+
+  <div class="lesson-wrapper">
+    <nav class="toc toc-sidebar" aria-label="目录导航">
+      <div class="toc-title">目录</div>
+      <ul class="toc-list">
+        <li><a href="#goal">目标与 Mission</a></li>
+        <li><a href="#stage-map">当前阶段地图</a></li>
+        <li><a href="#slice">纵向切片</a></li>
+        <li><a href="#event-bus">EventBus 原语</a></li>
+        <li><a href="#contexts">类型化 Context</a></li>
+        <li><a href="#facade">Lifecycle facade</a></li>
+        <li><a href="#runtime">Runtime 接线</a></li>
+        <li><a href="#retry">重试隔离</a></li>
+        <li><a href="#tap">持久化后的 Tap</a></li>
+        <li><a href="#tests">验证证据</a></li>
+        <li><a href="#mistakes">误区与排错</a></li>
+        <li><a href="#audit">Gap Audit</a></li>
+        <li><a href="#review">复盘与简历表达</a></li>
+        <li><a href="#retell">必须复述</a></li>
+      </ul>
+    </nav>
+
+    <div class="lesson-content">
+      <section id="goal">
+        <h2>本课目标与 MISSION.md 的关系</h2>
+        <p>MISSION 要求我们复现经过判断的 Akashic 设计，而不是照搬目录。本课迁移的是<strong>生命周期接口、数据流、时序边界与测试思想</strong>，不是完整插件系统。</p>
+        <ul>
+          <li>用类型化 context 明确每个 seam 可以看见和修改什么。</li>
+          <li>让 Gate 的修改被真实下游消费，而不只证明 handler 被调用。</li>
+          <li>让 Tap 只能观察持久化后的快照，失败不改变 turn 结果。</li>
+          <li>保留 abort、slots、plugin loader 的后续扩展空间，不提前扩大合同。</li>
+        </ul>
+      </section>
+
+      <section id="stage-map">
+        <h2>当前阶段地图</h2>
+        <table>
+          <tr><th>层</th><th>本课前</th><th>本课后</th></tr>
+          <tr><td>主链</td><td><code>PassiveRuntime.run_turn()</code> 已能完成 session → prompt → provider/tool → SQLite</td><td>主链仍由 Runtime 掌控，但有三个正式 seam</td></tr>
+          <tr><td>事件原语</td><td><code>emit()</code> 串行执行 handler</td><td>增加失败隔离的 <code>fanout()</code></td></tr>
+          <tr><td>生命周期接口</td><td>调用者只能直接接触 EventBus</td><td><code>TurnLifecycle</code> 提供三个有语义的注册入口</td></tr>
+          <tr><td>Prompt retry</td><td>每次重建 RuntimeContext，但没有渲染 Gate</td><td>每次尝试都触发 <code>prompt_render</code>，且对象隔离</td></tr>
+          <tr><td>提交后观察</td><td>只有旧的 <code>TurnCommitted</code></td><td>新增带 message ID 的 <code>AfterTurnContext</code> Tap</td></tr>
+        </table>
+        <p><strong>为什么先做它：</strong>三个 seam 已横跨准备、渲染、提交，能够用一次真实 turn 验证完整生命周期。若先加入 loader 或 slots，只会先得到“谁来注册”和“怎样排序”，却没有稳定的挂载位置。</p>
+      </section>
+
+      <section id="slice">
+        <h2>最小纵向切片：一次 turn 怎样经过三个 seam</h2>
+        <figure class="lesson-diagram" aria-labelledby="slice-caption">
+          <figcaption id="slice-caption"><strong>Amadeus Lesson 19 实际调用链</strong><span>黄色为 Gate，蓝色为 Tap；灰色节点仍由 Runtime 负责。</span></figcaption>
+          <div class="phase-map">
+            <div class="phase-node"><span class="phase-index">1</span><div><code>session + memory prepare</code><small>取得 history，按需查询 memory</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node phase-gate"><span class="phase-index">2</span><div><code>BeforeTurnContext</code><small>有序 emit；可改 history / memory / skills / metadata</small></div><span class="diagram-tag tag-gate">Gate</span></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-loop">
+              <div class="phase-loop-title">每次 context trim attempt 都重新开始</div>
+              <div class="phase-node phase-gate"><span class="phase-index">3</span><div><code>PromptRenderContext</code><small>新建 RuntimeContext → Gate → ContextBuilder.render</small></div><span class="diagram-tag tag-gate">Gate</span></div>
+            </div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">4</span><div><code>provider / tool loop</code><small>生成最终 reply</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">5</span><div><code>SQLite persist + TurnCommitted</code><small>user / assistant 已获得稳定 ID</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node phase-tap"><span class="phase-index">6</span><div><code>AfterTurnContext</code><small>并发 fanout；观察者失败被隔离</small></div><span class="diagram-tag tag-tap">Tap</span></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">7</span><div><code>PassiveTurnResult</code><small>Tap 不能改变返回结果</small></div></div>
+          </div>
+        </figure>
+        <p>最关键的判断不是“有三个事件”，而是三个事件都放在了有明确下一消费者的位置：BeforeTurn 的消费者是 RuntimeContext 构造；PromptRender 的消费者是 ContextBuilder；AfterTurn 没有业务消费者，只有 observer。</p>
+      </section>
+
+      <section id="event-bus">
+        <h2>第一层：EventBus 提供两种执行语义</h2>
+        <p>完整文件：<a href="../amadeus/events.py">amadeus/events.py</a>。<code>emit</code> 保留已有的串行、可替换事件语义；<code>fanout</code> 为 Tap 新增并发和失败隔离。</p>
+        <pre><code class="language-python">async def emit(self, event: E) -> E:
+    current = event
+    for raw_handler in self._handlers.get(type(event), []):
+        handler = cast(EventHandler[E], raw_handler)
+        result = handler(current)
+        if inspect.isawaitable(result):
+            result = await result
+        if result is not None:
+            current = result
+    return current
+
+async def fanout(self, event: object) -> None:
+    handlers = list(self._handlers.get(type(event), []))
+    if not handlers:
+        return
+    await asyncio.gather(
+        *(self._run_observer(event, handler) for handler in handlers)
+    )
+
+async def _run_observer(self, event, handler) -> None:
+    try:
+        result = handler(event)
+        if inspect.isawaitable(result):
+            await result
+    except Exception:
+        logger.exception("observer error for %s", type(event).__name__)</code></pre>
+        <table>
+          <tr><th>问题</th><th>emit / Gate</th><th>fanout / Tap</th></tr>
+          <tr><td>执行顺序</td><td>注册顺序，前一个修改供后一个读取</td><td>观察者彼此独立，不承诺完成顺序</td></tr>
+          <tr><td>异常</td><td>传播，阻止错误数据继续进入主链</td><td>记录日志并隔离，主链事实已经成立</td></tr>
+          <tr><td>返回值</td><td>可以返回替换后的 event</td><td>忽略 observer 返回值</td></tr>
+        </table>
+      </section>
+
+      <section id="contexts">
+        <h2>第二层：三个 Context 把权限写进类型</h2>
+        <p>完整文件：<a href="../amadeus/lifecycle.py">amadeus/lifecycle.py</a>。</p>
+        <pre><code class="language-python">@dataclass
+class BeforeTurnContext:
+    session_key: str
+    user_message: str
+    history: list[Message]
+    retrieved_memory: str | None
+    active_skills: list[str] = field(default_factory=list)
+    runtime_metadata: dict[str, str] = field(default_factory=dict)
+
+@dataclass
+class PromptRenderContext:
+    session_key: str
+    attempt_index: int
+    attempt_name: str
+    runtime_context: RuntimeContext
+
+@dataclass(frozen=True)
+class AfterTurnContext:
+    session_key: str
+    user_message_id: str
+    assistant_message_id: str
+    assistant_response: str
+    tool_chain: tuple[dict[str, Any], ...]
+    context_retry: dict[str, Any]</code></pre>
+        <p><code>AfterTurnContext</code> 使用 frozen dataclass，表达顶层对象不可重新赋值。它不是深不可变：内部 dict 仍可改。因此当前合同是“只读意图 + 返回值不被消费”，不是安全沙箱。若未来需要跨信任边界，必须进一步转为不可变值或序列化快照。</p>
+      </section>
+
+      <section id="facade">
+        <h2>第三层：TurnLifecycle 隐藏底层事件类型</h2>
+        <pre><code class="language-python">class TurnLifecycle:
+    def __init__(self, bus: EventBus) -> None:
+        self._bus = bus
+
+    def on_before_turn(self, handler) -> None:
+        self._bus.on(BeforeTurnContext, handler)
+
+    def on_prompt_render(self, handler) -> None:
+        self._bus.on(PromptRenderContext, handler)
+
+    def on_after_turn(self, handler) -> None:
+        self._bus.on(AfterTurnContext, handler)
+
+    async def before_turn(self, context: BeforeTurnContext) -> BeforeTurnContext:
+        return await self._bus.emit(context)
+
+    async def prompt_render(self, context: PromptRenderContext) -> PromptRenderContext:
+        return await self._bus.emit(context)
+
+    async def after_turn(self, context: AfterTurnContext) -> None:
+        await self._bus.fanout(context)</code></pre>
+        <p>Facade 的价值不是减少几行代码，而是把 seam 的名字和执行语义绑定。以后 plugin loader 只需要依赖 <code>on_before_turn()</code> 这类稳定入口，不需要知道 EventBus 如何存 handler。</p>
+      </section>
+
+      <section id="runtime">
+        <h2>第四层：Runtime 接线决定 seam 是否真的有用</h2>
+        <p>完整调用点：<a href="../amadeus/runtime.py">amadeus/runtime.py</a>。构造时复用同一个 EventBus，因此旧的 TurnCommitted 与新的 Lifecycle 不会形成两个互不相干的事件世界。</p>
+        <pre><code class="language-python">lifecycle: TurnLifecycle = field(init=False)
+
+def __post_init__(self) -> None:
+    self.lifecycle = TurnLifecycle(self.event_bus)</code></pre>
+        <p>BeforeTurn 必须位于 memory/history 已准备、RuntimeContext 尚未构造的位置：</p>
+        <pre><code class="language-python">before_turn_context = BeforeTurnContext(
+    session_key=session_key,
+    user_message=user_message,
+    history=list(history),
+    retrieved_memory=resolved_retrieved_memory,
+    active_skills=list(active_skills or []),
+    runtime_metadata=dict(runtime_metadata or {}),
+)
+before_turn_context = await self.lifecycle.before_turn(before_turn_context)
+
+history = before_turn_context.history
+resolved_retrieved_memory = before_turn_context.retrieved_memory
+resolved_active_skills = before_turn_context.active_skills
+resolved_runtime_metadata = before_turn_context.runtime_metadata</code></pre>
+        <p><strong>输入：</strong>Runtime 已取得的 turn 准备数据。<strong>处理：</strong>handler 串行修改。<strong>输出：</strong>Runtime 显式读回字段。<strong>下一消费者：</strong>每次 attempt 的 RuntimeContext 构造。少了最后四行，handler 虽然执行，主链却不会改变，这是 lifecycle 接线最常见的“假完成”。</p>
+      </section>
+
+      <section id="retry">
+        <h2>PromptRender Gate：每次 retry 都必须拿到新对象</h2>
+        <pre><code class="language-python">for attempt_index, attempt in enumerate(attempts):
+    context = RuntimeContext(
+        workspace_root=self.workspace_root,
+        history=history,
+        current_user_message=user_message,
+        retrieved_memory=resolved_retrieved_memory,
+        active_skills=resolved_active_skills,
+        runtime_metadata=resolved_runtime_metadata,
+        disabled_sections=set(attempt.disabled_sections),
+        history_window=attempt.history_window,
+    )
+    prompt_render_context = PromptRenderContext(
+        session_key=session_key,
+        attempt_index=attempt_index,
+        attempt_name=attempt.name,
+        runtime_context=context,
+    )
+    prompt_render_context = await self.lifecycle.prompt_render(
+        prompt_render_context
+    )
+    rendered = self.context_builder.render(
+        prompt_render_context.runtime_context
+    )</code></pre>
+        <p>不能把 Gate 放到 retry loop 外面。因为第二次尝试可能禁用 runtime metadata 或缩短 history；复用第一次被插件修改的 RuntimeContext，会让 section 重复、缓存脏数据或绕过 trim 计划。</p>
+      </section>
+
+      <section id="tap">
+        <h2>AfterTurn Tap：为何必须在 SQLite 和 commit 之后</h2>
+        <pre><code class="language-python">self.session_manager.save(session)
+await self.event_bus.emit(TurnCommitted(...))
+
+result = PassiveTurnResult(
+    user_message_id=str(user_record["id"]),
+    assistant_message_id=str(assistant_record["id"]),
+    assistant_response=assistant_response,
+    ...
+)
+await self.lifecycle.after_turn(
+    AfterTurnContext(
+        session_key=session_key,
+        user_message_id=result.user_message_id,
+        assistant_message_id=result.assistant_message_id,
+        assistant_response=result.assistant_response,
+        tool_chain=tuple(dict(step) for step in result.tool_chain),
+        context_retry=dict(result.context_retry),
+    )
+)
+return result</code></pre>
+        <p>observer 收到 message ID 时，对应记录已经能从 SQLite 查询。Tap 报错只写日志，随后仍返回已构建的 <code>PassiveTurnResult</code>。这就是“观察事实”而不是“参与决定事实”。</p>
+        <p><strong>与 Akashic 的差异：</strong>Akashic 的 after_turn fanout 位于 outbound dispatch 之前；当前 Amadeus 尚无独立 outbound port，所以本课能证明的是“持久化后、返回前”，不能冒充已经复现 dispatch 边界。</p>
+      </section>
+
+      <section id="tests">
+        <h2>验证：不只断言 handler 被调用</h2>
+        <p>测试源码：<a href="../tests/test_lifecycle.py">tests/test_lifecycle.py</a> 与 <a href="../tests/test_runtime.py">tests/test_runtime.py</a>。</p>
+        <table>
+          <tr><th>测试证据</th><th>真正证明的行为</th></tr>
+          <tr><td>两个 Gate handler 依次写 <code>first:second</code></td><td>Gate 保持注册顺序，后一个看得到前一个修改</td></tr>
+          <tr><td>memory marker 和 prompt marker 出现在 provider messages</td><td>修改被真实 ContextBuilder 和 provider 调用消费</td></tr>
+          <tr><td>retry 记录两个不同 RuntimeContext ID</td><td>一次失败不会把 Gate 修改泄漏到下一次</td></tr>
+          <tr><td>Tap 内用 message ID 查询 SQLite</td><td>after_turn 的观察对象确实已经落库</td></tr>
+          <tr><td>一个 observer 抛错，另一个仍执行，turn 仍返回</td><td>fanout 的失败隔离成立</td></tr>
+        </table>
+        <pre><code class="language-python"># 精确验证本课切片
+uv run --extra dev pytest tests/test_lifecycle.py tests/test_runtime.py -q
+
+# 静态边界
+uv run --extra dev ruff check amadeus tests
+uv run --extra dev mypy amadeus
+
+# 整体回归
+uv run --extra dev pytest -q</code></pre>
+        <p>本轮阶段性证据：生命周期与 runtime 共 15 个测试通过，Ruff 通过，mypy 对 32 个源码文件无报错。最终全量数字以本课交付时重新运行的结果为准。</p>
+      </section>
+
+      <section id="mistakes">
+        <h2>常见误区与排错顺序</h2>
+        <ul>
+          <li><strong>注册成功就等于接线成功：</strong>必须追 handler 改过的数据由谁读取。</li>
+          <li><strong>BeforeTurn 可以随便改 user_message：</strong>本切片仍持久化原始输入；修改该字段没有正式合同，不应依赖。</li>
+          <li><strong>frozen 等于深不可变：</strong>内部 list/dict 仍是可变对象。</li>
+          <li><strong>Tap 并发意味着更快且有顺序：</strong>它只保证等待所有 observer 完成，不保证 observer 完成顺序。</li>
+          <li><strong>把 PromptRender 放在 retry 外：</strong>会使 trim attempt 之间共享插件副作用。</li>
+          <li><strong>TurnCommitted 就等于 AfterTurn：</strong>前者是已有 commit 事件；后者是面向 lifecycle 的类型化只读 seam。</li>
+        </ul>
+        <p><strong>排错顺序：</strong>调用点是否到达 → context 是否包含预期输入 → handler 是否注册到同一 bus → 修改是否被下一消费者读取 → Gate 异常还是 Tap 日志 → retry 是否创建了新 context。</p>
+      </section>
+
+      <section id="audit">
+        <h2>Akashic Coverage / Gap Audit</h2>
+        <table>
+          <tr><th>Akashic 设计</th><th>Amadeus Lesson 19 状态</th><th>不能偏离的后续边界</th></tr>
+          <tr><td>类型化 lifecycle facade</td><td>已复现三个入口</td><td>loader 以后面向 facade 注册，不直接侵入 Runtime</td></tr>
+          <tr><td>Gate / Tap 两种事件语义</td><td>已复现 ordered emit 与 isolated fanout</td><td>能影响事实的扩展不能偷放进 Tap</td></tr>
+          <tr><td>完整七 phase</td><td>只复现 before_turn、prompt_render、after_turn</td><td>其他 phase 必须从真实调用点逐步补齐</td></tr>
+          <tr><td>Phase / Module / Frame / slots</td><td>未复现</td><td>等出现依赖排序需求时引入，不能用全局 dict 代替</td></tr>
+          <tr><td>before-turn abort</td><td>未复现</td><td>先扩展 result/outbound 合同，不能伪造 message ID</td></tr>
+          <tr><td>plugin registry / loader / config</td><td>未复现</td><td>Lesson 20 负责发现与配置，不塞进 EventBus</td></tr>
+          <tr><td>after-turn dispatch 边界</td><td>只到持久化后、return 前</td><td>引入 outbound port 后再对齐 dispatch 前 fanout</td></tr>
+        </table>
+        <p><strong>本课 eval seeds 已落地：</strong>Gate 顺序、真实 prompt 消费、retry 隔离、Tap 持久化可见性、observer 失败隔离。没有使用生产 fake/stub；FakeClient 只存在于测试边界以隔离 LLM nondeterminism。</p>
+      </section>
+
+      <section id="review">
+        <h2>本课复盘</h2>
+        <table>
+          <tr><th>项目</th><th>你应该带走的内容</th></tr>
+          <tr><td>关键代码</td><td><code>EventBus.fanout</code>、三个 Context、<code>TurnLifecycle</code>、<code>PassiveRuntime.run_turn</code> 三处调用点</td></tr>
+          <tr><td>关键词</td><td>seam、Gate、Tap、typed context、failure isolation、retry isolation、next consumer</td></tr>
+          <tr><td>工程思维</td><td>扩展点是否成立，要由下游消费和边界测试证明，不由类名或回调次数证明</td></tr>
+          <tr><td>最容易犯错</td><td>只加事件不读回修改；把 observer 当 middleware；在 retry 间复用可变 context</td></tr>
+        </table>
+        <p><strong>简历可讲述版本：</strong>参考 Akashic 的 Lifecycle Phase Model，在 Amadeus 中先实现三个类型化 turn seam；区分串行可变 Gate 与失败隔离 Tap，将 prompt hook 按 context-trim attempt 隔离，并用 SQLite 可见性与异常路径测试验证生命周期边界，为后续 plugin loader 和 phase dependency engine 提供稳定接口。</p>
+        <p><strong>如果自己重做，第一步先看什么：</strong>先在 <code>PassiveRuntime.run_turn()</code> 标出“数据刚准备好”“每次 render 前”“持久化完成”三个时间点，再决定 context 字段和调用语义；不要先写 EventBus 或 Plugin 类。</p>
+      </section>
+
+      <section id="retell">
+        <h2>必须复述的问题</h2>
+        <ol>
+          <li>沿一次真实 turn 讲出三个 context 在哪里创建、handler 改什么、下一消费者是谁。</li>
+          <li>为什么 <code>prompt_render</code> 必须放在 retry loop 内？测试怎样证明没有串染？</li>
+          <li><code>emit</code> 和 <code>fanout</code> 在顺序、返回值、异常处理上分别是什么合同？</li>
+          <li>为什么 after_turn observer 能查到 SQLite 记录，却不能改变 <code>PassiveTurnResult</code>？</li>
+          <li>当前 Amadeus 与 Akashic 在 abort、slots、loader、dispatch 边界上还差什么？</li>
+          <li>如果一个新需求要“在落库前改 assistant reply”，应该放在哪类 seam？为什么当前三个 seam 还不够？</li>
+        </ol>
+        <p>你能结合具体类和调用顺序回答后，才创建 Lesson 19 learning record 并进入 Lesson 20。</p>
+      </section>
+    </div>
+  </div>
+</main>
+<script src="../assets/python-highlight.js"></script>
+</body>
+</html>

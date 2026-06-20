@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from amadeus.events import EventBus, TurnCommitted
+from amadeus.lifecycle import AfterTurnContext, BeforeTurnContext, PromptRenderContext
 from amadeus.provider import (
     ChatCompletionsClient,
     ChatNamespace,
@@ -125,6 +126,114 @@ def test_passive_runtime_persists_turn_and_emits_committed_event(tmp_path):
     assert result.assistant_response == "assistant reply"
     assert len(events) == 1
     assert events[0].assistant_response == "assistant reply"
+
+
+def test_passive_runtime_applies_before_turn_and_prompt_render_gates(tmp_path):
+    client = FakeClient()
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=provider,
+        session_manager=SessionManager(tmp_path),
+    )
+    order: list[str] = []
+
+    def before_turn(context: BeforeTurnContext) -> None:
+        order.append("before_turn")
+        context.retrieved_memory = "memory injected by lifecycle"
+
+    def prompt_render(context: PromptRenderContext) -> None:
+        order.append(f"prompt_render:{context.attempt_name}")
+        context.runtime_context.turn_injection_context["lifecycle"] = (
+            "prompt marker injected by lifecycle"
+        )
+
+    runtime.lifecycle.on_before_turn(before_turn)
+    runtime.lifecycle.on_prompt_render(prompt_render)
+
+    asyncio.run(runtime.run_turn(session_key="lifecycle:1", user_message="hello"))
+
+    rendered_messages = client.completions.calls[0]["messages"]
+    rendered_text = "\n".join(str(message["content"]) for message in rendered_messages)
+    assert order == ["before_turn", "prompt_render:full"]
+    assert "memory injected by lifecycle" in rendered_text
+    assert "prompt marker injected by lifecycle" in rendered_text
+
+
+def test_prompt_render_gate_receives_fresh_context_for_each_retry(tmp_path):
+    client = FakeClient(completions=ContextLengthThenSuccessCompletions())
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=provider,
+        session_manager=SessionManager(tmp_path),
+    )
+    attempts: list[tuple[int, int]] = []
+
+    def mark_attempt(context: PromptRenderContext) -> None:
+        attempts.append((context.attempt_index, id(context.runtime_context)))
+        context.runtime_context.turn_injection_context["attempt"] = (
+            f"attempt marker {context.attempt_index}"
+        )
+
+    runtime.lifecycle.on_prompt_render(mark_attempt)
+
+    asyncio.run(runtime.run_turn(session_key="lifecycle:retry", user_message="hello"))
+
+    assert [attempt_index for attempt_index, _ in attempts] == [0, 1]
+    assert attempts[0][1] != attempts[1][1]
+    first_text = str(client.completions.calls[0]["messages"])
+    second_text = str(client.completions.calls[1]["messages"])
+    assert "attempt marker 0" in first_text
+    assert "attempt marker 1" not in first_text
+    assert "attempt marker 1" in second_text
+    assert "attempt marker 0" not in second_text
+
+
+def test_after_turn_tap_observes_persisted_turn_and_isolates_failures(tmp_path, caplog):
+    client = FakeClient()
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    manager = SessionManager(tmp_path)
+    bus = EventBus()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=provider,
+        session_manager=manager,
+        event_bus=bus,
+    )
+    order: list[str] = []
+
+    bus.on(TurnCommitted, lambda _event: order.append("committed"))
+
+    def broken(_context: AfterTurnContext) -> None:
+        raise RuntimeError("tap failed")
+
+    def observe(context: AfterTurnContext) -> None:
+        persisted = manager.store.fetch_by_ids(
+            [context.user_message_id, context.assistant_message_id]
+        )
+        assert [message["role"] for message in persisted] == ["user", "assistant"]
+        order.append("after_turn")
+
+    runtime.lifecycle.on_after_turn(broken)
+    runtime.lifecycle.on_after_turn(observe)
+
+    result = asyncio.run(
+        runtime.run_turn(session_key="lifecycle:after", user_message="hello")
+    )
+
+    assert result.assistant_response == "assistant reply"
+    assert order == ["committed", "after_turn"]
+    assert "tap failed" in caplog.text
 
 
 def test_passive_runtime_strips_stage_directions_before_persisting(tmp_path):

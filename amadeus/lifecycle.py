@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+from amadeus.context import Message, RuntimeContext
+from amadeus.events import EventBus
+
+
+@dataclass
+class BeforeTurnContext:
+    session_key: str
+    user_message: str
+    history: list[Message]
+    retrieved_memory: str | None
+    active_skills: list[str] = field(default_factory=list)
+    runtime_metadata: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class PromptRenderContext:
+    session_key: str
+    attempt_index: int
+    attempt_name: str
+    runtime_context: RuntimeContext
+
+
+@dataclass(frozen=True)
+class AfterTurnContext:
+    session_key: str
+    user_message_id: str
+    assistant_message_id: str
+    assistant_response: str
+    tool_chain: tuple[dict[str, Any], ...]
+    context_retry: dict[str, Any]
+
+
+class TurnLifecycle:
+    """Typed facade over the turn lifecycle's two Gate seams and one Tap seam."""
+
+    def __init__(self, bus: EventBus) -> None:
+        self._bus = bus
+
+    def on_before_turn(self, handler: Callable[[BeforeTurnContext], Any]) -> None:
+        self._bus.on(BeforeTurnContext, handler)
+
+    def on_prompt_render(self, handler: Callable[[PromptRenderContext], Any]) -> None:
+        self._bus.on(PromptRenderContext, handler)
+
+    def on_after_turn(self, handler: Callable[[AfterTurnContext], Any]) -> None:
+        self._bus.on(AfterTurnContext, handler)
+
+    async def before_turn(self, context: BeforeTurnContext) -> BeforeTurnContext:
+        return await self._bus.emit(context)
+
+    async def prompt_render(self, context: PromptRenderContext) -> PromptRenderContext:
+        return await self._bus.emit(context)
+
+    async def after_turn(self, context: AfterTurnContext) -> None:
+        await self._bus.fanout(context)

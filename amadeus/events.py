@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -8,6 +10,8 @@ from typing import Any, TypeVar, cast
 
 E = TypeVar("E")
 EventHandler = Callable[[E], Awaitable[E | None] | E | None]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -61,3 +65,23 @@ class EventBus:
             if result is not None:
                 current = result
         return current
+
+    async def fanout(self, event: object) -> None:
+        handlers = list(self._handlers.get(type(event), []))
+        if not handlers:
+            return
+        await asyncio.gather(
+            *(self._run_observer(event, handler) for handler in handlers)
+        )
+
+    async def _run_observer(
+        self,
+        event: object,
+        handler: EventHandler[object],
+    ) -> None:
+        try:
+            result = handler(event)
+            if inspect.isawaitable(result):
+                await result
+        except Exception:
+            logger.exception("observer error for %s", type(event).__name__)

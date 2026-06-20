@@ -19,6 +19,12 @@ from amadeus.context import (
     SystemPromptResult,
 )
 from amadeus.events import EventBus, TurnCommitted
+from amadeus.lifecycle import (
+    AfterTurnContext,
+    BeforeTurnContext,
+    PromptRenderContext,
+    TurnLifecycle,
+)
 from amadeus.memory import (
     ConsolidateRequest,
     ConsolidateResult,
@@ -82,7 +88,9 @@ from amadeus.workspace import DEFAULT_SELF_MD, initialize_workspace
 
 __all__ = [
     "ActiveSkillsPromptBlock",
+    "AfterTurnContext",
     "BehaviorRulesPromptBlock",
+    "BeforeTurnContext",
     "ContextFrameResult",
     "ContextBuilder",
     "ContextRenderResult",
@@ -125,6 +133,7 @@ __all__ = [
     "PromptAssemblyResult",
     "PromptDebugEntry",
     "PromptSectionRender",
+    "PromptRenderContext",
     "RecentContextPromptBlock",
     "RetrievedMemoryPromptBlock",
     "RuntimeContext",
@@ -144,6 +153,7 @@ __all__ = [
     "ToolResult",
     "ToolTrace",
     "TurnCommitted",
+    "TurnLifecycle",
     "build_markdown_memory_runtime",
     "build_passive_app",
     "build_context_trim_attempts",
