@@ -339,7 +339,12 @@ try:
 
     self._loaded.add(candidate.import_path)       # initialize 成功后才 commit
     self._load_order.append(candidate.import_path)
+    self._loaded_names[candidate.import_path] = candidate.name
     self._plugin_ids[plugin_id] = candidate.import_path
+    logger.info(
+        "plugin loaded name=%s source=%s", candidate.name, candidate.source
+    )
+    return self._record(candidate, PluginLoadStatus.LOADED)
 except asyncio.CancelledError:
     if owns_import_path:
         await self._cleanup_plugin(candidate.import_path, instance, plugin_id)
