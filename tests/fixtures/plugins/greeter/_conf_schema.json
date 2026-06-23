@@ -1,0 +1,4 @@
+{
+  "greeting": {"type": "string", "default": "Hi there"},
+  "volume": {"type": "integer", "default": 5}
+}

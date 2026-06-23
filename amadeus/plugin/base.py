@@ -23,6 +23,8 @@ class Plugin(ABC):
 
     name: str | None = None
     version: str | None = None
+    desc: str | None = None
+    author: str | None = None
     context: PluginContext
 
     def __init_subclass__(cls, **kwargs: object) -> None:

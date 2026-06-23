@@ -7,7 +7,7 @@ name = "amadeus"
 version = "0.1.0"
 description = "Amadeus runtime context and prompt assembly layer"
 requires-python = ">=3.11"
-dependencies = ["openai>=1.0"]
+dependencies = ["openai>=1.0", "PyYAML>=6.0"]
 
 [project.scripts]
 amadeus = "amadeus.cli:main"
@@ -56,4 +56,5 @@ warn_return_any = false
 dev = [
     "mypy>=2.1.0",
     "ruff>=0.15.17",
+    "types-PyYAML>=6.0",
 ]
