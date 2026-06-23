@@ -15,6 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class _HandlerRegistration:
+    handler: EventHandler[object]
+    priority: int
+    order: int
+
+
+@dataclass(frozen=True)
 class ToolCallStarted:
     """Emitted before a tool call is executed within the reasoner loop."""
     session_key: str
@@ -49,16 +56,47 @@ class TurnCommitted:
 
 class EventBus:
     def __init__(self) -> None:
-        self._handlers: dict[type[object], list[EventHandler[object]]] = {}
+        self._handlers: dict[type[object], list[_HandlerRegistration]] = {}
+        self._next_order = 0
 
-    def on(self, event_type: type[E], handler: EventHandler[E]) -> None:
+    def on(
+        self,
+        event_type: type[E],
+        handler: EventHandler[E],
+        *,
+        priority: int = 0,
+    ) -> None:
         handlers = self._handlers.setdefault(cast(type[object], event_type), [])
-        handlers.append(cast(EventHandler[object], handler))
+        handlers.append(
+            _HandlerRegistration(
+                handler=cast(EventHandler[object], handler),
+                priority=priority,
+                order=self._next_order,
+            )
+        )
+        self._next_order += 1
+        handlers.sort(key=lambda registration: (-registration.priority, registration.order))
+
+    def off(self, event_type: type[E], handler: EventHandler[E]) -> None:
+        raw_event_type = cast(type[object], event_type)
+        registrations = self._handlers.get(raw_event_type)
+        if registrations is None:
+            return
+        registrations[:] = [
+            registration
+            for registration in registrations
+            if registration.handler is not handler
+        ]
+        if not registrations:
+            del self._handlers[raw_event_type]
 
     async def emit(self, event: E) -> E:
         current = event
-        for raw_handler in self._handlers.get(cast(type[object], type(event)), []):
-            handler = cast(EventHandler[E], raw_handler)
+        registrations = list(
+            self._handlers.get(cast(type[object], type(event)), [])
+        )
+        for registration in registrations:
+            handler = cast(EventHandler[E], registration.handler)
             result = handler(current)
             if inspect.isawaitable(result):
                 result = await result
@@ -67,11 +105,14 @@ class EventBus:
         return current
 
     async def fanout(self, event: object) -> None:
-        handlers = list(self._handlers.get(type(event), []))
-        if not handlers:
+        registrations = list(self._handlers.get(type(event), []))
+        if not registrations:
             return
         await asyncio.gather(
-            *(self._run_observer(event, handler) for handler in handlers)
+            *(
+                self._run_observer(event, registration.handler)
+                for registration in registrations
+            )
         )
 
     async def _run_observer(
