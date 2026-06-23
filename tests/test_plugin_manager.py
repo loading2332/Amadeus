@@ -551,6 +551,189 @@ def test_dynamic_relative_submodule_is_removed_on_terminate(tmp_path: Path) -> N
     assert f"{import_path}.helper" not in sys.modules
 
 
+def test_relative_submodule_declarations_are_removed_on_terminate(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "with_declaring_helper",
+        source=(
+            "from . import helper\n"
+            "from amadeus.plugin import Plugin\n"
+            "class RootPlugin(Plugin): pass\n"
+        ),
+        files={
+            "helper.py": (
+                "from amadeus.plugin import Plugin, on_before_turn\n"
+                "class HelperPlugin(Plugin):\n"
+                "    @on_before_turn()\n"
+                "    async def helper_handler(self, context): return context\n"
+            )
+        },
+    )
+    manager = _manager([("workspace", root)])
+    report = asyncio.run(manager.load_all())
+    import_path = report.loaded[0].import_path
+    helper_path = f"{import_path}.helper"
+    assert plugin_registry.get_classes(helper_path)
+    assert plugin_registry.get_handlers_by_module_path(helper_path)
+
+    asyncio.run(manager.terminate_all())
+
+    for module_path in (import_path, helper_path):
+        assert plugin_registry.get_classes(module_path) == []
+        assert plugin_registry.get_instance(module_path) is None
+        assert plugin_registry.get_handlers_by_module_path(module_path) == []
+        assert module_path not in sys.modules
+
+
+@pytest.mark.parametrize("failure_stage", ["import", "initialize"])
+def test_relative_submodule_declarations_are_removed_on_load_failure(
+    tmp_path: Path,
+    failure_stage: str,
+) -> None:
+    root = tmp_path / "plugins"
+    root_tail = (
+        'raise RuntimeError("import failed")\n'
+        if failure_stage == "import"
+        else (
+            "from amadeus.plugin import Plugin\n"
+            "class RootPlugin(Plugin):\n"
+            "    async def initialize(self):\n"
+            '        raise RuntimeError("initialize failed")\n'
+        )
+    )
+    _write_plugin(
+        root,
+        "failing_tree",
+        source="from . import helper\n" + root_tail,
+        files={
+            "helper.py": (
+                "from amadeus.plugin import Plugin, on_before_turn\n"
+                "class HelperPlugin(Plugin):\n"
+                "    @on_before_turn()\n"
+                "    async def helper_handler(self, context): return context\n"
+            )
+        },
+    )
+    manager = _manager([("workspace", root)])
+
+    report = asyncio.run(manager.load_all())
+
+    failed = report.failed[0]
+    helper_path = f"{failed.import_path}.helper"
+    assert failed.stage == failure_stage
+    for module_path in (failed.import_path, helper_path):
+        assert plugin_registry.get_classes(module_path) == []
+        assert plugin_registry.get_instance(module_path) is None
+        assert plugin_registry.get_handlers_by_module_path(module_path) == []
+        assert module_path not in sys.modules
+
+
+def test_foreign_manager_cannot_import_or_cleanup_owned_plugin(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(root, "owned", effect="x")
+    first_bus = EventBus()
+    second_bus = EventBus()
+    first = _manager([("workspace", root)], bus=first_bus)
+    second = _manager([("workspace", root)], bus=second_bus)
+
+    first_report = asyncio.run(first.load_all())
+    import_path = first_report.loaded[0].import_path
+    instance = plugin_registry.get_instance(import_path)
+    module = sys.modules[import_path]
+    handlers = plugin_registry.get_handlers_by_module_path(import_path)
+
+    second_report = asyncio.run(second.load_all())
+
+    assert second_report.failed[0].stage == "ownership"
+    assert first.loaded_names == ["owned"]
+    assert plugin_registry.get_instance(import_path) is instance
+    assert sys.modules[import_path] is module
+    assert plugin_registry.get_handlers_by_module_path(import_path) == handlers
+    assert asyncio.run(first_bus.emit(_before_turn())).runtime_metadata["order"] == "x"
+
+    asyncio.run(first.terminate_all())
+    retry_report = asyncio.run(second.load_all())
+    assert retry_report.loaded
+    assert asyncio.run(second_bus.emit(_before_turn())).runtime_metadata["order"] == "x"
+
+
+def test_concurrent_loads_are_serialized_and_idempotent(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "concurrent",
+        source="""\
+import asyncio
+from amadeus.plugin import Plugin, on_before_turn
+class ConcurrentPlugin(Plugin):
+    async def initialize(self):
+        await asyncio.sleep(0)
+        self.context.kv_store.increment("initialize_count")
+    @on_before_turn()
+    async def before_turn(self, context):
+        context.runtime_metadata["hits"] = context.runtime_metadata.get("hits", "") + "x"
+        return context
+""",
+    )
+    bus = EventBus()
+    manager = _manager([("workspace", root)], bus=bus)
+
+    async def run_loads() -> tuple[PluginLoadReport, PluginLoadReport]:
+        first, second = await asyncio.gather(manager.load_all(), manager.load_all())
+        return first, second
+
+    first, second = asyncio.run(run_loads())
+
+    statuses = [first.records[0].status, second.records[0].status]
+    assert statuses.count(PluginLoadStatus.LOADED) == 1
+    assert statuses.count(PluginLoadStatus.ALREADY_LOADED) == 1
+    assert asyncio.run(bus.emit(_before_turn())).runtime_metadata["hits"] == "x"
+    kv = root / "concurrent" / ".kv.json"
+    assert '"initialize_count": 1' in kv.read_text(encoding="utf-8")
+
+
+def test_concurrent_load_then_terminate_finishes_fully_terminated(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "slow",
+        source="""\
+import asyncio
+from amadeus.plugin import Plugin, on_before_turn
+class SlowPlugin(Plugin):
+    async def initialize(self):
+        await asyncio.sleep(0.02)
+    @on_before_turn()
+    async def before_turn(self, context):
+        context.runtime_metadata["hit"] = True
+        return context
+""",
+    )
+    bus = EventBus()
+    manager = _manager([("workspace", root)], bus=bus)
+    import_path = manager.discover().candidates[0].import_path
+
+    async def load_then_terminate() -> None:
+        loading = asyncio.create_task(manager.load_all())
+        await asyncio.sleep(0)
+        terminating = asyncio.create_task(manager.terminate_all())
+        await asyncio.gather(loading, terminating)
+
+    asyncio.run(load_then_terminate())
+
+    assert manager.loaded_names == []
+    assert plugin_registry.get_instance(import_path) is None
+    assert plugin_registry.get_classes(import_path) == []
+    assert plugin_registry.get_handlers_by_module_path(import_path) == []
+    assert import_path not in sys.modules
+    assert "hit" not in asyncio.run(bus.emit(_before_turn())).runtime_metadata
+
+
 def test_terminate_all_reverse_cleanup_removes_handlers_modules_and_is_idempotent(
     tmp_path: Path,
 ) -> None:

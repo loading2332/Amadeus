@@ -195,6 +195,54 @@ def test_remove_plugin_removes_only_one_modules_declaration_state() -> None:
     assert registry.get_handlers_by_module_path("plugin.second") == [second_handler]
 
 
+def test_remove_plugin_tree_removes_root_and_submodule_declaration_state() -> None:
+    registry = PluginRegistry()
+    root_class = type("Root", (), {"__module__": "plugin.root"})
+    helper_class = type("Helper", (), {"__module__": "plugin.root.helper"})
+    neighbour_class = type("Neighbour", (), {"__module__": "plugin.rooted"})
+    registry.register_class(root_class)
+    registry.register_class(helper_class)
+    registry.register_class(neighbour_class)
+    registry.register_instance("plugin.root", object())
+    registry.register_instance("plugin.root.helper", object())
+    neighbour_instance = object()
+    registry.register_instance("plugin.rooted", neighbour_instance)
+    registry._handlers.append(_handler_metadata("root", "plugin.root"))
+    registry._handlers.append(_handler_metadata("helper", "plugin.root.helper"))
+    neighbour_handler = _handler_metadata("neighbour", "plugin.rooted")
+    registry._handlers.append(neighbour_handler)
+
+    registry.remove_plugin_tree("plugin.root")
+
+    assert registry.get_classes("plugin.root") == []
+    assert registry.get_classes("plugin.root.helper") == []
+    assert registry.get_instance("plugin.root") is None
+    assert registry.get_instance("plugin.root.helper") is None
+    assert registry.get_handlers_by_module_path("plugin.root") == []
+    assert registry.get_handlers_by_module_path("plugin.root.helper") == []
+    assert registry.get_classes("plugin.rooted") == [neighbour_class]
+    assert registry.get_instance("plugin.rooted") is neighbour_instance
+    assert registry.get_handlers_by_module_path("plugin.rooted") == [
+        neighbour_handler
+    ]
+
+
+def test_import_path_ownership_is_exact_and_clear_resets_it() -> None:
+    registry = PluginRegistry()
+    owner = object()
+    foreign_owner = object()
+
+    assert registry.claim_import_path("plugin.root", owner)
+    assert registry.claim_import_path("plugin.root", owner)
+    assert not registry.claim_import_path("plugin.root", foreign_owner)
+
+    registry.release_import_path("plugin.root", foreign_owner)
+    assert not registry.claim_import_path("plugin.root", foreign_owner)
+
+    registry.clear()
+    assert registry.claim_import_path("plugin.root", foreign_owner)
+
+
 def test_registry_clear_empties_all_declaration_state() -> None:
     registry = PluginRegistry()
     plugin_class = type("PluginClass", (), {"__module__": "plugin.module"})

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
+from threading import RLock
 from typing import Any
 
 
@@ -68,6 +69,15 @@ class PluginHandlerRegistry:
     def remove_by_module_path(self, mp: str) -> None:
         self._handlers = [h for h in self._handlers if h.plugin_module_path != mp]
 
+    def remove_by_module_prefix(self, root: str) -> None:
+        prefix = f"{root}."
+        self._handlers = [
+            handler
+            for handler in self._handlers
+            if handler.plugin_module_path != root
+            and not handler.plugin_module_path.startswith(prefix)
+        ]
+
     def clear(self) -> None:
         self._handlers.clear()
 
@@ -75,16 +85,19 @@ class PluginHandlerRegistry:
 class PluginRegistry:
     """Container for all plugin-related registration state.
 
-    Three kinds of state live here:
+    Four kinds of state live here:
     - Handler metadata  (registered by decorators at import time)
     - Plugin classes    (registered by ``Plugin.__init_subclass__`` at import time)
     - Plugin instances  (registered by PluginManager after instantiation)
+    - Import ownership  (claimed by PluginManager across the full lifecycle)
     """
 
     def __init__(self) -> None:
         self._handlers = PluginHandlerRegistry()
         self._classes: dict[str, list[type]] = {}
         self._instances: dict[str, object] = {}
+        self._import_owners: dict[str, object] = {}
+        self._ownership_lock = RLock()
 
     def register_class(self, cls: type) -> None:
         self._classes.setdefault(cls.__module__, []).append(cls)
@@ -109,10 +122,39 @@ class PluginRegistry:
         self._classes.pop(mp, None)
         self._instances.pop(mp, None)
 
+    def remove_plugin_tree(self, root: str) -> None:
+        prefix = f"{root}."
+        self._handlers.remove_by_module_prefix(root)
+        self._classes = {
+            module_path: classes
+            for module_path, classes in self._classes.items()
+            if module_path != root and not module_path.startswith(prefix)
+        }
+        self._instances = {
+            module_path: instance
+            for module_path, instance in self._instances.items()
+            if module_path != root and not module_path.startswith(prefix)
+        }
+
+    def claim_import_path(self, import_path: str, owner_token: object) -> bool:
+        with self._ownership_lock:
+            owner = self._import_owners.get(import_path)
+            if owner is None:
+                self._import_owners[import_path] = owner_token
+                return True
+            return owner is owner_token
+
+    def release_import_path(self, import_path: str, owner_token: object) -> None:
+        with self._ownership_lock:
+            if self._import_owners.get(import_path) is owner_token:
+                self._import_owners.pop(import_path, None)
+
     def clear(self) -> None:
-        self._handlers.clear()
-        self._classes.clear()
-        self._instances.clear()
+        with self._ownership_lock:
+            self._handlers.clear()
+            self._classes.clear()
+            self._instances.clear()
+            self._import_owners.clear()
 
 
 # Global singleton — same pattern as Akashic's plugin_registry.

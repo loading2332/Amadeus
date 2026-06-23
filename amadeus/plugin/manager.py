@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import functools
 import hashlib
 import importlib.util
@@ -63,6 +64,8 @@ class PluginManager:
         self._loaded_names: dict[str, str] = {}
         self._plugin_ids: dict[str, str] = {}
         self._bindings: dict[str, list[_Binding]] = {}
+        self._owner_token = object()
+        self._operation_lock = asyncio.Lock()
 
     def discover(self) -> PluginDiscoveryResult:
         """Describe candidates without reading manifests or executing code."""
@@ -110,6 +113,10 @@ class PluginManager:
         return PluginDiscoveryResult(tuple(candidates), tuple(records))
 
     async def load_all(self) -> PluginLoadReport:
+        async with self._operation_lock:
+            return await self._load_all()
+
+    async def _load_all(self) -> PluginLoadReport:
         discovery = self.discover()
         records = list(discovery.records)
         for candidate in discovery.candidates:
@@ -123,10 +130,26 @@ class PluginManager:
         return PluginLoadReport(tuple(records))
 
     async def _load_candidate(self, candidate: PluginCandidate) -> PluginLoadRecord:
-        stage = "import"
+        stage = "ownership"
         instance: Plugin | None = None
         plugin_id: str | None = None
+        owns_import_path = plugin_registry.claim_import_path(
+            candidate.import_path, self._owner_token
+        )
+        if not owns_import_path:
+            logger.warning(
+                "plugin load failed name=%s source=%s stage=ownership",
+                candidate.name,
+                candidate.source,
+            )
+            return self._record(
+                candidate,
+                PluginLoadStatus.FAILED,
+                stage="ownership",
+                message="ownership failed (import path already in use)",
+            )
         try:
+            stage = "import"
             self._import_plugin(candidate)
 
             stage = "register"
@@ -179,8 +202,13 @@ class PluginManager:
                 "plugin loaded name=%s source=%s", candidate.name, candidate.source
             )
             return self._record(candidate, PluginLoadStatus.LOADED)
+        except asyncio.CancelledError:
+            if owns_import_path:
+                await self._cleanup_plugin(candidate.import_path, instance, plugin_id)
+            raise
         except Exception as error:
-            await self._cleanup_plugin(candidate.import_path, instance, plugin_id)
+            if owns_import_path:
+                await self._cleanup_plugin(candidate.import_path, instance, plugin_id)
             error_type = type(error).__name__
             logger.warning(
                 "plugin load failed name=%s source=%s stage=%s exception=%s frames=%s",
@@ -241,7 +269,7 @@ class PluginManager:
         for event_type, handler in reversed(self._bindings.pop(import_path, [])):
             self._event_bus.off(event_type, handler)
 
-        plugin_registry.remove_plugin(import_path)
+        plugin_registry.remove_plugin_tree(import_path)
         for module_name in tuple(sys.modules):
             if module_name == import_path or module_name.startswith(f"{import_path}."):
                 sys.modules.pop(module_name, None)
@@ -251,8 +279,13 @@ class PluginManager:
         self._loaded_names.pop(import_path, None)
         if plugin_id is not None and self._plugin_ids.get(plugin_id) == import_path:
             self._plugin_ids.pop(plugin_id, None)
+        plugin_registry.release_import_path(import_path, self._owner_token)
 
     async def terminate_all(self) -> None:
+        async with self._operation_lock:
+            await self._terminate_all()
+
+    async def _terminate_all(self) -> None:
         for import_path in reversed(tuple(self._load_order)):
             raw_instance = plugin_registry.get_instance(import_path)
             instance = raw_instance if isinstance(raw_instance, Plugin) else None
