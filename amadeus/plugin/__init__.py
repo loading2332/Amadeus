@@ -11,6 +11,13 @@ from amadeus.plugin.registry import (
     PluginRegistry,
     plugin_registry,
 )
+from amadeus.plugin.types import (
+    PluginCandidate,
+    PluginDiscoveryResult,
+    PluginLoadRecord,
+    PluginLoadReport,
+    PluginLoadStatus,
+)
 
 __all__ = [
     "HandlerType",
@@ -18,9 +25,14 @@ __all__ = [
     "Plugin",
     "PluginConfig",
     "PluginContext",
+    "PluginCandidate",
+    "PluginDiscoveryResult",
     "PluginKVStore",
     "PluginEventType",
     "PluginHandlerMetadata",
+    "PluginLoadRecord",
+    "PluginLoadReport",
+    "PluginLoadStatus",
     "PluginManager",
     "PluginRegistry",
     "on_after_turn",
