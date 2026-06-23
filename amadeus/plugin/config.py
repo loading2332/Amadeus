@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 
@@ -7,13 +8,13 @@ class PluginConfig:
     """Read-only-style access to a snapshot of plugin configuration values."""
 
     def __init__(self, values: dict[str, Any]) -> None:
-        self._values = values.copy()
+        self._values = deepcopy(values)
 
     def get(self, key: str, default: Any = None) -> Any:
         return self._values.get(key, default)
 
     def as_dict(self) -> dict[str, Any]:
-        return self._values.copy()
+        return deepcopy(self._values)
 
     def __getattr__(self, name: str) -> Any:
         try:

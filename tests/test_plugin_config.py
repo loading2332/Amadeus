@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import amadeus.plugin as plugin_api
 import pytest
@@ -34,6 +34,36 @@ def test_plugin_config_exposes_an_immutable_snapshot() -> None:
     copied["api_key"] = "changed"
 
     assert config.api_key == "secret"
+
+
+def test_plugin_config_deep_copies_constructor_input() -> None:
+    original: dict[str, Any] = {
+        "provider": {"name": "openai"},
+        "models": ["gpt-5"],
+    }
+
+    config = PluginConfig(original)
+    original["provider"]["name"] = "mutated"
+    original["models"].append("mutated-model")
+
+    assert config.provider == {"name": "openai"}
+    assert config.models == ["gpt-5"]
+
+
+def test_plugin_config_deep_copies_as_dict_output() -> None:
+    config = PluginConfig(
+        {
+            "provider": {"name": "openai"},
+            "models": ["gpt-5"],
+        }
+    )
+
+    copied = config.as_dict()
+    copied["provider"]["name"] = "mutated"
+    copied["models"].append("mutated-model")
+
+    assert config.provider == {"name": "openai"}
+    assert config.models == ["gpt-5"]
 
 
 def test_plugin_config_missing_attribute_raises_attribute_error() -> None:
