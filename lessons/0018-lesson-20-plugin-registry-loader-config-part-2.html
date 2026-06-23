@@ -53,7 +53,7 @@
         <div class="callout callout-ok"><strong>首次学习 15 分钟必读路径</strong><br>
           先读 <a href="#stage-map">阶段地图</a> → <a href="#part1">Akashic 五步回顾</a> → <a href="#part2">Amadeus 总链</a> → <a href="#transaction">加载事务</a> → <a href="#bootstrap">App 生命周期</a> → <a href="#e2e">真实 E2E</a>。配置细节、日志安全和完整 Gap Matrix 可留到第二遍展开。
         </div>
-        <p>若 Part 1 主链仍说不顺，请先回看 <a href="0017-lesson-20-plugin-registry-loader-config-part-1.html">Teach 0017：对应总计划 Lesson 20 / Part 1</a>；术语不熟时可回看 <a href="../reference/0001-passive-loop-glossary.html">Passive Loop Glossary</a>。</p>
+        <p>若 Part 1 主链仍说不顺，请先回看本页的 <a href="#part1">Part 1：Akashic 源码课回顾</a>；术语不熟时可回看 <a href="../reference/0001-passive-loop-glossary.html">Passive Loop Glossary</a>。完整 Part 1 草稿目前仍在 committed artifact 之外，因此本课不依赖它才能阅读。</p>
       </section>
 
       <section id="stage-map">
@@ -560,16 +560,16 @@ assert "plugin_marker" not in after_close.runtime_metadata</code></pre>
         <h2>验证步骤与 2026-06-23 当前证据</h2>
         <p>在仓库根目录逐条运行；以下数字来自本课交付前对当前代码的实际运行：</p>
         <pre><code class="language-python">.\.venv\Scripts\python.exe -m pytest tests/test_bootstrap.py::test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close -q
-# 1 passed in 0.84s
+# 1 passed in 0.98s
 
 .\.venv\Scripts\python.exe -m pytest tests/test_plugin_config.py tests/test_events.py tests/test_plugin_manager.py tests/test_lifecycle.py tests/test_bootstrap.py tests/test_runtime.py -q
-# 79 passed in 2.80s
+# 81 passed in 3.14s
 
 .\.venv\Scripts\python.exe -m pytest tests/test_plugin_manager.py tests/test_lifecycle.py tests/test_bootstrap.py -q
-# 50 passed in 2.02s
+# 52 passed in 2.16s
 
 .\.venv\Scripts\python.exe -m pytest -q
-# 211 passed in 5.24s
+# 213 passed in 4.78s
 
 .\.venv\Scripts\ruff.exe check amadeus tests dev_utils
 # All checks passed!
@@ -583,7 +583,7 @@ assert "plugin_marker" not in after_close.runtime_metadata</code></pre>
           <tr><td><code>PluginLoadReport</code></td><td><code>prompt_marker</code> 为 loaded</td><td>按 record.stage 查 import/register/config/bind/initialize</td></tr>
           <tr><td>close 后新 BeforeTurnContext</td><td>不再出现 marker</td><td>EventBus exact off 或 binding ledger 泄漏</td></tr>
           <tr><td>失败后 Registry / sys.modules</td><td>root 与 subtree 均无残留</td><td>cleanup 只删 root，或 ownership 没有释放</td></tr>
-          <tr><td>全量/静态门</td><td>211 / Ruff / mypy 均 exit 0</td><td>本课切片之外存在回归或类型边界漂移，不能只看聚焦测试</td></tr>
+          <tr><td>全量/静态门</td><td>213 / Ruff / mypy 均 exit 0</td><td>本课切片之外存在回归或类型边界漂移，不能只看聚焦测试</td></tr>
           </tbody>
         </table>
         <p>若要手动走同样顺序，使用临时 workspace 和安全 FakeClient：<code>build → await start → inspect report → await run_turn → inspect provider messages → await aclose → emit context</code>。不要用真实 API key 来证明加载器行为。</p>
@@ -624,6 +624,7 @@ assert "plugin_marker" not in after_close.runtime_metadata</code></pre>
           <tr><td>prompt section plugin</td><td>未实现</td><td>Lesson 22</td></tr>
           <tr><td>tool decorator / hook / plugin tool failure</td><td>未实现</td><td>Lesson 23</td></tr>
           <tr><td>PluginKVStore concurrency + crash atomic write</td><td>明确未实现</td><td>Lesson 23：并发 increment 无丢失；失败写后仍是合法 JSON；多个插件 KV 隔离</td></tr>
+          <tr><td>terminate timeout / deadline policy</td><td>明确未实现；当前取消会先继续 best-effort cleanup，若后续插件的 <code>terminate()</code> 挂住，取消仍可能被延期</td><td>Lesson 23 failure isolation：有界 shutdown deadline；host-owned 状态始终清理；cancellation/error precedence 确定且可测试</td></tr>
           <tr><td>signature / allowlist / sandbox</td><td>明确无安全保证，trusted code only</td><td>Lesson 40 safety audit</td></tr>
           <tr><td>channel bot / 顶层 <code>App.run()</code></td><td>CLI 仅临时 one-turn adapter</td><td>后续 transport/channel 阶段，长期 STARTED App + channel context</td></tr>
           </tbody>

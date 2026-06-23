@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.11、asyncio、PyYAML、pytest、ruff、mypy、现有 Amadeus EventBus/Lifecycle/PassiveRuntime。
 
+> **执行状态摘要（权威，2026-06-23）：** Tasks 1–6 已完成；Task 7 的实现产物、正式 Teach 0018 Part 2 artifact、结构验证、全量测试与静态质量门也已完成并进入当前 `main` commit chain。Task 7 的最终代码精读、用户复述 gate 与 Lesson 20 learning record 仍待完成；在用户证明理解前，不得标记 retell 完成、创建 learning record 或进入 Lesson 21。下文逐步 checkbox 保留为经批准的执行 checklist 与历史操作说明，未逐项回填不代表权威进度；如与本摘要冲突，以本摘要为准。
+
 ---
 
 ## Scope and working-tree guard
