@@ -24,7 +24,7 @@ class PluginEventType(Enum):
     AFTER_TURN = "after_turn"
 
 
-@dataclass
+@dataclass(frozen=True)
 class PluginHandlerMetadata:
     """One row in the handler registry: what function, from what plugin,
     listens to what event, and how it should be invoked."""

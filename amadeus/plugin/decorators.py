@@ -25,8 +25,8 @@ def _get_or_create_handler(
     the global ``plugin_registry._handlers`` so that the PluginManager can
     later find and bind it.
     """
-    # Idempotent: if the same (event, name, module) was already recorded
-    # (e.g. because the module was re-imported), return the existing entry.
+    # Idempotent for repeated registration or decoration with the same
+    # (event, name, module) key: return the existing entry.
     existing = plugin_registry._handlers.get_by_name(
         event_type, func.__name__, func.__module__
     )

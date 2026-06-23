@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import FrozenInstanceError, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import amadeus.plugin.decorators as plugin_decorators
 import pytest
@@ -93,6 +93,17 @@ def test_handler_registry_orders_by_descending_priority_with_stable_ties() -> No
     ]
 
 
+def test_handler_metadata_cannot_mutate_registry_identity_or_priority() -> None:
+    metadata = _handler_metadata("handler", "plugin.module", priority=10)
+    externally_typed_metadata = cast(Any, metadata)
+
+    with pytest.raises(FrozenInstanceError):
+        externally_typed_metadata.priority = 100
+
+    with pytest.raises(FrozenInstanceError):
+        externally_typed_metadata.plugin_module_path = "another.module"
+
+
 def test_handler_lookup_and_removal_match_only_the_requested_module() -> None:
     handlers = PluginHandlerRegistry()
     first = _handler_metadata("shared", "plugin.first")
@@ -119,9 +130,10 @@ def test_handler_lookup_and_removal_match_only_the_requested_module() -> None:
     assert handlers.get_by_module_path("plugin.second") == []
 
 
-@pytest.mark.parametrize(
-    ("decorator", "event_type", "handler_type"),
-    [
+def test_lifecycle_decorators_preserve_priority_and_are_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cases = [
         (
             plugin_decorators.on_before_turn,
             PluginEventType.BEFORE_TURN,
@@ -137,30 +149,25 @@ def test_handler_lookup_and_removal_match_only_the_requested_module() -> None:
             PluginEventType.AFTER_TURN,
             HandlerType.TAP,
         ),
-    ],
-)
-def test_lifecycle_decorators_preserve_priority_and_are_idempotent(
-    monkeypatch: pytest.MonkeyPatch,
-    decorator: Any,
-    event_type: PluginEventType,
-    handler_type: HandlerType,
-) -> None:
-    registry = PluginRegistry()
-    monkeypatch.setattr(plugin_decorators, "plugin_registry", registry)
+    ]
 
     def handler() -> None:
         return None
 
-    decorated = decorator(priority=42)(handler)
-    decorated_again = decorator(priority=42)(handler)
-    metadata = registry.get_handlers_by_module_path(handler.__module__)
+    for decorator, event_type, handler_type in cases:
+        registry = PluginRegistry()
+        monkeypatch.setattr(plugin_decorators, "plugin_registry", registry)
 
-    assert decorated is handler
-    assert decorated_again is handler
-    assert len(metadata) == 1
-    assert metadata[0].event_type is event_type
-    assert metadata[0].handler_type is handler_type
-    assert metadata[0].priority == 42
+        decorated = decorator(priority=42)(handler)
+        decorated_again = decorator(priority=42)(handler)
+        metadata = registry.get_handlers_by_module_path(handler.__module__)
+
+        assert decorated is handler
+        assert decorated_again is handler
+        assert len(metadata) == 1
+        assert metadata[0].event_type is event_type
+        assert metadata[0].handler_type is handler_type
+        assert metadata[0].priority == 42
 
 
 def test_remove_plugin_removes_only_one_modules_declaration_state() -> None:
@@ -277,19 +284,31 @@ def test_load_report_filters_records_in_original_order() -> None:
     assert report.already_loaded == (records[5],)
 
 
-def test_load_record_contains_only_an_explicit_safe_message() -> None:
-    safe_message = "initialize failed"
+def test_load_record_exposes_only_the_structured_report_boundary() -> None:
+    message = "initialize failed"
     record = PluginLoadRecord(
         name="broken",
         source="workspace",
         import_path="amadeus_plugin_workspace_broken",
         status=PluginLoadStatus.FAILED,
         stage="initialize",
-        message=safe_message,
+        message=message,
     )
 
-    assert record.message == safe_message
-    assert "api_key" not in repr(record)
-    assert "traceback" not in repr(record)
-    assert not hasattr(record, "config")
-    assert not hasattr(record, "traceback")
+    assert [field.name for field in fields(record)] == [
+        "name",
+        "source",
+        "import_path",
+        "status",
+        "stage",
+        "message",
+    ]
+    assert record.message == message
+    forbidden_fields = {
+        "config",
+        "traceback",
+        "exception",
+        "error",
+        "raw_error",
+    }
+    assert forbidden_fields.isdisjoint(field.name for field in fields(record))
