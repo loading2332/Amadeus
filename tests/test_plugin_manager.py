@@ -760,3 +760,92 @@ def test_terminate_all_reverse_cleanup_removes_handlers_modules_and_is_idempoten
     assert terminated == ["two", "one"]
     result = asyncio.run(bus.emit(_before_turn()))
     assert "order" not in result.runtime_metadata
+
+
+def test_cancelled_terminate_all_cleans_every_plugin_and_releases_ownership(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(root, "first", effect="1")
+    _write_plugin(
+        root,
+        "second",
+        source=(
+            "from . import helper\n"
+            "from amadeus.plugin import Plugin, on_before_turn\n"
+            "class Second(Plugin):\n"
+            "    @on_before_turn()\n"
+            "    async def before_turn(self, context):\n"
+            "        context.runtime_metadata['order'] = '2'\n"
+            "        return context\n"
+        ),
+        files={
+            "helper.py": (
+                "from amadeus.plugin import Plugin, on_before_turn\n"
+                "class Helper(Plugin):\n"
+                "    @on_before_turn()\n"
+                "    async def before_turn(self, context): return context\n"
+            )
+        },
+    )
+    bus = EventBus()
+    manager = _manager([("workspace", root)], bus=bus)
+
+    async def scenario() -> tuple[list[str], list[str]]:
+        report = await manager.load_all()
+        import_paths = [record.import_path for record in report.loaded]
+        first_path = next(
+            record.import_path for record in report.loaded if record.name == "first"
+        )
+        second_path = next(
+            record.import_path for record in report.loaded if record.name == "second"
+        )
+        first = plugin_registry.get_instance(first_path)
+        second = plugin_registry.get_instance(second_path)
+        assert isinstance(first, Plugin)
+        assert isinstance(second, Plugin)
+        first_terminated = False
+        terminate_entered = asyncio.Event()
+        release_terminate = asyncio.Event()
+
+        async def record_first_terminate() -> None:
+            nonlocal first_terminated
+            first_terminated = True
+
+        async def blocking_terminate() -> None:
+            terminate_entered.set()
+            await release_terminate.wait()
+
+        first.terminate = record_first_terminate  # type: ignore[method-assign]
+        second.terminate = blocking_terminate  # type: ignore[method-assign]
+        terminating = asyncio.create_task(manager.terminate_all())
+        await terminate_entered.wait()
+        terminating.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await terminating
+
+        assert first_terminated
+        assert "plugin terminate failed" not in caplog.text
+        assert manager.loaded_names == []
+        assert manager._bindings == {}
+        assert manager._plugin_ids == {}
+        assert manager._loaded == set()
+        assert manager._load_order == []
+        for import_path in import_paths:
+            for module_path in (import_path, f"{import_path}.helper"):
+                assert plugin_registry.get_classes(module_path) == []
+                assert plugin_registry.get_instance(module_path) is None
+                assert plugin_registry.get_handlers_by_module_path(module_path) == []
+                assert module_path not in sys.modules
+        assert "order" not in (await bus.emit(_before_turn())).runtime_metadata
+
+        fresh = _manager([("workspace", root)], bus=EventBus())
+        fresh_report = await fresh.load_all()
+        assert len(fresh_report.loaded) == 2
+        fresh_names = fresh.loaded_names
+        await fresh.terminate_all()
+        return import_paths, fresh_names
+
+    import_paths, fresh_names = asyncio.run(scenario())
+    assert len(import_paths) == 2
+    assert fresh_names == ["first", "second"]

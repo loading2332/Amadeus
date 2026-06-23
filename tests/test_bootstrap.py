@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ from typing import Any
 import pytest
 from amadeus.bootstrap import AppState, build_passive_app, load_runtime_config
 from amadeus.lifecycle import BeforeTurnContext
+from amadeus.plugin import Plugin, plugin_registry
 from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatCompletionsClient, ChatNamespace
 
@@ -417,3 +419,88 @@ def test_start_and_close_share_one_transition_lock(tmp_path):
     assert manager.load_calls == 1
     assert manager.terminate_calls == 1
     assert app._state is AppState.CLOSED
+
+
+def test_cancelled_aclose_closes_store_and_removes_live_plugin_state(
+    tmp_path, monkeypatch
+):
+    plugin_dir = tmp_path / "plugins" / "blocking"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.py").write_text(
+        """\
+from amadeus.plugin import Plugin, on_before_turn
+class BlockingPlugin(Plugin):
+    @on_before_turn()
+    async def before_turn(self, context):
+        context.runtime_metadata["plugin_marker"] = "live"
+        return context
+""",
+        encoding="utf-8",
+    )
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=_env_path(tmp_path),
+        client=FakeClient(),
+    )
+    store_closed = False
+    original_close = app.session_manager.store.close
+
+    def close_store() -> None:
+        nonlocal store_closed
+        store_closed = True
+        original_close()
+
+    monkeypatch.setattr(app.session_manager.store, "close", close_store)
+
+    async def scenario() -> str:
+        report = await app.start()
+        record = next(record for record in report.loaded if record.name == "blocking")
+        instance = plugin_registry.get_instance(record.import_path)
+        assert isinstance(instance, Plugin)
+        terminate_entered = asyncio.Event()
+        release_terminate = asyncio.Event()
+
+        async def blocking_terminate() -> None:
+            terminate_entered.set()
+            await release_terminate.wait()
+
+        instance.terminate = blocking_terminate  # type: ignore[method-assign]
+        closing = asyncio.create_task(app.aclose())
+        await terminate_entered.wait()
+        closing.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await closing
+
+        assert app._state is AppState.CLOSED
+        assert store_closed
+        assert app.plugin_manager.loaded_names == []
+        assert app.plugin_manager._bindings == {}
+        assert plugin_registry.get_classes(record.import_path) == []
+        assert plugin_registry.get_instance(record.import_path) is None
+        assert plugin_registry.get_handlers_by_module_path(record.import_path) == []
+        assert record.import_path not in sys.modules
+        after_close = await app.event_bus.emit(
+            BeforeTurnContext(
+                session_key="plugin:after-cancelled-close",
+                user_message="hello",
+                history=[],
+                retrieved_memory=None,
+            )
+        )
+        assert "plugin_marker" not in after_close.runtime_metadata
+        return record.import_path
+
+    import_path = asyncio.run(scenario())
+
+    fresh = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=_env_path(tmp_path),
+        client=FakeClient(),
+    )
+
+    async def reload_and_close() -> None:
+        report = await fresh.start()
+        assert any(record.import_path == import_path for record in report.loaded)
+        await fresh.aclose()
+
+    asyncio.run(reload_and_close())

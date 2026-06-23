@@ -373,21 +373,33 @@ except Exception as error:
             <div class="node lane">release_import_path(owner_token)</div>
           </div>
         </figure>
-        <pre><code class="language-python">for event_type, handler in reversed(self._bindings.pop(import_path, [])):
-    self._event_bus.off(event_type, handler)
+        <pre><code class="language-python">try:
+    if instance is not None:
+        await instance.terminate()
+except Exception as error:
+    logger.warning(...)              # 普通失败：安全记录并继续
+finally:                             # CancelledError 也必须经过这里
+    for event_type, handler in reversed(self._bindings.pop(import_path, [])):
+        self._event_bus.off(event_type, handler)
+    plugin_registry.remove_plugin_tree(import_path)
+    # 省略：删除 sys.modules 子树和 Manager bookkeeping
+    plugin_registry.release_import_path(import_path, self._owner_token)
 
-plugin_registry.remove_plugin_tree(import_path)
-for module_name in tuple(sys.modules):
-    if module_name == import_path or module_name.startswith(f"{import_path}."):
-        sys.modules.pop(module_name, None)
-
-plugin_registry.release_import_path(import_path, self._owner_token)</code></pre>
-        <p><strong>四个容易漏掉的边界：</strong></p>
+first_cancellation = None
+for import_path in reversed(tuple(self._load_order)):
+    try:
+        await self._cleanup_plugin(...)
+    except asyncio.CancelledError as error:
+        first_cancellation = first_cancellation or error
+if first_cancellation is not None:
+    raise first_cancellation</code></pre>
+        <p><strong>五个容易漏掉的边界：</strong></p>
         <ul>
           <li><strong>Registry subtree：</strong>相对导入的子模块也可能声明 class/handler，只删 root 会留下幽灵声明。</li>
           <li><strong><code>sys.modules</code> subtree：</strong>不清除就无法真正 fresh reload。</li>
           <li><strong>ownership claim：</strong>两个 Manager 不能同时导入/清理同一技术身份；只有 owner token 能 release。</li>
           <li><strong>per-manager lock：</strong><code>load_all()</code> 与 <code>terminate_all()</code> 共用 <code>asyncio.Lock</code>，避免半加载与半终止交错。</li>
+          <li><strong>cancellation：</strong><code>terminate()</code> 被取消时，当前插件仍经 <code>finally</code> 清掉 host-owned 状态；批量终止暂存第一次取消并继续清理其他插件，最后重抛，让锁由 <code>async with</code> 自然释放。</li>
         </ul>
         <div class="callout callout-warn"><strong>清理保证的准确边界</strong><br>Manager 能恢复 host-owned Registry、装饰器 handler 绑定、<code>sys.modules</code> 与自身 bookkeeping。插件在 <code>initialize()</code> 中手动注册的 EventBus subscription 仍依赖插件自己的 <code>terminate()</code> 成功取消；若 terminate 失败，宿主无法凭空识别这类 plugin-owned 资源。</div>
         <details>

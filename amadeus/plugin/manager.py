@@ -255,37 +255,42 @@ class PluginManager:
         instance: Plugin | None,
         plugin_id: str | None,
     ) -> None:
-        if instance is not None:
-            try:
+        try:
+            if instance is not None:
                 await instance.terminate()
-            except Exception as error:
-                logger.warning(
-                    "plugin terminate failed import_path=%s exception=%s frames=%s",
-                    import_path,
-                    type(error).__name__,
-                    _safe_traceback(error),
-                )
+        except Exception as error:
+            logger.warning(
+                "plugin terminate failed import_path=%s exception=%s frames=%s",
+                import_path,
+                type(error).__name__,
+                _safe_traceback(error),
+            )
+        finally:
+            for event_type, handler in reversed(self._bindings.pop(import_path, [])):
+                self._event_bus.off(event_type, handler)
 
-        for event_type, handler in reversed(self._bindings.pop(import_path, [])):
-            self._event_bus.off(event_type, handler)
+            plugin_registry.remove_plugin_tree(import_path)
+            for module_name in tuple(sys.modules):
+                if module_name == import_path or module_name.startswith(
+                    f"{import_path}."
+                ):
+                    sys.modules.pop(module_name, None)
 
-        plugin_registry.remove_plugin_tree(import_path)
-        for module_name in tuple(sys.modules):
-            if module_name == import_path or module_name.startswith(f"{import_path}."):
-                sys.modules.pop(module_name, None)
-
-        self._loaded.discard(import_path)
-        self._load_order = [path for path in self._load_order if path != import_path]
-        self._loaded_names.pop(import_path, None)
-        if plugin_id is not None and self._plugin_ids.get(plugin_id) == import_path:
-            self._plugin_ids.pop(plugin_id, None)
-        plugin_registry.release_import_path(import_path, self._owner_token)
+            self._loaded.discard(import_path)
+            self._load_order = [
+                path for path in self._load_order if path != import_path
+            ]
+            self._loaded_names.pop(import_path, None)
+            if plugin_id is not None and self._plugin_ids.get(plugin_id) == import_path:
+                self._plugin_ids.pop(plugin_id, None)
+            plugin_registry.release_import_path(import_path, self._owner_token)
 
     async def terminate_all(self) -> None:
         async with self._operation_lock:
             await self._terminate_all()
 
     async def _terminate_all(self) -> None:
+        first_cancellation: asyncio.CancelledError | None = None
         for import_path in reversed(tuple(self._load_order)):
             raw_instance = plugin_registry.get_instance(import_path)
             instance = raw_instance if isinstance(raw_instance, Plugin) else None
@@ -297,7 +302,13 @@ class PluginManager:
                 ),
                 None,
             )
-            await self._cleanup_plugin(import_path, instance, plugin_id)
+            try:
+                await self._cleanup_plugin(import_path, instance, plugin_id)
+            except asyncio.CancelledError as error:
+                if first_cancellation is None:
+                    first_cancellation = error
+        if first_cancellation is not None:
+            raise first_cancellation
 
     @property
     def loaded_names(self) -> list[str]:
