@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teach 0018｜对应总计划 Lesson 20 / Part 2：Plugin Registry、Loader 与 Config 复现</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <header class="lesson-header">
+    <div class="lesson-meta">TEACH 0018 · LESSON 20 · PART 2</div>
+    <span class="badge">对应总计划 Lesson 20 / Part 2</span>
+    <span class="badge badge-green">Amadeus 复现练手</span>
+    <h1>Plugin Mini-Core：把导入副作用收进可回滚的加载事务</h1>
+    <p>Part 1 已经读懂 Akashic 的 discover → import → register → instantiate/configure → bind → initialize → loaded。本课只讲当前 Amadeus 的真实代码：它如何复现这条主链，又如何补齐半加载残留、跨插件 priority 和应用启停边界。</p>
+  </header>
+
+  <div class="lesson-wrapper">
+    <nav class="toc toc-sidebar" aria-label="目录导航">
+      <div class="toc-title">目录</div>
+      <ul class="toc-list">
+        <li><a href="#goal">本课目标与 Mission</a></li>
+        <li><a href="#stage-map">当前阶段地图</a></li>
+        <li><a href="#part1">Part 1：Akashic 回顾</a></li>
+        <li><a href="#part2">Part 2：Amadeus 总链</a></li>
+        <li><a href="#contracts">候选与报告</a></li>
+        <li><a href="#identity">两种身份</a></li>
+        <li><a href="#config">配置、Context 与 KV</a></li>
+        <li><a href="#event-bus">EventBus 与所有权</a></li>
+        <li><a href="#transaction">原子加载与清理</a></li>
+        <li><a href="#bootstrap">Bootstrap 与 App 生命周期</a></li>
+        <li><a href="#e2e">真实一轮 E2E</a></li>
+        <li><a href="#validation">验证证据</a></li>
+        <li><a href="#troubleshooting">常见错误与排错</a></li>
+        <li><a href="#audit">Coverage / Gap Audit</a></li>
+        <li><a href="#review">复盘与简历表达</a></li>
+        <li><a href="#retell">必须复述</a></li>
+        <li><a href="#sources">Primary Sources</a></li>
+      </ul>
+    </nav>
+
+    <div class="lesson-content">
+      <section id="goal">
+        <h2>本课目标与 MISSION.md 的关系</h2>
+        <p><a href="../MISSION.md">MISSION.md</a> 要求你能亲手复现并讲清 Akashic 的真实设计，而不是只会运行 AI 生成的代码。本课的具体目标是：</p>
+        <ul>
+          <li>沿真实调用链说清 Registry 保存什么、Manager 编排什么，以及下一个消费者是谁。</li>
+          <li>解释插件为何在 import 时产生注册副作用，又为何只有 <code>initialize()</code> 成功后才算 loaded。</li>
+          <li>能用具体残留信号检查 Registry、EventBus、<code>sys.modules</code>、identity ownership 和 App 生命周期。</li>
+        </ul>
+        <p><strong>做完应该看到：</strong>放进 workspace 的用户插件不修改 <code>PassiveRuntime</code>，经 <code>PassiveApp.start()</code> 加载后即可改变真实 provider messages；<code>aclose()</code> 后同一 handler 不再触发。</p>
+        <p>若 Part 1 主链仍说不顺，请先回看 <a href="0017-lesson-20-plugin-registry-loader-config-part-1.html">Teach 0017：对应总计划 Lesson 20 / Part 1</a>；术语不熟时可回看 <a href="../reference/0001-passive-loop-glossary.html">Passive Loop Glossary</a>。</p>
+      </section>
+
+      <section id="stage-map">
+        <h2>当前阶段地图</h2>
+        <table>
+          <tr><th>现在已经实现</th><th>主链中的位置</th><th>仍未完成</th></tr>
+          <tr><td>官方/用户目录 discovery、first-wins、disabled</td><td>磁盘 → <code>PluginCandidate</code></td><td>签名、allowlist、sandbox</td></tr>
+          <tr><td>装饰器/class 注册、manifest/config/context/KV</td><td>import → register → configure</td><td>schema 真正类型校验</td></tr>
+          <tr><td>共享 EventBus bind、priority、精确 off</td><td>bind → turn lifecycle</td><td>完整 phase dependency engine</td></tr>
+          <tr><td>initialize 后 commit、失败清理、反向 terminate</td><td>事务边界与宿主生命周期</td><td>tool decorator/hook/failure isolation</td></tr>
+          <tr><td><code>NEW → STARTED → CLOSED</code> 与真实 provider prompt 验收</td><td>bootstrap → one turn → close</td><td>长期 channel bot 与顶层 <code>App.run()</code></td></tr>
+        </table>
+        <p><strong>本课主链：</strong><code>build_passive_app → PassiveApp.start → PluginManager.load_all → discover/import/register/configure/bind/initialize/commit → PassiveRuntime.run_turn → provider → PassiveApp.aclose → terminate/off/cleanup</code>。</p>
+        <div class="callout callout-info"><strong>下一个 Akashic 对齐切片：Lesson 21</strong><br><code>requires / produces / slots</code>。它要解决“插件和 phase 之间的能力依赖与排序”，必须先有本课稳定的插件身份、加载事务和 cleanup；否则依赖图会建立在会泄漏的实例之上。因此先做 Lesson 20，而不是先做 phase engine。</div>
+      </section>
+
+      <section id="part1">
+        <h2>Part 1：Akashic 源码课回顾</h2>
+        <p>本课实现不是凭计划片段发明的。参考链来自 Akashic 的 <a href="../../akashic-agent/agent/plugins/manager.py">manager.py</a>、<a href="../../akashic-agent/agent/plugins/registry.py">registry.py</a>、<a href="../../akashic-agent/agent/plugins/decorators.py">decorators.py</a>、<a href="../../akashic-agent/agent/plugins/config.py">config.py</a>、<a href="../../akashic-agent/agent/plugins/context.py">context.py</a>、<a href="../../akashic-agent/bus/event_bus.py">event_bus.py</a>、<a href="../../akashic-agent/bootstrap/app.py">bootstrap/app.py</a> 与 <a href="../../akashic-agent/tests/test_plugin_manager.py">tests/test_plugin_manager.py</a>。</p>
+        <figure class="lesson-diagram" aria-labelledby="akashic-chain-caption">
+          <figcaption id="akashic-chain-caption"><strong>Akashic 真实加载链</strong><span>Registry 不扫描磁盘；Manager 通过执行模块触发声明注册。</span></figcaption>
+          <div class="phase-map">
+            <div class="phase-node"><span class="phase-index">1</span><div><code>discover</code><small>输入 plugin dirs；输出尚未执行的候选描述</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node phase-gate"><span class="phase-index">2</span><div><code>dynamic import</code><small>执行 plugin.py；装饰器与 __init_subclass__ 写 Registry</small></div><span class="diagram-tag tag-gate">side effect</span></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">3</span><div><code>instantiate / configure</code><small>应用 manifest、schema default、override，注入 PluginContext</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">4</span><div><code>bind / collect</code><small>绑定 lifecycle handler，并收集 tools/hooks/phase modules</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node phase-tap"><span class="phase-index">5</span><div><code>initialize → loaded</code><small>初始化成功后，才提交加载成功身份</small></div><span class="diagram-tag tag-tap">commit</span></div>
+          </div>
+        </figure>
+        <p><strong>为什么这样设计：</strong>声明侧只描述“我是谁、监听什么”；宿主侧统一决定“从哪里加载、注入哪些依赖、什么时候启停”。复杂点在于 import 不是纯读取：如果后面失败，必须撤销 import 已经写入的全局状态。</p>
+      </section>
+
+      <section id="part2">
+        <h2>Part 2：Amadeus 复现练手——先看总链</h2>
+        <pre><code class="language-python">build_passive_app()
+    event_bus = EventBus()                 # Runtime 与 PluginManager 共享
+    plugin_manager = PluginManager(...)
+    return PassiveApp(..., plugin_manager=plugin_manager)  # 仍是 NEW
+
+await app.start()
+    report = await plugin_manager.load_all()
+        discover()
+        _import_plugin()                   # decorator / class 注册副作用
+        get_classes() → instantiate
+        _apply_manifest() → _load_plugin_config()
+        PluginContext(shared dependencies + plugin-scoped KV)
+        _bind_handlers()
+        await initialize()
+        _loaded.add(import_path)           # 最后才 commit
+
+await app.runtime.run_turn(...)            # lifecycle 消费同一个 EventBus
+await app.aclose()
+    await plugin_manager.terminate_all()
+    session_store.close()</code></pre>
+        <p>读任何关键函数时都用三个问题：<strong>输入是什么？输出或状态变化是什么？下一个消费者是谁？</strong> 文件归属因此不是“看起来整齐”，而是按所有权划分：</p>
+        <table>
+          <tr><th>文件</th><th>职责与下一个消费者</th></tr>
+          <tr><td><a href="../amadeus/plugin/types.py">plugin/types.py</a></td><td>稳定候选与结构化结果；Manager 产生，bootstrap/测试/未来 UI 消费</td></tr>
+          <tr><td><a href="../amadeus/plugin/registry.py">plugin/registry.py</a></td><td>保存 import 声明状态、实例与 ownership；Manager 查询和清理</td></tr>
+          <tr><td><a href="../amadeus/plugin/decorators.py">plugin/decorators.py</a></td><td>import 时把函数声明写进 Registry；Manager 后续绑定</td></tr>
+          <tr><td><a href="../amadeus/plugin/config.py">plugin/config.py</a> / <a href="../amadeus/plugin/context.py">context.py</a></td><td>不可变风格配置快照和受控依赖；插件实例消费</td></tr>
+          <tr><td><a href="../amadeus/plugin/manager.py">plugin/manager.py</a></td><td>拥有加载事务与宿主绑定；EventBus、插件实例和 App 生命周期消费结果</td></tr>
+          <tr><td><a href="../amadeus/events.py">events.py</a></td><td>拥有真实执行顺序和精确订阅；Runtime emit/fanout</td></tr>
+          <tr><td><a href="../amadeus/bootstrap.py">bootstrap.py</a></td><td>组合共享依赖和显式 App 生命周期；CLI/未来 transport 调用</td></tr>
+          <tr><td><a href="../amadeus/cli.py">cli.py</a> / <a href="../amadeus/workspace.py">workspace.py</a></td><td>当前临时 transport adapter；初始化用户插件目录并按 start/run/aclose 使用 App</td></tr>
+        </table>
+      </section>
+
+      <section id="contracts">
+        <h2>候选与报告：先描述，再执行</h2>
+        <div class="source-excerpt">
+          <div class="source-excerpt-header"><span>稳定边界：PluginCandidate / PluginLoadRecord</span><a href="../amadeus/plugin/types.py">打开 types.py</a></div>
+          <pre><code class="language-python">@dataclass(frozen=True)
+class PluginCandidate:
+    name: str
+    source: str
+    plugin_dir: Path
+    module_path: Path
+    import_path: str
+
+@dataclass(frozen=True)
+class PluginLoadRecord:
+    name: str
+    source: str
+    import_path: str
+    status: PluginLoadStatus
+    stage: str | None = None
+    message: str | None = None</code></pre>
+          <p class="source-reading"><strong>输入：</strong>ordered plugin roots。<strong>输出：</strong>不执行代码的 candidate，以及 loaded/disabled/duplicate/already_loaded/failed 的安全报告。<strong>下一消费者：</strong><code>_load_all()</code> 决定是否执行，App 或未来 channel UI 只读报告，不需要碰异常对象。</p>
+        </div>
+        <pre><code class="language-python">for source, root in self._plugin_roots:
+    for child in sorted(root.iterdir(), key=lambda path: path.name):
+        module_path = child / "plugin.py"
+        import_path = _import_path(source, child.name, module_path)
+        if child.name in seen_names:
+            records.append(... status=PluginLoadStatus.DUPLICATE)
+            continue
+        seen_names.add(child.name)
+        candidates.append(PluginCandidate(...))</code></pre>
+        <p><strong>为什么 discover 放在 Manager：</strong>它依赖宿主指定的 root 优先级和加载政策，而 Registry 只保存声明。<code>build_passive_app()</code> 传入 builtin 在前、workspace 在后，所以同目录名 official-first / first-wins。<code>plugin.disabled</code> 在即将 import 前检查，禁用插件不会执行顶层代码。</p>
+        <div class="source-excerpt">
+          <div class="source-excerpt-header"><span>Registry：声明状态与导入所有权</span><a href="../amadeus/plugin/registry.py">打开 registry.py</a></div>
+          <pre><code class="language-python">def register_class(self, cls: type) -> None:
+    self._classes.setdefault(cls.__module__, []).append(cls)
+
+def remove_plugin_tree(self, root: str) -> None:
+    prefix = f"{root}."
+    self._handlers.remove_by_module_prefix(root)
+    self._classes = {
+        path: classes for path, classes in self._classes.items()
+        if path != root and not path.startswith(prefix)
+    }
+
+def claim_import_path(self, import_path: str, owner_token: object) -> bool:
+    with self._ownership_lock:
+        owner = self._import_owners.get(import_path)
+        if owner is None:
+            self._import_owners[import_path] = owner_token
+            return True
+        return owner is owner_token</code></pre>
+          <p class="source-reading"><strong>输入：</strong>class 的 <code>__module__</code>、import root 与 Manager token。<strong>输出/状态：</strong>按模块保存全部 class，或原子取得导入所有权；cleanup 可删整棵声明树。<strong>下一消费者：</strong>Manager 检查 exactly-one class，并且只有 owner Manager 能完成或撤销该事务。Registry 放在独立文件，是因为它保存声明事实，不应依赖磁盘扫描或 App 启停政策。</p>
+        </div>
+      </section>
+
+      <section id="identity">
+        <h2>两种身份：import_path 不等于 plugin_id</h2>
+        <table>
+          <tr><th>身份</th><th>来源</th><th>回答的问题</th><th>用于哪里</th></tr>
+          <tr><td><code>import_path</code></td><td>source + 真实文件路径的 hash</td><td>这次 Python 导入和声明树是谁？</td><td>Registry 对齐、幂等、ownership、<code>sys.modules</code> subtree cleanup</td></tr>
+          <tr><td><code>plugin_id</code></td><td>manifest/class 的最终 name，否则目录名</td><td>运行时业务上这个插件叫什么？</td><td>PluginContext、KV 语义、全局 ID 冲突检查</td></tr>
+        </table>
+        <pre><code class="language-python"># manager.py
+identity = f"{source}\0{module_path.resolve()}".encode()
+digest = hashlib.sha256(identity).hexdigest()[:12]
+import_path = f"amadeus_plugin_{sanitize(source)}_{sanitize(directory_name)}_{digest}"
+
+_apply_manifest(instance, candidate)
+raw_name = instance.name
+plugin_id = str(raw_name) if raw_name else candidate.name
+owner = self._plugin_ids.get(plugin_id)
+if owner is not None and owner != candidate.import_path:
+    raise RuntimeError("plugin id collision")</code></pre>
+        <p>新手常把二者合一，结果是改 manifest 名称就破坏 module cleanup，或两个不同目录声称同一业务 ID 却都加载成功。Amadeus 用技术身份管理导入事务，用业务身份管理运行时唯一性。</p>
+      </section>
+
+      <section id="config">
+        <h2>Manifest、Schema、Override、KV：四者不是一回事</h2>
+        <table>
+          <tr><th>载体</th><th>输入/输出</th><th>失败策略</th><th>是否可变状态</th></tr>
+          <tr><td><code>manifest.yaml</code></td><td>元数据 → name/version/desc/author</td><td>缺失/损坏 fail-open，退回 class 元数据</td><td>否</td></tr>
+          <tr><td><code>_conf_schema.json</code></td><td>字段描述 → 顶层 default</td><td>缺失得 <code>None</code>；损坏 fail-open 为 <code>None</code></td><td>否；本课不做类型校验</td></tr>
+          <tr><td><code>plugin_config.json</code></td><td>用户 override → 覆盖同名 default</td><td>损坏 fail-open，保留 defaults</td><td>用户期望，加载时快照</td></tr>
+          <tr><td><code>.kv.json</code></td><td>get/set/increment → 插件运行状态</td><td>非 object JSON fail-closed，抛 <code>ValueError</code></td><td>是；每插件目录隔离</td></tr>
+        </table>
+        <div class="source-grid">
+          <div class="source-excerpt">
+            <div class="source-excerpt-header"><span>PluginConfig 防御性快照</span><a href="../amadeus/plugin/config.py">打开 config.py</a></div>
+            <pre><code class="language-python">class PluginConfig:
+    def __init__(self, values: dict[str, Any]) -> None:
+        self._values = deepcopy(values)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._values.get(key, default)
+
+    def as_dict(self) -> dict[str, Any]:
+        return deepcopy(self._values)</code></pre>
+          </div>
+          <div class="source-excerpt">
+            <div class="source-excerpt-header"><span>PluginContext 明确批准依赖</span><a href="../amadeus/plugin/context.py">打开 context.py</a></div>
+            <pre><code class="language-python">@dataclass
+class PluginContext:
+    event_bus: EventBus
+    tool_registry: ToolRegistry
+    plugin_id: str
+    plugin_dir: Path
+    kv_store: PluginKVStore
+    config: PluginConfig | None = None
+    workspace: Path | None = None
+    session_manager: SessionManager | None = None
+    memory_engine: MemoryEngine | None = None</code></pre>
+          </div>
+        </div>
+        <p><strong>为什么放这里：</strong>Config 负责值语义，Context 负责依赖注入，Manager 只负责读取并组装；插件只消费 Context，不自行寻找全局 Runtime。<code>PluginKVStore</code> 每次 mutation 先重新读文件，能看到另一个实例刚写入的值，但当前仍是<strong>无锁整文件写</strong>，不能声称并发安全或 crash atomic。</p>
+      </section>
+
+      <section id="event-bus">
+        <h2>共享 EventBus：顺序必须由执行者保证</h2>
+        <div class="source-excerpt">
+          <div class="source-excerpt-header"><span>priority + stable tie + exact off</span><a href="../amadeus/events.py">打开 events.py</a></div>
+          <pre><code class="language-python">def on(self, event_type, handler, *, priority: int = 0) -> None:
+    handlers.append(_HandlerRegistration(
+        handler=handler, priority=priority, order=self._next_order
+    ))
+    self._next_order += 1
+    handlers.sort(key=lambda item: (-item.priority, item.order))
+
+def off(self, event_type, handler) -> None:
+    registrations[:] = [
+        item for item in registrations if item.handler is not handler
+    ]</code></pre>
+          <p class="source-reading"><strong>输入：</strong>类型、可调用对象、priority。<strong>状态变化：</strong>高 priority 先执行，同 priority 保持注册顺序；<code>off</code> 只按对象 identity 删除。<strong>下一消费者：</strong><code>emit()</code>/<code>fanout()</code> 使用同一列表快照。</p>
+        </div>
+        <p>只在 Registry 给 metadata 排序不够：Manager 是逐插件加载的，晚加载插件即使 priority 更高，也可能已经晚注册。真正执行 handler 的 EventBus 必须拥有全局顺序。</p>
+        <pre><code class="language-python"># decorators.py：import 时只登记未绑定函数和 priority
+md = PluginHandlerMetadata(
+    handler=func,
+    plugin_module_path=func.__module__,
+    priority=priority,
+    ...
+)
+
+# manager.py：host 建立绑定，并把 exact callable 记入 ledger
+bound = functools.partial(metadata.handler, instance)
+ledger.append((context_type, bound))
+self._event_bus.on(context_type, bound, priority=metadata.priority)</code></pre>
+        <div class="callout callout-warn"><strong>两类所有权必须分清</strong><br>装饰器产生的 handler 绑定由 host 创建，因此 host 记 ledger 并精确 off。插件如果在 <code>initialize()</code> 里手动 <code>context.event_bus.on(...)</code>，订阅由插件拥有，必须在自己的 <code>terminate()</code> 中取消；Manager 不能猜哪个订阅属于它。</div>
+      </section>
+
+      <section id="transaction">
+        <h2>原子事务：initialize 之前都只是准备态</h2>
+        <div class="source-excerpt">
+          <div class="source-excerpt-header"><span>PluginManager._load_candidate</span><a href="../amadeus/plugin/manager.py">打开 manager.py</a></div>
+          <pre><code class="language-python">owns = plugin_registry.claim_import_path(import_path, self._owner_token)
+try:
+    self._import_plugin(candidate)
+    classes = plugin_registry.get_classes(import_path)
+    if len(classes) != 1:
+        raise RuntimeError("plugin class cardinality violation")
+    instance = classes[0]()
+    _apply_manifest(instance, candidate)
+    config = _load_plugin_config(candidate)
+    instance.context = PluginContext(...)
+    plugin_registry.register_instance(import_path, instance)
+    self._bind_handlers(instance, import_path)
+    await instance.initialize()
+
+    self._loaded.add(import_path)       # initialize 成功后才 commit
+    self._load_order.append(import_path)
+    self._plugin_ids[plugin_id] = import_path
+except Exception as error:
+    await self._cleanup_plugin(import_path, instance, plugin_id)
+    return FAILED(stage=stage, message=f"{stage} failed ({type(error).__name__})")</code></pre>
+          <p class="source-reading"><strong>输入：</strong>一个未加载 candidate。<strong>输出：</strong>不泄露异常内容的结构化 record。<strong>下一消费者：</strong><code>load_all()</code> 继续下一个插件，坏插件不会阻塞好插件。</p>
+        </div>
+        <figure class="lesson-diagram" aria-labelledby="rollback-caption">
+          <figcaption id="rollback-caption"><strong>失败清理覆盖整棵声明树</strong><span>任何阶段失败或 terminate，都回到未加载状态。</span></figcaption>
+          <div class="flow">
+            <div class="node gate">best-effort instance.terminate()</div><div class="arrow">↓</div>
+            <div class="node">反向 EventBus.off(exact bound handler)</div><div class="arrow">↓</div>
+            <div class="node">Registry.remove_plugin_tree(import_path)</div><div class="arrow">↓</div>
+            <div class="node">删除 sys.modules[root 与 root.*]</div><div class="arrow">↓</div>
+            <div class="node">撤销 loaded / load_order / names / plugin_id</div><div class="arrow">↓</div>
+            <div class="node lane">release_import_path(owner_token)</div>
+          </div>
+        </figure>
+        <pre><code class="language-python">for event_type, handler in reversed(self._bindings.pop(import_path, [])):
+    self._event_bus.off(event_type, handler)
+
+plugin_registry.remove_plugin_tree(import_path)
+for module_name in tuple(sys.modules):
+    if module_name == import_path or module_name.startswith(f"{import_path}."):
+        sys.modules.pop(module_name, None)
+
+plugin_registry.release_import_path(import_path, self._owner_token)</code></pre>
+        <p><strong>四个容易漏掉的边界：</strong></p>
+        <ul>
+          <li><strong>Registry subtree：</strong>相对导入的子模块也可能声明 class/handler，只删 root 会留下幽灵声明。</li>
+          <li><strong><code>sys.modules</code> subtree：</strong>不清除就无法真正 fresh reload。</li>
+          <li><strong>ownership claim：</strong>两个 Manager 不能同时导入/清理同一技术身份；只有 owner token 能 release。</li>
+          <li><strong>per-manager lock：</strong><code>load_all()</code> 与 <code>terminate_all()</code> 共用 <code>asyncio.Lock</code>，避免半加载与半终止交错。</li>
+        </ul>
+        <p>错误日志只输出异常类型和经过清洗的 stack location，不输出异常 message 或源码行：插件异常可能包含 API key 等秘密。这里的 tradeoff 是诊断信息更少，但宿主日志边界更安全。</p>
+      </section>
+
+      <section id="bootstrap">
+        <h2>Official-first、信任边界与 App 生命周期</h2>
+        <div class="source-grid">
+          <div class="source-excerpt">
+            <div class="source-excerpt-header"><span>Bootstrap 共享依赖</span><a href="../amadeus/bootstrap.py">打开 bootstrap.py</a></div>
+            <pre><code class="language-python">event_bus = EventBus()
+runtime = PassiveRuntime(..., event_bus=event_bus)
+plugin_manager = PluginManager(
+    plugin_roots=[
+        ("builtin", Path(__file__).resolve().parent / "builtin_plugins"),
+        ("workspace", config.workspace_root / "plugins"),
+    ],
+    event_bus=event_bus,
+    ...
+)</code></pre>
+          </div>
+          <div class="source-excerpt">
+            <div class="source-excerpt-header"><span>Workspace 建立用户目录</span><a href="../amadeus/workspace.py">打开 workspace.py</a></div>
+            <pre><code class="language-python">def initialize_workspace(workspace_root: str | Path) -> None:
+    root = Path(workspace_root)
+    (root / "plugins").mkdir(parents=True, exist_ok=True)
+    (root / "memory").mkdir(parents=True, exist_ok=True)
+    ...</code></pre>
+          </div>
+        </div>
+        <p>builtin root 在 workspace root 之前，所以同目录名优先使用官方插件；用户仍可添加不同名插件。<strong>这不是安全沙箱：</strong><code>plugin.py</code> 是普通可信 Python 代码，import 时拥有进程权限。官方优先只解决命名政策，不解决恶意代码。签名、allowlist、sandbox 必须留到 Lesson 40 做安全审计。</p>
+        <pre><code class="language-python">class AppState(str, Enum):
+    NEW = "new"
+    STARTED = "started"
+    CLOSED = "closed"
+
+async def start(self) -> PluginLoadReport:
+    async with self._lifecycle_lock:
+        report = await self.plugin_manager.load_all()
+        self._state = AppState.STARTED
+        return report
+
+async def aclose(self) -> None:
+    async with self._lifecycle_lock:
+        await self.plugin_manager.terminate_all()
+        self.session_manager.store.close()
+        self._state = AppState.CLOSED</code></pre>
+        <p><code>build_passive_app()</code> 只组合依赖，仍处于 <code>NEW</code>，不会偷偷 import 用户代码；调用者必须显式 <code>start()</code>。<code>CLOSED</code> 不可重启，避免拿已关闭的 DB 与已清理的插件做“僵尸恢复”。start/aclose 共享 transition lock，顺序和并发重复调用都保持幂等。</p>
+        <p><a href="../amadeus/cli.py">cli.py</a> 目前只是临时开发 adapter：<code>build → start → run one turn → aclose</code>。未来 channel bot 可以长期持有同一个 STARTED App，并把 channel/session 身份放入 turn context；无需把插件启动逻辑复制到每个 transport。顶层 <code>App.run()</code> 仍未实现。</p>
+        <div class="source-excerpt">
+          <div class="source-excerpt-header"><span>CLI：只适配输入输出，不拥有插件生命周期规则</span><a href="../amadeus/cli.py">打开 cli.py</a></div>
+          <pre><code class="language-python">async def _run_chat(args: argparse.Namespace) -> None:
+    app = build_passive_app(
+        workspace_root=args.workspace_root,
+        env_path=args.env,
+    )
+    try:
+        await app.start()
+        session_key = args.session_key or app.config.default_session_key
+        result = await app.runtime.run_turn(
+            session_key=session_key,
+            user_message=args.message,
+            retrieved_memory=args.retrieved_memory,
+            active_skills=args.skill,
+        )
+        print(result.assistant_response)
+    finally:
+        await app.aclose()</code></pre>
+          <p class="source-reading"><strong>输入：</strong>解析后的 CLI 参数。<strong>输出：</strong>一次 assistant response 和可选 IDs。<strong>下一消费者：</strong>终端用户。它放在 adapter 层，因为 CLI 只决定参数和展示；start/aclose 的状态合同仍由 <code>PassiveApp</code> 统一拥有，未来 channel transport 可以复用。</p>
+        </div>
+      </section>
+
+      <section id="e2e">
+        <h2>真实 E2E：workspace fixture 到 provider messages，再到 cleanup</h2>
+        <p>验收测试：<a href="../tests/test_bootstrap.py">tests/test_bootstrap.py::test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close</a>，插件 fixture：<a href="../tests/fixtures/bootstrap_plugins/prompt_marker/plugin.py">prompt_marker/plugin.py</a>。</p>
+        <pre><code class="language-python"># 1. 把正式插件 fixture 放进 tmp workspace/plugins/prompt_marker/plugin.py
+app = build_passive_app(
+    workspace_root=tmp_path,
+    env_path=env_path,
+    client=FakeClient(),
+)
+
+# 2. 真实启动链：discover → import → bind → initialize
+report = await app.start()
+
+# 3. 真实 PassiveRuntime turn；插件写 runtime_metadata
+result = await app.runtime.run_turn(
+    session_key="cli:plugin-e2e",
+    user_message="hello",
+)
+
+# 4. 检查真正送到 provider 的 messages，而非只看 Registry
+rendered_text = "\n".join(
+    str(message["content"])
+    for message in client.completions.calls[0]["messages"]
+)
+assert "loaded through PassiveApp.start" in rendered_text
+
+# 5. 关闭后再 emit，同一 marker 不应出现
+await app.aclose()</code></pre>
+        <p>这条链真实经过 workspace、PluginManager、Lifecycle、ContextBuilder、PromptAssembler、Provider boundary、session persistence 和 cleanup。<strong>FakeClient 只隔离网络与 LLM nondeterminism</strong>，属于测试边界；生产架构没有 fake provider、临时 parser 或硬编码 prompt marker。本轮没有做真实网络/真实 LLM 手工验证，也不应这样宣称。</p>
+      </section>
+
+      <section id="validation">
+        <h2>验证步骤与 2026-06-23 当前证据</h2>
+        <p>在仓库根目录逐条运行；以下数字来自本课交付前对当前代码的实际运行：</p>
+        <pre><code class="language-python">.\.venv\Scripts\python.exe -m pytest tests/test_bootstrap.py::test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close -q
+# 1 passed in 0.88s
+
+.\.venv\Scripts\python.exe -m pytest tests/test_plugin_config.py tests/test_events.py tests/test_plugin_manager.py tests/test_lifecycle.py tests/test_bootstrap.py tests/test_runtime.py -q
+# 79 passed in 2.76s
+
+.\.venv\Scripts\python.exe -m pytest tests/test_plugin_manager.py tests/test_lifecycle.py tests/test_bootstrap.py -q
+# 50 passed in 2.14s
+
+.\.venv\Scripts\python.exe -m pytest -q
+# 211 passed in 5.00s
+
+.\.venv\Scripts\ruff.exe check amadeus tests dev_utils
+# All checks passed!
+
+.\.venv\Scripts\mypy.exe amadeus tests dev_utils
+# Success: no issues found in 86 source files</code></pre>
+        <table>
+          <tr><th>你要看什么</th><th>正常</th><th>异常意味着什么</th></tr>
+          <tr><td>acceptance 的 provider messages</td><td>含 <code>loaded through PassiveApp.start</code></td><td>可能未共享 EventBus、未 start、handler 未绑定，或下游没有消费 metadata</td></tr>
+          <tr><td><code>PluginLoadReport</code></td><td><code>prompt_marker</code> 为 loaded</td><td>按 record.stage 查 import/register/config/bind/initialize</td></tr>
+          <tr><td>close 后新 BeforeTurnContext</td><td>不再出现 marker</td><td>EventBus exact off 或 binding ledger 泄漏</td></tr>
+          <tr><td>失败后 Registry / sys.modules</td><td>root 与 subtree 均无残留</td><td>cleanup 只删 root，或 ownership 没有释放</td></tr>
+          <tr><td>全量/静态门</td><td>211 / Ruff / mypy 均 exit 0</td><td>本课切片之外存在回归或类型边界漂移，不能只看聚焦测试</td></tr>
+        </table>
+        <p>若要手动走同样顺序，使用临时 workspace 和安全 FakeClient：<code>build → await start → inspect report → await run_turn → inspect provider messages → await aclose → emit context</code>。不要用真实 API key 来证明加载器行为。</p>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>常见误区与具体排错信号</h2>
+        <table>
+          <tr><th>错误直觉</th><th>可观察信号</th><th>优先检查</th></tr>
+          <tr><td>“文件在 plugins 里就会加载”</td><td>report 没有 candidate</td><td>是否为子目录、是否叫 <code>plugin.py</code>、root 是否正确</td></tr>
+          <tr><td>“装饰器在 start 时才执行”</td><td>import 后 Registry 已有 metadata</td><td>Python class body 与模块顶层执行时机</td></tr>
+          <tr><td>“Registry 排过序就够了”</td><td>跨插件高 priority 仍晚执行</td><td>最终 EventBus registrations 是否按 priority 排序</td></tr>
+          <tr><td>“调用 terminate 就清干净了”</td><td>下一轮 handler 重复，或 submodule 声明仍在</td><td>exact off、Registry tree、<code>sys.modules</code> tree、ownership</td></tr>
+          <tr><td>“manifest name 就是 import path”</td><td>改名后 cleanup/幂等异常</td><td>技术身份与业务身份是否分开</td></tr>
+          <tr><td>“有 schema 文件就已校验”</td><td>错误类型仍进入 config</td><td>当前只提取 default + override，没有 validator</td></tr>
+          <tr><td>“KV increment 是并发安全的”</td><td>并发结果小于期望值</td><td>当前 read-modify-write 无锁；这是 Lesson 23 gap</td></tr>
+          <tr><td>“build 后插件已经运行”</td><td>构造阶段无 import/initialize</td><td>App 是否仍 NEW，调用方是否显式 await start</td></tr>
+        </table>
+        <p><strong>资深工程师先看：</strong>结构化 record 的 <code>stage</code>、日志里安全 stack location、同一个 EventBus 对象 identity、<code>_bindings</code> ledger、Registry/sys.modules subtree，以及 App 当前状态；不会先在 Runtime 里硬塞补丁。</p>
+      </section>
+
+      <section id="audit">
+        <h2>Akashic Coverage / Gap Audit</h2>
+        <table>
+          <tr><th>机制</th><th>Lesson 20 状态</th><th>后续验收边界</th></tr>
+          <tr><td>discover → import → register → instantiate/configure → bind → initialize → loaded</td><td>已对齐复现</td><td>后续扩展不得绕过 Manager 事务</td></tr>
+          <tr><td>EventBus cleanup</td><td>Amadeus 补齐 exact off 与 host binding ledger</td><td>手动订阅仍由插件 terminate 负责</td></tr>
+          <tr><td>动态 import cleanup</td><td>Amadeus 补齐 Registry subtree 与 <code>sys.modules</code> subtree</td><td>fresh reload 不得看到旧声明</td></tr>
+          <tr><td>ownership / class cardinality / plugin_id</td><td>Amadeus 增加 ownership claim、exactly-one class、ID 冲突检查</td><td>两个 Manager 不得互相清理</td></tr>
+          <tr><td>跨插件 priority</td><td>Amadeus 在真正执行者 EventBus 排序，稳定 tie</td><td>不能只依赖 Registry 排序</td></tr>
+          <tr><td><code>requires / produces / slots</code></td><td>未实现</td><td>Lesson 21：能力依赖和 phase 排序</td></tr>
+          <tr><td>prompt section plugin</td><td>未实现</td><td>Lesson 22</td></tr>
+          <tr><td>tool decorator / hook / plugin tool failure</td><td>未实现</td><td>Lesson 23</td></tr>
+          <tr><td>PluginKVStore concurrency + crash atomic write</td><td>明确未实现</td><td>Lesson 23：并发 increment 无丢失；失败写后仍是合法 JSON；多个插件 KV 隔离</td></tr>
+          <tr><td>signature / allowlist / sandbox</td><td>明确无安全保证，trusted code only</td><td>Lesson 40 safety audit</td></tr>
+          <tr><td>channel bot / 顶层 <code>App.run()</code></td><td>CLI 仅临时 one-turn adapter</td><td>后续 transport/channel 阶段，长期 STARTED App + channel context</td></tr>
+        </table>
+        <p><strong>有意偏离 Akashic：</strong>Amadeus 继承职责分层、接口和生命周期主链，但不复制已验证缺陷：共享 EventBus handler 未注销、动态 module/Registry 子树残留、跨插件 priority 失效、class 静默覆盖和业务 ID 冲突。这里选择更强 cleanup 的代价是 Manager 多维护 ledger/ownership/lock，但换来可重试、可关闭、可测试的宿主边界。</p>
+        <p><strong>本课 eval seed：</strong>workspace 用户插件经真实 PassiveApp 和 PassiveRuntime 改变 provider messages，随后 close 后不再触发；同时覆盖 import/instantiate/bind/initialize 失败和 subtree cleanup。</p>
+      </section>
+
+      <section id="review">
+        <h2>本课复盘：你现在应该学会什么</h2>
+        <table>
+          <tr><th>维度</th><th>本课结论</th></tr>
+          <tr><td>关键代码</td><td><code>PluginManager._load_candidate/_cleanup_plugin</code>、<code>PluginRegistry.remove_plugin_tree</code>、<code>EventBus.on/off</code>、<code>PassiveApp.start/aclose</code></td></tr>
+          <tr><td>关键词</td><td>import side effect、technical identity、business identity、atomic host transaction、ownership、exact unsubscription、fail-open</td></tr>
+          <tr><td>核心思维</td><td>动态加载的难点不是 import，而是失败后把所有宿主状态恢复到“从未加载”</td></tr>
+          <tr><td>最容易犯错</td><td>initialize 前 commit；只清 Registry root；把 config 与 KV 混为一谈；让 Registry 而非 EventBus 决定执行顺序</td></tr>
+        </table>
+        <p><strong>简历可讲述版本：</strong>参考 Akashic 的 Plugin Registry / Manager 设计，在 Amadeus 中实现官方与 workspace 用户插件的动态发现、manifest/config/context 注入、Lifecycle 绑定和异步启停。以 collision-resistant import path 统一 Registry 与加载事务身份，以独立 plugin_id 表达运行时身份；通过 ownership、精确 EventBus 注销、Registry/sys.modules 子树回滚和 initialize 后提交，补齐半加载残留与跨插件 priority 问题。最终用真实 PassiveApp → PassiveRuntime → provider messages 链和失败场景测试验证，而不只断言 Registry 内部状态。</p>
+        <p><strong>如果自己重做，第一步先看什么：</strong>先同时看 <a href="../../akashic-agent/agent/plugins/manager.py">Akashic manager.py</a> 和 <a href="../amadeus/plugin/manager.py">Amadeus manager.py</a>，画出每一步写了哪些外部状态；再为每个写入配对 cleanup。不要第一步就写 decorator。</p>
+      </section>
+
+      <section id="retell">
+        <h2>必须复述的问题</h2>
+        <ol>
+          <li>Registry 与 Manager 分别拥有什么状态？为什么 Registry 不负责扫描磁盘？</li>
+          <li>从执行 <code>plugin.py</code> 开始，装饰器和 <code>Plugin.__init_subclass__</code> 在什么时机产生什么 import side effects？</li>
+          <li><code>import_path</code> 与 <code>plugin_id</code> 分别解决什么身份问题？为什么不能合并？</li>
+          <li>manifest、schema defaults、user override 和 KV 的职责与 fail-open/fail-closed 边界分别是什么？</li>
+          <li>为什么必须等 <code>initialize()</code> 成功后才 commit loaded？失败 cleanup 要撤销哪五类状态？</li>
+          <li>装饰器 handler 与插件在 initialize 中手动订阅的 handler，分别由谁 cleanup？ownership claim 又防止什么？</li>
+          <li>为什么 priority 必须在 EventBus 生效？同 priority 时如何保证稳定顺序？</li>
+          <li>沿 <code>NEW → STARTED → CLOSED</code> 讲清 <code>build/start/run_turn/aclose</code>，以及它怎样为未来 channel bot 准备边界。</li>
+          <li>Lesson 21、22、23、40 分别还要补哪些 Akashic 机制或安全缺口？KV 的三个具体验收条件是什么？</li>
+        </ol>
+        <p>请先不用看答案，结合具体文件和下一消费者复述。你能讲清这九题后，才应该创建 Lesson 20 learning record 并进入 Lesson 21；当前不创建伪学习记录。</p>
+        <div class="callout callout-ok"><strong>继续追问</strong><br>任何一步不清楚，可以直接问我“为什么这个状态属于 Manager”“给我沿一次失败按时间线讲”或“出一个残留信号让我定位”。我们先补主链理解，不急着进入下一课。</div>
+      </section>
+
+      <section id="sources">
+        <h2>Primary Sources（1–3）</h2>
+        <ol>
+          <li><a href="../../akashic-agent/agent/plugins/manager.py">Akashic agent/plugins/manager.py</a>：理解 discover、动态导入、配置注入、bind、initialize 与 loaded 主链。</li>
+          <li><a href="../../akashic-agent/agent/plugins/registry.py">Akashic registry.py</a>、<a href="../../akashic-agent/agent/plugins/decorators.py">decorators.py</a> 与 <a href="../../akashic-agent/agent/plugins/context.py">context.py</a>：理解 import 注册副作用、metadata/class 对齐和插件依赖边界。</li>
+          <li><a href="../../akashic-agent/tests/test_plugin_manager.py">Akashic tests/test_plugin_manager.py</a> 与 <a href="../../akashic-agent/tests/fixtures/plugins/hello/plugin.py">hello fixture</a>：用参考实现的真实测试和 fixture 校准行为，而不是根据类名猜设计。</li>
+        </ol>
+      </section>
+    </div>
+  </div>
+</main>
+<script src="../assets/python-highlight.js"></script>
+</body>
+</html>
