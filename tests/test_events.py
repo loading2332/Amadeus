@@ -23,6 +23,17 @@ class TapEvent:
     value: str
 
 
+class EqualHandler:
+    def __init__(self, label: str) -> None:
+        self.label = label
+
+    def __call__(self, event: OrderedEvent) -> None:
+        event.calls.append(self.label)
+
+    def __eq__(self, _other: object) -> bool:
+        return True
+
+
 def test_emit_runs_higher_priority_handlers_first_with_stable_ties() -> None:
     bus = EventBus()
 
@@ -66,6 +77,22 @@ def test_off_removes_only_the_exact_handler_and_missing_removals_are_safe() -> N
     assert result.calls == ["second"]
 
 
+def test_off_uses_handler_identity_instead_of_equality() -> None:
+    bus = EventBus()
+    removed = EqualHandler("removed")
+    retained = EqualHandler("retained")
+    assert removed is not retained
+    assert removed == retained
+
+    bus.on(OrderedEvent, removed)
+    bus.on(OrderedEvent, retained)
+
+    bus.off(OrderedEvent, removed)
+    result = asyncio.run(bus.emit(OrderedEvent(calls=[])))
+
+    assert result.calls == ["retained"]
+
+
 def test_emit_passes_the_current_result_through_each_gate_sequentially() -> None:
     bus = EventBus()
     calls: list[str] = []
@@ -84,6 +111,32 @@ def test_emit_passes_the_current_result_through_each_gate_sequentially() -> None
 
     assert result.value == "initial:replaced"
     assert calls == ["replace:initial", "observe:initial:replaced"]
+
+
+def test_emit_uses_a_subscription_snapshot_for_the_current_dispatch() -> None:
+    bus = EventBus()
+    calls: list[str] = []
+
+    def late(_event: OrderedEvent) -> None:
+        calls.append("late")
+
+    def victim(_event: OrderedEvent) -> None:
+        calls.append("victim")
+
+    def change_subscriptions(_event: OrderedEvent) -> None:
+        calls.append("change")
+        bus.on(OrderedEvent, late)
+        bus.off(OrderedEvent, victim)
+
+    bus.on(OrderedEvent, change_subscriptions)
+    bus.on(OrderedEvent, victim)
+
+    asyncio.run(bus.emit(OrderedEvent(calls=[])))
+    assert calls == ["change", "victim"]
+
+    calls.clear()
+    asyncio.run(bus.emit(OrderedEvent(calls=[])))
+    assert calls == ["change", "late"]
 
 
 def test_fanout_isolates_observer_exceptions(
@@ -105,3 +158,29 @@ def test_fanout_isolates_observer_exceptions(
 
     assert seen == ["observed"]
     assert "tap observer failed" in caplog.text
+
+
+def test_fanout_uses_a_subscription_snapshot_for_the_current_dispatch() -> None:
+    bus = EventBus()
+    calls: list[str] = []
+
+    def late(_event: TapEvent) -> None:
+        calls.append("late")
+
+    def victim(_event: TapEvent) -> None:
+        calls.append("victim")
+
+    def change_subscriptions(_event: TapEvent) -> None:
+        calls.append("change")
+        bus.on(TapEvent, late)
+        bus.off(TapEvent, victim)
+
+    bus.on(TapEvent, change_subscriptions)
+    bus.on(TapEvent, victim)
+
+    asyncio.run(bus.fanout(TapEvent(value="first")))
+    assert sorted(calls) == ["change", "victim"]
+
+    calls.clear()
+    asyncio.run(bus.fanout(TapEvent(value="second")))
+    assert sorted(calls) == ["change", "late"]
