@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from amadeus.bootstrap import build_passive_app, load_runtime_config
+from amadeus.bootstrap import AppState, build_passive_app, load_runtime_config
+from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatCompletionsClient, ChatNamespace
 
 
@@ -34,6 +35,60 @@ class FakeClient:
     def __init__(self) -> None:
         self.completions = FakeCompletions()
         self.chat: ChatNamespace = FakeChatNamespace(completions=self.completions)
+
+
+class ControlledPluginManager:
+    def __init__(self) -> None:
+        self.load_calls = 0
+        self.terminate_calls = 0
+        self.report = PluginLoadReport(())
+        self.load_entered: asyncio.Event | None = None
+        self.release_load: asyncio.Event | None = None
+        self.load_error: BaseException | None = None
+        self.terminate_error: BaseException | None = None
+
+    async def load_all(self) -> PluginLoadReport:
+        self.load_calls += 1
+        if self.load_entered is not None:
+            self.load_entered.set()
+        if self.release_load is not None:
+            await self.release_load.wait()
+        if self.load_error is not None:
+            error = self.load_error
+            self.load_error = None
+            raise error
+        return self.report
+
+    async def terminate_all(self) -> None:
+        self.terminate_calls += 1
+        if self.terminate_error is not None:
+            raise self.terminate_error
+
+
+def _env_path(tmp_path: Path) -> Path:
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://llm.example.test/v1",
+                "OPENAI_API_KEY=secret",
+                "OPENAI_MODEL=fake-model",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return env_path
+
+
+def _app_with_controlled_manager(tmp_path):
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=_env_path(tmp_path),
+        client=FakeClient(),
+    )
+    manager = ControlledPluginManager()
+    app.plugin_manager = manager  # type: ignore[assignment]
+    return app, manager
 
 
 def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, monkeypatch):
@@ -113,9 +168,14 @@ def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
         client=client,
     )
 
-    result = asyncio.run(
-        app.runtime.run_turn(session_key="chat:1", user_message="hello")
-    )
+    async def scenario():
+        await app.start()
+        try:
+            return await app.runtime.run_turn(session_key="chat:1", user_message="hello")
+        finally:
+            await app.aclose()
+
+    result = asyncio.run(scenario())
 
     session = app.session_manager.get_or_create("chat:1")
     recent = app.memory.store.read_recent_context()
@@ -124,3 +184,170 @@ def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
     assert "## Recent Turns" in recent
     assert "[user] hello" in recent
     assert "[a-preview] assistant reply" in recent
+
+
+def test_build_is_composition_only_and_defers_plugin_import(tmp_path):
+    marker = tmp_path / "imported.txt"
+    plugin_dir = tmp_path / "plugins" / "observable"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('imported')\n",
+        encoding="utf-8",
+    )
+
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=_env_path(tmp_path),
+        client=FakeClient(),
+    )
+
+    assert app._state is AppState.NEW
+    assert not marker.exists()
+    asyncio.run(app.aclose())
+
+
+def test_build_wires_plugin_manager_roots_and_dependency_identity(tmp_path, monkeypatch):
+    captured: dict[str, Any] = {}
+
+    class CapturingManager(ControlledPluginManager):
+        def __init__(self, plugin_roots, event_bus, tool_registry, workspace,
+                     session_manager=None, memory_engine=None):
+            super().__init__()
+            captured.update(
+                plugin_roots=plugin_roots,
+                event_bus=event_bus,
+                tool_registry=tool_registry,
+                workspace=workspace,
+                session_manager=session_manager,
+                memory_engine=memory_engine,
+            )
+
+    monkeypatch.setattr("amadeus.bootstrap.PluginManager", CapturingManager)
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=_env_path(tmp_path),
+        client=FakeClient(),
+    )
+
+    import amadeus.bootstrap as bootstrap
+
+    assert captured["plugin_roots"] == [
+        ("builtin", Path(bootstrap.__file__).parent / "builtin_plugins"),
+        ("workspace", tmp_path / "plugins"),
+    ]
+    assert captured["event_bus"] is app.event_bus
+    assert captured["tool_registry"] is app.tool_registry
+    assert captured["workspace"] is app.config.workspace_root
+    assert captured["session_manager"] is app.session_manager
+    assert captured["memory_engine"] is app.runtime.memory_engine
+    asyncio.run(app.aclose())
+
+
+def test_start_is_idempotent_sequentially_and_concurrently(tmp_path):
+    app, manager = _app_with_controlled_manager(tmp_path)
+
+    async def scenario() -> None:
+        first, second = await asyncio.gather(app.start(), app.start())
+        third = await app.start()
+        assert first is manager.report
+        assert second is manager.report
+        assert third is manager.report
+        await app.aclose()
+
+    asyncio.run(scenario())
+    assert manager.load_calls == 1
+
+
+def test_aclose_is_idempotent_for_started_app(tmp_path, monkeypatch):
+    app, manager = _app_with_controlled_manager(tmp_path)
+    close_calls = 0
+    original_close = app.session_manager.store.close
+
+    def close_store() -> None:
+        nonlocal close_calls
+        close_calls += 1
+        original_close()
+
+    monkeypatch.setattr(app.session_manager.store, "close", close_store)
+
+    async def scenario() -> None:
+        await app.start()
+        await asyncio.gather(app.aclose(), app.aclose())
+        await app.aclose()
+
+    asyncio.run(scenario())
+    assert manager.terminate_calls == 1
+    assert close_calls == 1
+    assert app._state is AppState.CLOSED
+
+
+def test_new_app_can_close_and_closed_app_cannot_restart(tmp_path):
+    app, manager = _app_with_controlled_manager(tmp_path)
+
+    async def scenario() -> None:
+        await app.aclose()
+        with pytest.raises(RuntimeError, match="closed"):
+            await app.start()
+
+    asyncio.run(scenario())
+    assert manager.load_calls == 0
+    assert manager.terminate_calls == 1
+
+
+def test_failed_start_cleans_up_stays_new_and_can_retry(tmp_path):
+    app, manager = _app_with_controlled_manager(tmp_path)
+    manager.load_error = RuntimeError("unexpected loader failure")
+
+    async def scenario() -> None:
+        with pytest.raises(RuntimeError, match="unexpected loader failure"):
+            await app.start()
+        assert app._state is AppState.NEW
+        assert await app.start() is manager.report
+        await app.aclose()
+
+    asyncio.run(scenario())
+    assert manager.load_calls == 2
+    assert manager.terminate_calls == 2
+
+
+def test_terminate_error_still_closes_store_and_marks_closed(tmp_path, monkeypatch):
+    app, manager = _app_with_controlled_manager(tmp_path)
+    manager.terminate_error = RuntimeError("terminate failed")
+    close_calls = 0
+    original_close = app.session_manager.store.close
+
+    def close_store() -> None:
+        nonlocal close_calls
+        close_calls += 1
+        original_close()
+
+    monkeypatch.setattr(app.session_manager.store, "close", close_store)
+
+    async def scenario() -> None:
+        with pytest.raises(RuntimeError, match="terminate failed"):
+            await app.aclose()
+
+    asyncio.run(scenario())
+    assert close_calls == 1
+    assert app._state is AppState.CLOSED
+
+
+def test_start_and_close_share_one_transition_lock(tmp_path):
+    app, manager = _app_with_controlled_manager(tmp_path)
+
+    async def scenario() -> None:
+        manager.load_entered = asyncio.Event()
+        manager.release_load = asyncio.Event()
+        start_task = asyncio.create_task(app.start())
+        await manager.load_entered.wait()
+        close_task = asyncio.create_task(app.aclose())
+        await asyncio.sleep(0)
+        assert not close_task.done()
+        manager.release_load.set()
+        await start_task
+        await close_task
+
+    asyncio.run(scenario())
+    assert manager.load_calls == 1
+    assert manager.terminate_calls == 1
+    assert app._state is AppState.CLOSED

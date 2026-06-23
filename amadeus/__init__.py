@@ -1,6 +1,7 @@
 """Amadeus runtime context and prompt assembly package."""
 
 from amadeus.bootstrap import (
+    AppState,
     PassiveApp,
     RuntimeConfig,
     build_passive_app,
@@ -89,6 +90,7 @@ from amadeus.workspace import DEFAULT_SELF_MD, initialize_workspace
 __all__ = [
     "ActiveSkillsPromptBlock",
     "AfterTurnContext",
+    "AppState",
     "BehaviorRulesPromptBlock",
     "BeforeTurnContext",
     "ContextFrameResult",

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 from amadeus.events import EventBus
 from amadeus.memory import MarkdownMemoryRuntime, build_markdown_memory_runtime
+from amadeus.plugin.manager import PluginManager
+from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatClient, LLMProvider, LLMProviderConfig
 from amadeus.runtime import PassiveRuntime
 from amadeus.session import SessionManager
@@ -41,6 +45,14 @@ class RuntimeConfig:
     vector_memory_top_k: int = 8
 
 
+class AppState(str, Enum):  # noqa: UP042
+    """Explicit lifecycle states for a composed passive application."""
+
+    NEW = "new"
+    STARTED = "started"
+    CLOSED = "closed"
+
+
 @dataclass
 class PassiveApp:
     config: RuntimeConfig
@@ -51,9 +63,57 @@ class PassiveApp:
     runtime: PassiveRuntime
     tool_registry: ToolRegistry
     tool_executor: ToolExecutor
+    plugin_manager: PluginManager
+    _state: AppState = field(default=AppState.NEW, init=False)
+    _lifecycle_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock,
+        init=False,
+        repr=False,
+    )
+    _plugin_report: PluginLoadReport | None = field(default=None, init=False, repr=False)
 
-    def close(self) -> None:
-        self.session_manager.store.close()
+    async def start(self) -> PluginLoadReport:
+        """Load plugins once after all host dependencies have been composed."""
+        async with self._lifecycle_lock:
+            if self._state is AppState.CLOSED:
+                raise RuntimeError("PassiveApp is closed; build a new app to restart")
+            if self._state is AppState.STARTED:
+                if self._plugin_report is None:  # pragma: no cover - state invariant
+                    raise RuntimeError("PassiveApp started without a plugin load report")
+                return self._plugin_report
+            try:
+                report = await self.plugin_manager.load_all()
+            except BaseException:
+                try:
+                    await self.plugin_manager.terminate_all()
+                except BaseException:
+                    pass
+                raise
+            self._plugin_report = report
+            self._state = AppState.STARTED
+            return report
+
+    async def aclose(self) -> None:
+        """Terminate plugins before closing their shared session dependency."""
+        async with self._lifecycle_lock:
+            if self._state is AppState.CLOSED:
+                return
+
+            first_error: BaseException | None = None
+            try:
+                await self.plugin_manager.terminate_all()
+            except BaseException as error:
+                first_error = error
+            try:
+                self.session_manager.store.close()
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
+            finally:
+                self._state = AppState.CLOSED
+
+            if first_error is not None:
+                raise first_error
 
 
 def load_runtime_config(
@@ -152,6 +212,17 @@ def build_passive_app(
         tool_registry=tool_registry,
         tool_executor=tool_executor,
     )
+    plugin_manager = PluginManager(
+        plugin_roots=[
+            ("builtin", Path(__file__).parent / "builtin_plugins"),
+            ("workspace", config.workspace_root / "plugins"),
+        ],
+        event_bus=event_bus,
+        tool_registry=tool_registry,
+        workspace=config.workspace_root,
+        session_manager=session_manager,
+        memory_engine=vector_memory,
+    )
     return PassiveApp(
         config=config,
         provider=provider,
@@ -161,6 +232,7 @@ def build_passive_app(
         runtime=runtime,
         tool_registry=tool_registry,
         tool_executor=tool_executor,
+        plugin_manager=plugin_manager,
     )
 
 

@@ -11,6 +11,7 @@ Amadeus 是《命运石之门 0》里的 Amadeus 牧濑红莉栖：基于牧濑�
 
 def initialize_workspace(workspace_root: str | Path) -> None:
     root = Path(workspace_root)
+    (root / "plugins").mkdir(parents=True, exist_ok=True)
     memory_dir = root / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
     (memory_dir / "journal").mkdir(parents=True, exist_ok=True)

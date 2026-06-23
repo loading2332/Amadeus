@@ -50,6 +50,7 @@ async def _run_chat(args: argparse.Namespace) -> None:
         env_path=args.env,
     )
     try:
+        await app.start()
         session_key = args.session_key or app.config.default_session_key
         result = await app.runtime.run_turn(
             session_key=session_key,
@@ -63,7 +64,7 @@ async def _run_chat(args: argparse.Namespace) -> None:
             print(f"user_message_id: {result.user_message_id}")
             print(f"assistant_message_id: {result.assistant_message_id}")
     finally:
-        app.close()
+        await app.aclose()
 
 
 if __name__ == "__main__":
