@@ -154,6 +154,31 @@ def test_sanitized_names_get_collision_resistant_import_paths(tmp_path: Path) ->
     assert [record.name for record in report.loaded] == ["a-b", "a_b"]
 
 
+def test_non_ascii_names_get_valid_distinct_loadable_import_paths(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    source = PLUGIN_TEMPLATE.format(
+        class_name="SafePlugin",
+        plugin_name=None,
+        priority=0,
+        effect="",
+        initialize="pass",
+        terminate="pass",
+    )
+    _write_plugin(root, "²", source=source)
+    _write_plugin(root, "_", source=source.replace("SafePlugin", "OtherPlugin"))
+    manager = _manager([("workspace", root)])
+
+    discovery = manager.discover()
+    report = asyncio.run(manager.load_all())
+
+    import_paths = [candidate.import_path for candidate in discovery.candidates]
+    assert all(path.isidentifier() for path in import_paths)
+    assert len(set(import_paths)) == 2
+    assert {record.name for record in report.loaded} == {"²", "_"}
+
+
 def test_disabled_is_checked_immediately_before_import(tmp_path: Path) -> None:
     root = tmp_path / "plugins"
     plugin_dir = _write_plugin(
@@ -349,6 +374,12 @@ class FailingEventBus(EventBus):
         super().on(*args, **kwargs)
 
 
+class RegisterThenFailEventBus(EventBus):
+    def on(self, *args: Any, **kwargs: Any) -> None:
+        super().on(*args, **kwargs)
+        raise RuntimeError("bind failed after registration")
+
+
 @pytest.mark.parametrize(
     ("name", "source", "stage"),
     [
@@ -404,6 +435,22 @@ class BrokenBind(Plugin):
     assert report.failed[0].stage == "bind"
     result = asyncio.run(bus.emit(_before_turn()))
     assert "ghost" not in result.runtime_metadata
+
+
+def test_bind_failure_after_registration_removes_ghost_and_ledger(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(root, "bind_fail", effect="ghost")
+    bus = RegisterThenFailEventBus()
+    manager = _manager([("workspace", root)], bus=bus)
+
+    report = asyncio.run(manager.load_all())
+
+    assert report.failed[0].stage == "bind"
+    assert manager._bindings == {}
+    result = asyncio.run(bus.emit(_before_turn()))
+    assert "order" not in result.runtime_metadata
 
 
 def test_initialize_failure_calls_terminate_and_terminate_error_does_not_leak(

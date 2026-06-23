@@ -218,8 +218,8 @@ class PluginManager:
             if context_type is None:
                 continue
             bound = functools.partial(metadata.handler, instance)
-            self._event_bus.on(context_type, bound, priority=metadata.priority)
             ledger.append((context_type, bound))
+            self._event_bus.on(context_type, bound, priority=metadata.priority)
 
     async def _cleanup_plugin(
         self,
@@ -294,7 +294,12 @@ class PluginManager:
 
 def _import_path(source: str, directory_name: str, module_path: Path) -> str:
     def sanitize(value: str) -> str:
-        return "".join(char if char.isalnum() or char == "_" else "_" for char in value)
+        return "".join(
+            char
+            if char.isascii() and (char.isalnum() or char == "_")
+            else "_"
+            for char in value
+        )
 
     identity = f"{source}\0{module_path.resolve()}".encode()
     digest = hashlib.sha256(identity).hexdigest()[:12]
