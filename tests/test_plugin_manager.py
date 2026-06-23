@@ -4,11 +4,12 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from amadeus.events import EventBus
 from amadeus.lifecycle import BeforeTurnContext
+from amadeus.memory_engine import MemoryEngine
 from amadeus.plugin import (
     Plugin,
     PluginLoadReport,
@@ -16,6 +17,7 @@ from amadeus.plugin import (
     PluginManager,
     plugin_registry,
 )
+from amadeus.session import SessionManager
 from amadeus.tools.registry import ToolRegistry
 
 PLUGIN_TEMPLATE = """\
@@ -55,7 +57,7 @@ def _write_plugin(
     plugin_dir = root / name
     plugin_dir.mkdir(parents=True)
     body = source or PLUGIN_TEMPLATE.format(
-        class_name="P" + "".join(part.title() for part in name.split("_")),
+        class_name="P" + "".join(char if char.isalnum() else "_" for char in name),
         plugin_name=plugin_name,
         priority=priority,
         effect=effect,
@@ -74,14 +76,16 @@ def _manager(
     bus: EventBus | None = None,
     tools: ToolRegistry | None = None,
     workspace: Path | None = None,
+    session_manager: SessionManager | None = None,
+    memory_engine: MemoryEngine | None = None,
 ) -> PluginManager:
     return PluginManager(
         plugin_roots=roots,
         event_bus=bus or EventBus(),
         tool_registry=tools or ToolRegistry(),
         workspace=workspace or roots[0][1].parent,
-        session_manager=None,
-        memory_engine=None,
+        session_manager=session_manager,
+        memory_engine=memory_engine,
     )
 
 
@@ -127,10 +131,27 @@ def test_discovery_is_ordered_first_wins_and_does_not_import_duplicate(
         "builtin",
         "workspace",
     ]
-    assert discovery.candidates[1].import_path == "amadeus_plugin_workspace_user_plugin"
+    assert discovery.candidates[1].import_path.startswith(
+        "amadeus_plugin_workspace_user_plugin_"
+    )
     duplicate_record = discovery.records[0]
     assert duplicate_record.status is PluginLoadStatus.DUPLICATE
     assert duplicate_record.name == duplicate.name
+
+
+def test_sanitized_names_get_collision_resistant_import_paths(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(root, "a-b")
+    _write_plugin(root, "a_b")
+    manager = _manager([("workspace", root)])
+
+    discovery = manager.discover()
+    report = asyncio.run(manager.load_all())
+
+    import_paths = [candidate.import_path for candidate in discovery.candidates]
+    assert len(set(import_paths)) == 2
+    assert all(path.isidentifier() for path in import_paths)
+    assert [record.name for record in report.loaded] == ["a-b", "a_b"]
 
 
 def test_disabled_is_checked_immediately_before_import(tmp_path: Path) -> None:
@@ -247,8 +268,15 @@ def test_context_injects_exact_shared_dependencies(tmp_path: Path) -> None:
     bus = EventBus()
     tools = ToolRegistry()
     workspace = tmp_path / "ws"
+    session_manager = SessionManager(tmp_path / "sessions")
+    memory_engine = cast(MemoryEngine, object())
     manager = _manager(
-        [("workspace", root)], bus=bus, tools=tools, workspace=workspace
+        [("workspace", root)],
+        bus=bus,
+        tools=tools,
+        workspace=workspace,
+        session_manager=session_manager,
+        memory_engine=memory_engine,
     )
     report = asyncio.run(manager.load_all())
     instance = _loaded_instance(report)
@@ -256,7 +284,10 @@ def test_context_injects_exact_shared_dependencies(tmp_path: Path) -> None:
     assert instance.context.tool_registry is tools
     assert instance.context.plugin_dir == plugin_dir.resolve()
     assert instance.context.workspace == workspace
+    assert instance.context.session_manager is session_manager
+    assert instance.context.memory_engine is memory_engine
     assert instance.context.kv_store._path == plugin_dir.resolve() / ".kv.json"
+    session_manager.store.close()
 
 
 @pytest.mark.parametrize(
@@ -376,7 +407,7 @@ class BrokenBind(Plugin):
 
 
 def test_initialize_failure_calls_terminate_and_terminate_error_does_not_leak(
-    tmp_path: Path,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     root = tmp_path / "plugins"
     marker = tmp_path / "terminated"
@@ -392,17 +423,27 @@ def test_initialize_failure_calls_terminate_and_terminate_error_does_not_leak(
         "from pathlib import Path\nfrom amadeus.plugin import Plugin, on_before_turn",
     )
     _write_plugin(root, "fail_both", source=source)
+    caplog.set_level(logging.WARNING)
     manager = _manager([("workspace", root)])
     report = asyncio.run(manager.load_all())
     assert marker.read_text() == "yes"
     assert report.failed[0].import_path not in sys.modules
+    assert "super-secret" not in caplog.text
+    assert "api_key=" not in caplog.text
+    assert "function=terminate" in caplog.text
 
 
 def test_failure_report_and_logs_never_expose_exception_secrets(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     root = tmp_path / "plugins"
-    _write_plugin(root, "secret", source='raise RuntimeError("api_key=super-secret")')
+    _write_plugin(
+        root,
+        "secret",
+        source=(
+            'def explode():\n    raise RuntimeError("api_key=super-secret")\nexplode()'
+        ),
+    )
     caplog.set_level(logging.WARNING)
     report = asyncio.run(_manager([("workspace", root)]).load_all())
     combined = " ".join(
@@ -411,6 +452,56 @@ def test_failure_report_and_logs_never_expose_exception_secrets(
     assert "super-secret" not in combined
     assert "api_key=" not in combined
     assert "RuntimeError" in (report.failed[0].message or "")
+    assert "function=explode" in caplog.text
+
+
+def test_terminate_then_fresh_reload_has_one_initialize_and_one_handler(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    source = """\
+from amadeus.plugin import Plugin, on_before_turn
+class Reloadable(Plugin):
+    async def initialize(self):
+        self.context.kv_store.increment("initialize_count")
+    @on_before_turn()
+    async def before_turn(self, context):
+        context.runtime_metadata["hits"] = context.runtime_metadata.get("hits", "") + "x"
+        return context
+"""
+    plugin_dir = _write_plugin(root, "reloadable", source=source)
+    bus = EventBus()
+    manager = _manager([("workspace", root)], bus=bus)
+
+    first = asyncio.run(manager.load_all())
+    assert first.loaded
+    assert asyncio.run(bus.emit(_before_turn())).runtime_metadata["hits"] == "x"
+    asyncio.run(manager.terminate_all())
+    second = asyncio.run(manager.load_all())
+
+    assert second.loaded
+    assert asyncio.run(bus.emit(_before_turn())).runtime_metadata["hits"] == "x"
+    assert (plugin_dir / ".kv.json").read_text(encoding="utf-8").count(
+        '"initialize_count": 2'
+    ) == 1
+
+
+def test_dynamic_relative_submodule_is_removed_on_terminate(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "with_helper",
+        source="from . import helper\nfrom amadeus.plugin import Plugin\nclass UsesHelper(Plugin): pass\n",
+        files={"helper.py": "VALUE = 42\n"},
+    )
+    manager = _manager([("workspace", root)])
+    report = asyncio.run(manager.load_all())
+    import_path = report.loaded[0].import_path
+    assert f"{import_path}.helper" in sys.modules
+
+    asyncio.run(manager.terminate_all())
+
+    assert f"{import_path}.helper" not in sys.modules
 
 
 def test_terminate_all_reverse_cleanup_removes_handlers_modules_and_is_idempotent(
@@ -423,9 +514,19 @@ def test_terminate_all_reverse_cleanup_removes_handlers_modules_and_is_idempoten
     manager = _manager([("workspace", root)], bus=bus)
     report = asyncio.run(manager.load_all())
     import_paths = [record.import_path for record in report.loaded]
+    terminated: list[str] = []
+    for record in report.loaded:
+        instance = plugin_registry.get_instance(record.import_path)
+        assert isinstance(instance, Plugin)
+
+        async def terminate(name: str = record.name) -> None:
+            terminated.append(name)
+
+        instance.terminate = terminate  # type: ignore[method-assign]
     asyncio.run(manager.terminate_all())
     asyncio.run(manager.terminate_all())
     assert manager.loaded_names == []
     assert all(import_path not in sys.modules for import_path in import_paths)
+    assert terminated == ["two", "one"]
     result = asyncio.run(bus.emit(_before_turn()))
     assert "order" not in result.runtime_metadata

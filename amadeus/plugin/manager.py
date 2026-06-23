@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib.util
 import json
 import logging
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, cast
 
@@ -77,7 +79,7 @@ class PluginManager:
                 module_path = child / "plugin.py"
                 if not module_path.is_file():
                     continue
-                import_path = _import_path(source, child.name)
+                import_path = _import_path(source, child.name, module_path)
                 if child.name in seen_names:
                     records.append(
                         PluginLoadRecord(
@@ -181,11 +183,12 @@ class PluginManager:
             await self._cleanup_plugin(candidate.import_path, instance, plugin_id)
             error_type = type(error).__name__
             logger.warning(
-                "plugin load failed name=%s source=%s stage=%s exception=%s",
+                "plugin load failed name=%s source=%s stage=%s exception=%s frames=%s",
                 candidate.name,
                 candidate.source,
                 stage,
                 error_type,
+                _safe_traceback(error),
             )
             return self._record(
                 candidate,
@@ -229,9 +232,10 @@ class PluginManager:
                 await instance.terminate()
             except Exception as error:
                 logger.warning(
-                    "plugin terminate failed import_path=%s exception=%s",
+                    "plugin terminate failed import_path=%s exception=%s frames=%s",
                     import_path,
                     type(error).__name__,
+                    _safe_traceback(error),
                 )
 
         for event_type, handler in reversed(self._bindings.pop(import_path, [])):
@@ -288,11 +292,22 @@ class PluginManager:
         )
 
 
-def _import_path(source: str, directory_name: str) -> str:
+def _import_path(source: str, directory_name: str, module_path: Path) -> str:
     def sanitize(value: str) -> str:
         return "".join(char if char.isalnum() or char == "_" else "_" for char in value)
 
-    return f"amadeus_plugin_{sanitize(source)}_{sanitize(directory_name)}"
+    identity = f"{source}\0{module_path.resolve()}".encode()
+    digest = hashlib.sha256(identity).hexdigest()[:12]
+    return f"amadeus_plugin_{sanitize(source)}_{sanitize(directory_name)}_{digest}"
+
+
+def _safe_traceback(error: Exception) -> str:
+    """Render stack locations without exception messages or source text."""
+    frames = traceback.extract_tb(error.__traceback__)
+    return " | ".join(
+        f"file={frame.filename} line={frame.lineno} function={frame.name}"
+        for frame in frames
+    )
 
 
 def _warn_optional_failure(
