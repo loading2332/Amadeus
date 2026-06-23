@@ -1140,6 +1140,21 @@ th {
 }
 
 @media print {
+  .lesson-content table {
+    display: table;
+    overflow: visible;
+    table-layout: auto;
+  }
+  thead { display: table-header-group; }
+  tbody { display: table-row-group; }
+  tr { display: table-row; }
+  tr,
+  pre,
+  .source-excerpt,
+  .source-grid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   .lesson-diagram,
   .phase-scope,
   .phase-loop,
