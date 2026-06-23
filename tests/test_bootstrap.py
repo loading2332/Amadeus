@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +9,7 @@ from typing import Any
 
 import pytest
 from amadeus.bootstrap import AppState, build_passive_app, load_runtime_config
+from amadeus.lifecycle import BeforeTurnContext
 from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatCompletionsClient, ChatNamespace
 
@@ -204,6 +206,58 @@ def test_build_is_composition_only_and_defers_plugin_import(tmp_path):
     assert app._state is AppState.NEW
     assert not marker.exists()
     asyncio.run(app.aclose())
+
+
+def test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close(tmp_path):
+    fixture = (
+        Path(__file__).parent
+        / "fixtures"
+        / "bootstrap_plugins"
+        / "prompt_marker"
+    )
+    shutil.copytree(fixture, tmp_path / "plugins" / "prompt_marker")
+    client = FakeClient()
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=_env_path(tmp_path),
+        client=client,
+    )
+
+    assert app.plugin_manager.loaded_names == []
+
+    async def scenario() -> None:
+        try:
+            report = await app.start()
+            assert ("prompt_marker", "workspace") in [
+                (record.name, record.source) for record in report.loaded
+            ]
+
+            result = await app.runtime.run_turn(
+                session_key="plugin:e2e",
+                user_message="hello",
+            )
+            provider_prompt = "\n".join(
+                str(message["content"])
+                for message in client.completions.calls[0]["messages"]
+            )
+            assert "loaded through PassiveApp.start" in provider_prompt
+            assert result.assistant_response == "assistant reply"
+        finally:
+            await app.aclose()
+
+        assert app.plugin_manager.loaded_names == []
+        after_close = await app.runtime.lifecycle.before_turn(
+            BeforeTurnContext(
+                session_key="plugin:after-close",
+                user_message="hello again",
+                history=[],
+                retrieved_memory=None,
+                runtime_metadata={},
+            )
+        )
+        assert "plugin_marker" not in after_close.runtime_metadata
+
+    asyncio.run(scenario())
 
 
 def test_build_wires_plugin_manager_roots_and_dependency_identity(tmp_path, monkeypatch):
