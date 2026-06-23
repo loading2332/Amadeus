@@ -214,7 +214,7 @@ def build_passive_app(
     )
     plugin_manager = PluginManager(
         plugin_roots=[
-            ("builtin", Path(__file__).parent / "builtin_plugins"),
+            ("builtin", Path(__file__).resolve().parent / "builtin_plugins"),
             ("workspace", config.workspace_root / "plugins"),
         ],
         event_bus=event_bus,

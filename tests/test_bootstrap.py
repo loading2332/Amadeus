@@ -232,7 +232,7 @@ def test_build_wires_plugin_manager_roots_and_dependency_identity(tmp_path, monk
     import amadeus.bootstrap as bootstrap
 
     assert captured["plugin_roots"] == [
-        ("builtin", Path(bootstrap.__file__).parent / "builtin_plugins"),
+        ("builtin", Path(bootstrap.__file__).resolve().parent / "builtin_plugins"),
         ("workspace", tmp_path / "plugins"),
     ]
     assert captured["event_bus"] is app.event_bus

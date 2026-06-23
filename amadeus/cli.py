@@ -49,6 +49,7 @@ async def _run_chat(args: argparse.Namespace) -> None:
         workspace_root=args.workspace_root,
         env_path=args.env,
     )
+    primary_error: BaseException | None = None
     try:
         await app.start()
         session_key = args.session_key or app.config.default_session_key
@@ -63,8 +64,18 @@ async def _run_chat(args: argparse.Namespace) -> None:
             print(f"\nsession: {result.session_key}")
             print(f"user_message_id: {result.user_message_id}")
             print(f"assistant_message_id: {result.assistant_message_id}")
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
-        await app.aclose()
+        try:
+            await app.aclose()
+        except BaseException as cleanup_error:
+            if primary_error is None:
+                raise
+            primary_error.add_note(
+                f"PassiveApp cleanup failed ({type(cleanup_error).__name__})"
+            )
 
 
 if __name__ == "__main__":
