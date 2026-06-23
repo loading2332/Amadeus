@@ -223,10 +223,9 @@ def test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close(tmp_path):
         client=client,
     )
 
-    assert app.plugin_manager.loaded_names == []
-
     async def scenario() -> None:
         try:
+            assert app.plugin_manager.loaded_names == []
             report = await app.start()
             assert ("prompt_marker", "workspace") in [
                 (record.name, record.source) for record in report.loaded
@@ -236,11 +235,24 @@ def test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close(tmp_path):
                 session_key="plugin:e2e",
                 user_message="hello",
             )
-            provider_prompt = "\n".join(
-                str(message["content"])
-                for message in client.completions.calls[0]["messages"]
+            assert len(client.completions.calls) == 1
+            messages = client.completions.calls[0]["messages"]
+            assert messages[-1] == {"role": "user", "content": "hello"}
+            context_frames = [
+                message
+                for message in messages[:-1]
+                if message["role"] == "user"
+                and str(message["content"]).lstrip().startswith("<system-reminder")
+            ]
+            assert len(context_frames) == 1
+            assert "loaded through PassiveApp.start" in str(
+                context_frames[0]["content"]
             )
-            assert "loaded through PassiveApp.start" in provider_prompt
+            assert all(
+                "loaded through PassiveApp.start" not in str(message["content"])
+                for message in messages
+                if message is not context_frames[0]
+            )
             assert result.assistant_response == "assistant reply"
         finally:
             await app.aclose()
