@@ -1140,6 +1140,13 @@ th {
 }
 
 @media print {
+  details,
+  details > * {
+    display: block !important;
+  }
+  details > summary {
+    display: none !important;
+  }
   .lesson-content table {
     display: table;
     overflow: visible;

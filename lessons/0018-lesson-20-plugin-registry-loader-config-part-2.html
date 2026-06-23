@@ -291,7 +291,10 @@ self._event_bus.on(context_type, bound, priority=metadata.priority)</code></pre>
         <h2>原子事务：initialize 之前都只是准备态</h2>
         <div class="source-excerpt">
           <div class="source-excerpt-header"><span>PluginManager._load_candidate</span><a href="../amadeus/plugin/manager.py">打开 manager.py</a></div>
-          <pre><code class="language-python">owns_import_path = plugin_registry.claim_import_path(
+          <pre><code class="language-python">stage = "ownership"
+instance: Plugin | None = None
+plugin_id: str | None = None
+owns_import_path = plugin_registry.claim_import_path(
     candidate.import_path, self._owner_token
 )
 if not owns_import_path:
@@ -303,18 +306,35 @@ if not owns_import_path:
         message="ownership failed (import path already in use)",
     )
 try:
-    # 省略：import/register/instantiate/manifest/identity 的 stage 赋值
+    stage = "import"
     self._import_plugin(candidate)
+    stage = "register"
     classes = plugin_registry.get_classes(candidate.import_path)
     if len(classes) != 1:
         raise RuntimeError("plugin class cardinality violation")
-    instance = classes[0]()
+    plugin_class = classes[0]
+    if not issubclass(plugin_class, Plugin):
+        raise TypeError("registered class is not a Plugin")
+    stage = "instantiate"
+    instance = plugin_class()
+    stage = "manifest"
     _apply_manifest(instance, candidate)
+
+    stage = "identity"
+    raw_name = instance.name
+    plugin_id = str(raw_name) if raw_name else candidate.name
+    owner = self._plugin_ids.get(plugin_id)
+    if owner is not None and owner != candidate.import_path:
+        raise RuntimeError("plugin id collision")
+
+    stage = "config"
     config = _load_plugin_config(candidate)
     # 省略：event_bus/tool_registry/plugin_id/KV 等实际字段逐一注入
     instance.context = PluginContext(...)
     plugin_registry.register_instance(candidate.import_path, instance)
+    stage = "bind"
     self._bind_handlers(instance, candidate.import_path)
+    stage = "initialize"
     await instance.initialize()
 
     self._loaded.add(candidate.import_path)       # initialize 成功后才 commit
@@ -327,7 +347,14 @@ except asyncio.CancelledError:
 except Exception as error:
     if owns_import_path:
         await self._cleanup_plugin(candidate.import_path, instance, plugin_id)
-    # 省略：安全 warning；返回原始结构化 FAILED record</code></pre>
+    error_type = type(error).__name__
+    # 省略：只记录异常类型与安全 stack location 的 warning
+    return self._record(
+        candidate,
+        PluginLoadStatus.FAILED,
+        stage=stage,
+        message=f"{stage} failed ({error_type})",
+    )</code></pre>
           <p class="source-reading"><strong>输入：</strong>一个未加载 candidate。<strong>输出：</strong>不泄露异常内容的结构化 record。<strong>下一消费者：</strong><code>load_all()</code> 继续下一个插件，坏插件不会阻塞好插件。</p>
         </div>
         <figure class="lesson-diagram" aria-labelledby="rollback-caption">
@@ -516,7 +543,7 @@ assert "plugin_marker" not in after_close.runtime_metadata</code></pre>
         <h2>验证步骤与 2026-06-23 当前证据</h2>
         <p>在仓库根目录逐条运行；以下数字来自本课交付前对当前代码的实际运行：</p>
         <pre><code class="language-python">.\.venv\Scripts\python.exe -m pytest tests/test_bootstrap.py::test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close -q
-# 1 passed in 1.06s
+# 1 passed in 0.84s
 
 .\.venv\Scripts\python.exe -m pytest tests/test_plugin_config.py tests/test_events.py tests/test_plugin_manager.py tests/test_lifecycle.py tests/test_bootstrap.py tests/test_runtime.py -q
 # 79 passed in 2.80s
