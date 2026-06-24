@@ -111,6 +111,114 @@ def _loaded_instance(report: PluginLoadReport) -> Plugin:
     return instance
 
 
+def test_successful_plugin_contributes_before_turn_modules(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "phase_marker",
+        source="""\
+from amadeus.plugin import Plugin
+
+class MarkerModule:
+    slot = "phase_marker.before_turn"
+    requires = ("before_turn.build_ctx", "session:ctx")
+    produces = ("session:ctx",)
+    async def run(self, frame):
+        return frame
+
+class PhaseMarker(Plugin):
+    name = "phase_marker"
+    def before_turn_modules(self):
+        return [MarkerModule()]
+""",
+    )
+    manager = _manager([("workspace", root)])
+
+    report = asyncio.run(manager.load_all())
+
+    assert len(report.loaded) == 1
+    assert [module.slot for module in manager.before_turn_modules] == [
+        "phase_marker.before_turn"
+    ]
+
+
+def test_invalid_before_turn_module_collection_fails_plugin_transaction(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "invalid_modules",
+        source="""\
+from amadeus.plugin import Plugin
+class InvalidModules(Plugin):
+    def before_turn_modules(self):
+        return (object(),)
+""",
+    )
+    manager = _manager([("workspace", root)])
+
+    report = asyncio.run(manager.load_all())
+
+    assert report.records[0].status is PluginLoadStatus.FAILED
+    assert report.records[0].stage == "phase_modules"
+    assert manager.before_turn_modules == []
+    assert manager.loaded_names == []
+
+
+def test_initialize_failure_does_not_commit_before_turn_modules(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "crash_after_modules",
+        source="""\
+from amadeus.plugin import Plugin
+class MarkerModule:
+    slot = "crash.marker"
+    async def run(self, frame):
+        return frame
+class CrashAfterModules(Plugin):
+    def before_turn_modules(self):
+        return [MarkerModule()]
+    async def initialize(self):
+        raise RuntimeError("initialize failed")
+""",
+    )
+    manager = _manager([("workspace", root)])
+
+    report = asyncio.run(manager.load_all())
+
+    assert report.records[0].status is PluginLoadStatus.FAILED
+    assert report.records[0].stage == "initialize"
+    assert manager.before_turn_modules == []
+
+
+def test_terminate_removes_owned_before_turn_modules(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "owned_module",
+        source="""\
+from amadeus.plugin import Plugin
+class OwnedModule:
+    slot = "owned.before_turn"
+    async def run(self, frame):
+        return frame
+class Owner(Plugin):
+    def before_turn_modules(self):
+        return [OwnedModule()]
+""",
+    )
+    manager = _manager([("workspace", root)])
+    asyncio.run(manager.load_all())
+
+    asyncio.run(manager.terminate_all())
+
+    assert manager.before_turn_modules == []
+
+
 def test_discovery_is_ordered_first_wins_and_does_not_import_duplicate(
     tmp_path: Path,
 ) -> None:

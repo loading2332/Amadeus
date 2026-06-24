@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 20 Part 1：Akashic Plugin Registry / Loader / Config</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <header class="lesson-header">
+    <div class="lesson-meta">LESSON 20 · PART 1</div>
+    <span class="badge">对应总计划 Lesson 20 / Part 1</span>
+    <span class="badge badge-red">Akashic 源码课</span>
+    <h1>Plugin Mini-Core：插件怎样从磁盘变成运行时对象</h1>
+    <p>Lesson 19 回答“插件挂在哪里”；本课回答“插件从哪里来、如何被识别、配置、绑定和启动”。重点不是动态 import 这一行，而是整个加载事务的状态变化。</p>
+  </header>
+
+  <div class="lesson-wrapper">
+    <nav class="toc toc-sidebar" aria-label="目录导航">
+      <div class="toc-title">目录</div>
+      <ul class="toc-list">
+        <li><a href="#goal">目标与 Mission</a></li>
+        <li><a href="#stage-map">当前阶段地图</a></li>
+        <li><a href="#objects">四个核心对象</a></li>
+        <li><a href="#full-chain">完整加载链</a></li>
+        <li><a href="#discover">Discover</a></li>
+        <li><a href="#import-register">Import 与注册</a></li>
+        <li><a href="#configure">Manifest / Config / Context</a></li>
+        <li><a href="#bind-start">Bind 与 Initialize</a></li>
+        <li><a href="#bootstrap">启动接线</a></li>
+        <li><a href="#tests">测试合同</a></li>
+        <li><a href="#risks">复杂点与源码缺口</a></li>
+        <li><a href="#part2">Amadeus 复现边界</a></li>
+        <li><a href="#audit">Coverage / Gap Audit</a></li>
+        <li><a href="#retell">必须复述</a></li>
+      </ul>
+    </nav>
+
+    <div class="lesson-content">
+      <section id="goal">
+        <h2>本课目标与 MISSION.md 的关系</h2>
+        <p>MISSION 要求我们理解并复现 Akashic 的真实扩展机制，而不是在 Runtime 里硬编码更多 handler。本课要建立三个判断能力：</p>
+        <ul>
+          <li>区分 Registry、Loader/Manager、Config 和 PluginContext 的职责。</li>
+          <li>沿一次真实加载讲清模块导入时发生的“装饰器注册”和“类注册”。</li>
+          <li>判断一个插件何时才算 loaded，以及失败时哪些状态必须回滚。</li>
+        </ul>
+        <p><strong>做完以后应该看到：</strong>Part 2 中，一个位于插件目录的最小模块无需修改 <code>PassiveRuntime</code>，即可被发现、读取配置、实例化，并挂入 Lesson 19 的 Lifecycle seam。</p>
+      </section>
+
+      <section id="stage-map">
+        <h2>当前阶段地图</h2>
+        <table>
+          <tr><th>能力</th><th>Amadeus 当前状态</th><th>Lesson 20 判断</th></tr>
+          <tr><td>Lifecycle seam</td><td><code>before_turn</code>、<code>prompt_render</code>、<code>after_turn</code> 已接入主链</td><td>插件已有稳定挂载位置</td></tr>
+          <tr><td>Handler 注册</td><td>应用代码直接调用 <code>runtime.lifecycle.on_*</code></td><td>缺插件元数据与自动绑定</td></tr>
+          <tr><td>Plugin discovery</td><td>不存在</td><td>无法从目录找到插件</td></tr>
+          <tr><td>Plugin config</td><td>只有整个 Runtime 的环境配置</td><td>缺插件级默认值和用户覆盖</td></tr>
+          <tr><td>Plugin lifecycle</td><td>不存在 initialize / terminate</td><td>资源启停没有统一边界</td></tr>
+          <tr><td>Phase slots</td><td>不存在</td><td>属于 Lesson 21，不混入本课</td></tr>
+        </table>
+        <p><strong>最容易混淆：</strong>Amadeus 已有 <code>ToolRegistry</code>，但它回答“有哪些可执行工具”；PluginRegistry 回答“导入了哪些插件类、实例和扩展元数据”。插件可以贡献工具，但插件不等于工具。</p>
+      </section>
+
+      <section id="objects">
+        <h2>先分清四个对象</h2>
+        <table>
+          <tr><th>对象</th><th>它拥有的状态</th><th>它不负责什么</th></tr>
+          <tr><td><code>PluginRegistry</code></td><td>handler metadata、插件 class、插件 instance</td><td>不扫描磁盘，不决定启动顺序</td></tr>
+          <tr><td><code>PluginManager</code></td><td>plugin dirs、loaded 集合、收集到的 modules/hooks</td><td>不执行 turn，不取代 Lifecycle</td></tr>
+          <tr><td><code>PluginConfig</code></td><td>schema default 与用户 override 合并后的值</td><td>当前 Akashic 实现不做类型校验</td></tr>
+          <tr><td><code>PluginContext</code></td><td>EventBus、ToolRegistry、plugin dir/id、KV、workspace 等运行依赖</td><td>不是全局 Runtime 本体</td></tr>
+        </table>
+
+        <figure class="lesson-diagram" aria-labelledby="object-map-caption">
+          <figcaption id="object-map-caption"><strong>职责关系</strong><span>Manager 编排加载；Registry 保存身份和元数据；Context 给实例提供受控运行依赖。</span></figcaption>
+          <div class="type-map">
+            <div class="type-lane">
+              <strong>磁盘层</strong>
+              <code>plugins/hello/plugin.py</code>
+              <code>manifest.yaml</code>
+              <code>_conf_schema.json</code>
+              <code>plugin_config.json</code>
+            </div>
+            <div class="type-bridge"><span>discover / import</span></div>
+            <div class="type-lane">
+              <strong>PluginManager</strong>
+              <span>加载事务</span>
+              <span>依赖注入</span>
+              <span>initialize / terminate</span>
+            </div>
+            <div class="type-bridge"><span>register / lookup</span></div>
+            <div class="type-lane">
+              <strong>PluginRegistry</strong>
+              <span>metadata</span>
+              <span>class</span>
+              <span>instance</span>
+            </div>
+          </div>
+        </figure>
+      </section>
+
+      <section id="full-chain">
+        <h2>一条完整加载链</h2>
+        <figure class="lesson-diagram" aria-labelledby="load-chain-caption">
+          <figcaption id="load-chain-caption"><strong>从目录到 loaded</strong><span>中间任何一步失败，都不应该留下半加载插件。</span></figcaption>
+          <div class="phase-map">
+            <div class="phase-node"><span class="phase-index">1</span><div><code>discover()</code><small>扫描 plugin dirs；只认子目录中的 plugin.py</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">2</span><div><code>_import_plugin()</code><small>创建独立 import path，执行模块顶层代码</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node phase-gate"><span class="phase-index">3</span><div><code>decorators + __init_subclass__</code><small>导入过程中登记 handler metadata 与 Plugin class</small></div><span class="diagram-tag tag-gate">import side effect</span></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">4</span><div><code>instantiate + configure</code><small>manifest → config → PluginContext</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">5</span><div><code>bind / collect</code><small>EventBus handlers、tools、hooks、phase modules</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node"><span class="phase-index">6</span><div><code>initialize()</code><small>异步启动插件资源；失败触发回滚</small></div></div>
+            <div class="diagram-arrow" aria-hidden="true">↓</div>
+            <div class="phase-node phase-tap"><span class="phase-index">7</span><div><code>_loaded.add(import_path)</code><small>至此才算成功加载</small></div><span class="diagram-tag tag-tap">committed</span></div>
+          </div>
+        </figure>
+        <p>这里可以借用数据库事务的思维：discover 只是列候选项；import 到 initialize 是准备和写入状态；加入 <code>_loaded</code> 才是 commit。问题在于 Akashic 当前回滚并不完全，后面会单独审计。</p>
+      </section>
+
+      <section id="discover">
+        <h2>第一步：Discover 只建立候选描述，不导入</h2>
+        <p>源码：<a href="../../akashic-agent/agent/plugins/manager.py">agent/plugins/manager.py</a>。</p>
+        <pre><code class="language-python">def discover(self) -> list[dict[str, str]]:
+    mods: list[dict[str, str]] = []
+    seen_names: set[str] = set()
+    for directory in self._dirs:
+        if not directory.is_dir():
+            continue
+        source = directory.name
+        for child in sorted(directory.iterdir()):
+            if not child.is_dir():
+                continue
+            main = child / "plugin.py"
+            if not main.exists():
+                continue
+            if child.name in seen_names:
+                logger.warning("插件名重复，跳过: %s (%s)", child.name, main)
+                continue
+            seen_names.add(child.name)
+            mods.append({
+                "name": child.name,
+                "module_path": str(main),
+                "import_path": f"akasic_plugin_{source}_{child.name}",
+            })
+    return mods</code></pre>
+        <p><strong>输入：</strong>按优先级排列的 plugin dirs。<strong>输出：</strong>name、文件路径、独立 import path。<strong>关键合同：</strong>目录顺序优先，目录内按名字排序；同名插件 first-wins。</p>
+        <p>为什么生成独立 <code>import_path</code>？后续 Registry 用 <code>func.__module__</code> 和 <code>cls.__module__</code> 把同一次导入产生的 metadata 与 class 对齐；同时避免所有入口都叫 <code>plugin</code> 而互相覆盖 <code>sys.modules</code>。</p>
+      </section>
+
+      <section id="import-register">
+        <h2>第二步：Import 为什么会“自动注册”</h2>
+        <p>最小插件：<a href="../../akashic-agent/tests/fixtures/plugins/hello/plugin.py">tests/fixtures/plugins/hello/plugin.py</a>。</p>
+        <pre><code class="language-python">class Hello(Plugin):
+    name = "hello"
+    version = "0.1.0"
+
+    @on_before_turn()
+    async def on_before(self, event):
+        event.extra_metadata["hello_touched"] = True
+        return event</code></pre>
+        <p>Python 执行这个 class body 时发生两次注册，顺序不能颠倒：</p>
+        <ol>
+          <li>方法定义完成后，<code>@on_before_turn()</code> 立即执行，把原始函数及其模块路径写入 handler registry。</li>
+          <li>整个 <code>Hello</code> class 创建完成时，父类 <code>Plugin.__init_subclass__()</code> 自动执行，把 class 按模块路径登记。</li>
+        </ol>
+
+        <pre><code class="language-python"># decorators.py：记录 metadata，仍返回原函数
+def _get_or_create_handler(func, event_type, handler_type, **kwargs):
+    existing = plugin_registry._handlers.get_by_name(
+        event_type, func.__name__, func.__module__
+    )
+    if existing:
+        return existing
+    metadata = PluginHandlerMetadata(
+        kind=MetadataKind.LIFECYCLE,
+        event_type=event_type,
+        handler_type=handler_type,
+        handler=func,
+        handler_name=func.__name__,
+        plugin_module_path=func.__module__,
+        **kwargs,
+    )
+    plugin_registry._handlers.append(metadata)
+    return metadata
+
+# base.py：class 创建完成时登记 class
+class Plugin(ABC):
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        from agent.plugins.registry import plugin_registry
+        plugin_registry.register_class(cls)</code></pre>
+
+        <pre><code class="language-python"># manager.py：把 plugin.py 当成包入口执行
+spec = importlib.util.spec_from_file_location(
+    module_name,
+    path,
+    submodule_search_locations=[str(path.parent)],
+)
+module = importlib.util.module_from_spec(spec)
+sys.modules[module_name] = module
+spec.loader.exec_module(module)</code></pre>
+        <p><strong>重要：</strong>Registry 并没有主动分析 Python 文件。是 Loader 执行模块，模块执行产生注册副作用。插件代码也因此拥有普通 Python 代码的全部权限；这不是沙箱。</p>
+      </section>
+
+      <section id="configure">
+        <h2>第三步：实例、Manifest、Config 与 Context</h2>
+        <pre><code class="language-python">cls = plugin_registry._classes.get(import_path)
+if cls is None:
+    logger.warning("插件 %s 未注册类", mod["name"])
+    return
+
+instance = cls()
+plugin_dir = Path(mod["module_path"]).parent
+_apply_manifest(instance, plugin_dir)
+plugin_id = str(instance.name) if instance.name else mod["name"]
+plugin_config = _load_plugin_config(plugin_dir)
+
+instance.context = PluginContext(
+    event_bus=self._event_bus,
+    tool_registry=self._tool_registry,
+    plugin_id=plugin_id,
+    plugin_dir=plugin_dir,
+    kv_store=PluginKVStore(plugin_dir / ".kv.json"),
+    config=plugin_config,
+    workspace=self._workspace,
+    session_manager=self._session_manager,
+    memory_engine=self._memory_engine,
+)</code></pre>
+        <p>配置有明确覆盖顺序：</p>
+        <pre><code class="language-python">_conf_schema.json 中每个字段的 default
+    ↓ 被同名键覆盖
+plugin_config.json 中的用户值
+    ↓
+PluginConfig(values)</code></pre>
+        <table>
+          <tr><th>文件</th><th>用途</th><th>不是</th></tr>
+          <tr><td><code>manifest.yaml</code></td><td>覆盖 name/version/desc/author，决定最终 plugin_id</td><td>运行参数</td></tr>
+          <tr><td><code>_conf_schema.json</code></td><td>描述配置字段并提供 default</td><td>当前实现并未真正执行 schema 校验</td></tr>
+          <tr><td><code>plugin_config.json</code></td><td>用户级覆盖</td><td>插件元信息</td></tr>
+          <tr><td><code>.kv.json</code></td><td>插件运行状态持久化</td><td>静态配置</td></tr>
+        </table>
+        <p><strong>常见误区：</strong>文件叫 schema，不代表代码已经校验类型、必填项或未知键。Akashic 的 <code>_load_plugin_config()</code> 目前只读取 default 并做字典覆盖。</p>
+      </section>
+
+      <section id="bind-start">
+        <h2>第四步：Bind、Initialize 与 loaded commit</h2>
+        <pre><code class="language-python">plugin_registry.register_instance(import_path, instance)
+self._bind_handlers(instance, import_path)
+tool_names = self._register_tools(instance, import_path)
+self._bind_tool_hooks(instance, import_path)
+self._collect_before_turn_modules(instance)
+# ...收集其他 phase modules...
+
+try:
+    await instance.initialize()
+except Exception:
+    plugin_registry.remove_plugin(import_path)
+    for tool_name in tool_names:
+        self._tool_registry.unregister(tool_name)
+    # 截断本次新增的 hooks/modules
+    return
+
+self._loaded.add(import_path)</code></pre>
+        <p><code>_bind_handlers()</code> 的关键动作，是把 metadata 中保存的未绑定函数变成绑定实例的 handler：</p>
+        <pre><code class="language-python">for metadata in plugin_registry.get_handlers_by_module_path(module_path):
+    if metadata.kind != MetadataKind.LIFECYCLE:
+        continue
+    context_type = _EVENT_TYPE_MAP.get(metadata.event_type)
+    if context_type is None:
+        continue
+    bound = functools.partial(metadata.handler, instance)
+    self._event_bus.on(context_type, bound)</code></pre>
+        <p>装饰器阶段保存的是 <code>Hello.on_before(self, event)</code>；绑定后 EventBus 得到的才是只需要 <code>event</code> 的 callable。Lesson 19 的 seam 到这里才真正拥有自动加载的 handler。</p>
+      </section>
+
+      <section id="bootstrap">
+        <h2>第五步：Manager 必须接进应用启动，而不是每轮临时加载</h2>
+        <p>源码：<a href="../../akashic-agent/bootstrap/tools.py">bootstrap/tools.py</a>。</p>
+        <pre><code class="language-python">plugin_manager = PluginManager(
+    plugin_dirs=_resolve_plugin_dirs(workspace),
+    event_bus=event_bus,
+    tool_registry=tools,
+    workspace=workspace,
+    session_manager=session_manager,
+    memory_engine=memory_runtime.engine,
+)
+
+async def start(self) -> None:
+    if self.plugin_manager is not None:
+        await self.plugin_manager.load_all()
+        self.loop.add_before_turn_plugin_modules(
+            self.plugin_manager.before_turn_modules
+        )
+        self.loop.add_prompt_render_plugin_modules(
+            self.plugin_manager.prompt_render_modules
+        )
+        # ...其他 modules 与 tool hooks...</code></pre>
+        <p>加载属于 app composition/startup，因为它需要共享 EventBus、ToolRegistry、workspace 等长生命周期依赖。如果在每次 <code>run_turn()</code> 中加载，会重复导入、重复绑定 handler，并把启动失败混进用户请求路径。</p>
+      </section>
+
+      <section id="tests">
+        <h2>从测试读取合同</h2>
+        <p>测试：<a href="../../akashic-agent/tests/test_plugin_manager.py">tests/test_plugin_manager.py</a>。</p>
+        <table>
+          <tr><th>测试</th><th>证明什么</th><th>还没证明什么</th></tr>
+          <tr><td><code>test_load_hello_plugin</code></td><td>目录候选最终进入 loaded</td><td>handler 是否进入真实 turn</td></tr>
+          <tr><td><code>test_duplicate_plugin_name_first_wins</code></td><td>多个目录同名时 first-wins</td><td>冲突是否应该成为硬错误</td></tr>
+          <tr><td><code>test_before_turn_hook_fires</code></td><td>加载后 handler 已绑定到共享 bus</td><td>bootstrap 是否使用同一 bus</td></tr>
+          <tr><td><code>test_manifest_overrides_class_attributes</code></td><td>manifest 元信息覆盖 class 属性</td><td>manifest 字段是否合法</td></tr>
+          <tr><td><code>test_conf_schema_defaults_injected_into_context</code></td><td>default 进入 PluginConfig</td><td>schema 类型校验</td></tr>
+          <tr><td><code>test_plugin_config_json_overrides_defaults</code></td><td>用户值覆盖 default，未覆盖键保留</td><td>未知键是否拒绝</td></tr>
+          <tr><td><code>test_plugin_disabled_marker_skips_plugin</code></td><td>本地禁用标记阻止加载</td><td>运行时热禁用</td></tr>
+          <tr><td><code>test_core_runtime_start_wires_*</code></td><td>app start 把 manager 产物交给 loop/tool</td><td>完整实际插件的端到端 turn</td></tr>
+        </table>
+        <p>正确的 Lesson 20 eval 不能只断言 <code>loaded_count == 1</code>。至少还要让插件 handler 修改一次真实 <code>BeforeTurnContext</code>，并证明修改进入 provider prompt。</p>
+      </section>
+
+      <section id="risks">
+        <h2>复杂点、信任边界与 Akashic 当前缺口</h2>
+        <ul>
+          <li><strong>Import 是任意代码执行：</strong><code>plugin.py</code> 顶层代码会直接运行。Plugin directory 必须被视为受信任代码来源。</li>
+          <li><strong>全局 Registry 会污染测试：</strong>Akashic 测试必须在每例前后手工清空 classes、instances 和 handlers。</li>
+          <li><strong>“schema”没有验证：</strong>错误类型和未知键仍会进入 PluginConfig。</li>
+          <li><strong>初始化回滚并不完整：</strong>handler 在 initialize 前已注册到 EventBus，但失败分支没有从 EventBus 注销；失败插件可能留下可触发 handler。</li>
+          <li><strong>导入失败可能残留模块：</strong>模块在执行前写入 <code>sys.modules</code>，异常分支没有显式移除。</li>
+          <li><strong>terminate 也未解绑 EventBus：</strong>Registry 被清空不等于 EventBus 中的 callable 消失。</li>
+          <li><strong>Context 权限很宽：</strong>插件可接触 tool registry、session manager、memory engine；它是依赖容器，不是权限沙箱。</li>
+        </ul>
+        <p>这些不是否定 Akashic，而是源码迁移必须经过判断的地方。Amadeus 应继承其职责分层和加载链，同时用测试补齐原实现未证明的原子性与清理边界。</p>
+      </section>
+
+      <section id="part2">
+        <h2>Part 2：Amadeus 最小复现边界</h2>
+        <p>通过复述门后，Part 2 只做能跑通一个插件的纵向切片：</p>
+        <pre><code class="language-python">workspace/plugins/hello/plugin.py
+  → PluginManager.discover()
+  → dynamic import
+  → Plugin class + lifecycle metadata registry
+  → PluginConfig defaults / override
+  → PluginContext injection
+  → bind to existing TurnLifecycle
+  → initialize
+  → run_turn("hello")
+  → provider prompt contains plugin effect</code></pre>
+        <table>
+          <tr><th>本课实现</th><th>暂不实现</th><th>原因</th></tr>
+          <tr><td>三个 Lesson 19 seam 的 metadata 与绑定</td><td>完整七 phase modules</td><td>Amadeus 目前只有三个 seam</td></tr>
+          <tr><td>发现、幂等加载、禁用、配置合并</td><td>requires / produces / slots</td><td>Lesson 21 单独建立依赖引擎</td></tr>
+          <tr><td>initialize / terminate 与可验证清理</td><td>tool decorator / tool hook</td><td>Lesson 23 对齐工具扩展与失败隔离</td></tr>
+          <tr><td>最小插件端到端 turn eval</td><td>热重载与第三方沙箱</td><td>不是当前最小切片</td></tr>
+        </table>
+        <p><strong>待 Part 2 决策：</strong>Akashic 的 manifest 使用 YAML，而 Amadeus 当前没有 YAML 依赖。引入新核心依赖、先只复现 JSON config，或采用标准库可读的 manifest 格式，会影响长期插件合同，不能在源码课里擅自决定。</p>
+      </section>
+
+      <section id="audit">
+        <h2>Coverage / Gap Audit</h2>
+        <table>
+          <tr><th>Plugin System 机制</th><th>Lesson 20</th><th>后续落点</th></tr>
+          <tr><td>Plugin class / instance / metadata registry</td><td>Part 1 读懂；Part 2 最小复现</td><td>Lesson 20</td></tr>
+          <tr><td>directory discovery / dynamic import / disabled marker</td><td>Part 1 读懂；Part 2 最小复现</td><td>Lesson 20</td></tr>
+          <tr><td>manifest / config / PluginContext</td><td>Part 1 读懂；Part 2 明确合同后复现</td><td>Lesson 20</td></tr>
+          <tr><td>initialize / terminate / cleanup</td><td>必须测试成功和失败路径</td><td>Lesson 20；Lesson 23 再审 failure isolation</td></tr>
+          <tr><td>phase module slots / requires / produces</td><td>明确不实现</td><td>Lesson 21</td></tr>
+          <tr><td>prompt section plugin</td><td>只可用现有 seam 做 eval，不建立 section 协议</td><td>Lesson 22</td></tr>
+          <tr><td>tool decorator / hook / plugin tool failure</td><td>明确不实现</td><td>Lesson 23</td></tr>
+          <tr><td>tool visibility / deferred tools / skill / MCP</td><td>不归 PluginRegistry 吞并</td><td>Lesson 23 gap audit</td></tr>
+        </table>
+        <p><strong>本课 eval seeds：</strong>同名 first-wins；重复 load 幂等；disabled 不导入；default + override 合并；坏插件不阻塞好插件；initialize 失败无残留 class/instance/handler；terminate 后 handler 不再触发；真实 run_turn 消费插件修改。</p>
+      </section>
+
+      <section id="retell">
+        <h2>必须复述的问题</h2>
+        <ol>
+          <li>沿 <code>discover → import → register → instantiate/configure → bind → initialize → loaded</code> 讲一次完整加载链。</li>
+          <li>Registry 与 Manager 分别保存什么、做什么？为什么 ToolRegistry 不能代替 PluginRegistry？</li>
+          <li>导入 <code>Hello</code> 时，decorator 注册与 <code>Plugin.__init_subclass__</code> 注册分别发生在什么时候？它们如何用 module path 对上？</li>
+          <li><code>manifest.yaml</code>、<code>_conf_schema.json</code>、<code>plugin_config.json</code>、<code>.kv.json</code> 分别是什么？</li>
+          <li>为什么插件只能在 initialize 成功后加入 <code>_loaded</code>？失败回滚应清掉哪些状态？</li>
+          <li>指出 Akashic 当前至少两个未完整处理的 cleanup 或 config 边界。</li>
+        </ol>
+        <p>请用自己的话复述，不要求背代码。能说明对象职责和状态变化后，再进入 Amadeus Part 2；此时不创建 Lesson 20 learning record。</p>
+      </section>
+
+      <section id="sources">
+        <h2>Primary Sources</h2>
+        <ul>
+          <li><a href="../../akashic-agent/agent/plugins/manager.py">Akashic PluginManager</a>：加载事务、配置注入、绑定与启停。</li>
+          <li><a href="../../akashic-agent/agent/plugins/registry.py">Akashic PluginRegistry</a>：metadata、class、instance 三类登记状态。</li>
+          <li><a href="../../akashic-agent/tests/test_plugin_manager.py">Akashic plugin manager tests</a>：发现、配置、禁用和启动接线合同。</li>
+        </ul>
+        <p>不清楚时可以继续问：“用 hello 插件走一遍加载链”“decorator 为什么在实例化前就注册”“Registry 和 Manager 再举例区分”“配置四个文件再对比一次”。</p>
+      </section>
+    </div>
+  </div>
+</main>
+<script src="../assets/python-highlight.js"></script>
+</body>
+</html>

@@ -41,3 +41,7 @@ class Plugin(ABC):
         """Override to clean up resources.
         Called during shutdown or when a plugin is unloaded."""
         return None
+
+    def before_turn_modules(self) -> list[object]:
+        """Return phase modules contributed to the before-turn graph."""
+        return []

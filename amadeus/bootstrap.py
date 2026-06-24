@@ -83,7 +83,14 @@ class PassiveApp:
                 return self._plugin_report
             try:
                 report = await self.plugin_manager.load_all()
+                self.runtime.set_before_turn_plugin_modules(
+                    self.plugin_manager.before_turn_modules
+                )
             except BaseException:
+                try:
+                    self.runtime.set_before_turn_plugin_modules([])
+                except BaseException:
+                    pass
                 try:
                     await self.plugin_manager.terminate_all()
                 except BaseException:
@@ -104,6 +111,11 @@ class PassiveApp:
                 await self.plugin_manager.terminate_all()
             except BaseException as error:
                 first_error = error
+            try:
+                self.runtime.set_before_turn_plugin_modules([])
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
             try:
                 self.session_manager.store.close()
             except BaseException as error:

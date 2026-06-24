@@ -64,6 +64,7 @@ class PluginManager:
         self._loaded_names: dict[str, str] = {}
         self._plugin_ids: dict[str, str] = {}
         self._bindings: dict[str, list[_Binding]] = {}
+        self._before_turn_modules: dict[str, tuple[object, ...]] = {}
         self._owner_token = object()
         self._operation_lock = asyncio.Lock()
 
@@ -191,9 +192,17 @@ class PluginManager:
             stage = "bind"
             self._bind_handlers(instance, candidate.import_path)
 
+            stage = "phase_modules"
+            before_turn_modules = instance.before_turn_modules()
+            if not isinstance(before_turn_modules, list):
+                raise TypeError("before_turn_modules must return list")
+
             stage = "initialize"
             await instance.initialize()
 
+            self._before_turn_modules[candidate.import_path] = tuple(
+                before_turn_modules
+            )
             self._loaded.add(candidate.import_path)
             self._load_order.append(candidate.import_path)
             self._loaded_names[candidate.import_path] = candidate.name
@@ -281,6 +290,7 @@ class PluginManager:
                 path for path in self._load_order if path != import_path
             ]
             self._loaded_names.pop(import_path, None)
+            self._before_turn_modules.pop(import_path, None)
             if plugin_id is not None and self._plugin_ids.get(plugin_id) == import_path:
                 self._plugin_ids.pop(plugin_id, None)
             plugin_registry.release_import_path(import_path, self._owner_token)
@@ -316,6 +326,14 @@ class PluginManager:
             self._loaded_names[import_path]
             for import_path in self._load_order
             if import_path in self._loaded_names
+        ]
+
+    @property
+    def before_turn_modules(self) -> list[object]:
+        return [
+            module
+            for import_path in self._load_order
+            for module in self._before_turn_modules.get(import_path, ())
         ]
 
     @staticmethod

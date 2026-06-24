@@ -1,5 +1,6 @@
 """Amadeus runtime context and prompt assembly package."""
 
+from amadeus.before_turn import BeforeTurnFrame, BeforeTurnInput
 from amadeus.bootstrap import (
     AppState,
     PassiveApp,
@@ -48,6 +49,13 @@ from amadeus.memory_engine import (
     MemoryQueryResult,
     MemoryRecord,
 )
+from amadeus.phase import (
+    Phase,
+    PhaseFrame,
+    PhaseModule,
+    inspect_phase,
+    topo_sort_modules,
+)
 from amadeus.prompt_block import (
     ActiveSkillsPromptBlock,
     BehaviorRulesPromptBlock,
@@ -93,6 +101,8 @@ __all__ = [
     "AppState",
     "BehaviorRulesPromptBlock",
     "BeforeTurnContext",
+    "BeforeTurnFrame",
+    "BeforeTurnInput",
     "ContextFrameResult",
     "ContextBuilder",
     "ContextRenderResult",
@@ -128,6 +138,9 @@ __all__ = [
     "PassiveRuntime",
     "PassiveTurnResult",
     "PassiveApp",
+    "Phase",
+    "PhaseFrame",
+    "PhaseModule",
     "ParsedResponse",
     "PromptBlock",
     "PromptBlockRenderResult",
@@ -162,7 +175,9 @@ __all__ = [
     "default_workspace_root",
     "fetch_messages",
     "initialize_workspace",
+    "inspect_phase",
     "load_runtime_config",
     "parse_response",
     "search_messages",
+    "topo_sort_modules",
 ]

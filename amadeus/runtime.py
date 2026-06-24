@@ -4,8 +4,14 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from amadeus.before_turn import (
+    BeforeTurnFrame,
+    BeforeTurnInput,
+    BeforeTurnModules,
+    default_before_turn_modules,
+)
 from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
 from amadeus.events import EventBus, ToolCallCompleted, ToolCallStarted, TurnCommitted
 from amadeus.lifecycle import (
@@ -14,7 +20,8 @@ from amadeus.lifecycle import (
     PromptRenderContext,
     TurnLifecycle,
 )
-from amadeus.memory_engine import MemoryEngine, MemoryQuery
+from amadeus.memory_engine import MemoryEngine
+from amadeus.phase import Phase
 from amadeus.prompting import build_context_trim_attempts
 from amadeus.provider import ContextLengthError, LLMProvider, LLMResponse
 from amadeus.response_parser import parse_response
@@ -54,9 +61,42 @@ class PassiveRuntime:
     tool_executor: ToolExecutor | None = None
     max_tool_iterations: int = 10
     lifecycle: TurnLifecycle = field(init=False)
+    _before_turn_plugin_modules: BeforeTurnModules = field(
+        init=False,
+        default_factory=list,
+        repr=False,
+    )
+    _before_turn: Phase[BeforeTurnInput, BeforeTurnContext, BeforeTurnFrame] = field(
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         self.lifecycle = TurnLifecycle(self.event_bus)
+        self._before_turn = self._build_before_turn_phase(
+            self._before_turn_plugin_modules
+        )
+
+    def set_before_turn_plugin_modules(self, modules: list[object]) -> None:
+        candidate_modules = cast(BeforeTurnModules, list(modules))
+        candidate_phase = self._build_before_turn_phase(candidate_modules)
+        self._before_turn_plugin_modules = candidate_modules
+        self._before_turn = candidate_phase
+
+    def _build_before_turn_phase(
+        self,
+        plugin_modules: BeforeTurnModules,
+    ) -> Phase[BeforeTurnInput, BeforeTurnContext, BeforeTurnFrame]:
+        return Phase(
+            default_before_turn_modules(
+                lifecycle=self.lifecycle,
+                session_manager=self.session_manager,
+                memory_engine=self.memory_engine,
+                history_window=self.history_window,
+                plugin_modules=plugin_modules,
+            ),
+            frame_factory=BeforeTurnFrame,
+        )
 
     async def run_turn(
         self,
@@ -68,31 +108,16 @@ class PassiveRuntime:
         runtime_metadata: dict[str, str] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> PassiveTurnResult:
-        session = self.session_manager.get_or_create(session_key)
-        history = session.get_history(self.history_window)
-        resolved_retrieved_memory = retrieved_memory
-        if resolved_retrieved_memory is None and self.memory_engine is not None:
-            try:
-                memory_result = await self.memory_engine.query(
-                    MemoryQuery(
-                        text=user_message,
-                        intent="context",
-                        context={"history": history, "session_key": session_key},
-                    )
-                )
-                resolved_retrieved_memory = self.memory_engine.render_context_block(memory_result)
-            except Exception:
-                resolved_retrieved_memory = None
-
-        before_turn_context = BeforeTurnContext(
-            session_key=session_key,
-            user_message=user_message,
-            history=list(history),
-            retrieved_memory=resolved_retrieved_memory,
-            active_skills=list(active_skills or []),
-            runtime_metadata=dict(runtime_metadata or {}),
+        before_turn_context = await self._before_turn.run(
+            BeforeTurnInput(
+                session_key=session_key,
+                user_message=user_message,
+                retrieved_memory=retrieved_memory,
+                active_skills=tuple(active_skills or ()),
+                runtime_metadata=dict(runtime_metadata or {}),
+            )
         )
-        before_turn_context = await self.lifecycle.before_turn(before_turn_context)
+        session = self.session_manager.get_or_create(session_key)
         history = before_turn_context.history
         resolved_retrieved_memory = before_turn_context.retrieved_memory
         resolved_active_skills = before_turn_context.active_skills

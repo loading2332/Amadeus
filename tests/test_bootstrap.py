@@ -50,6 +50,7 @@ class ControlledPluginManager:
         self.release_load: asyncio.Event | None = None
         self.load_error: BaseException | None = None
         self.terminate_error: BaseException | None = None
+        self.before_turn_modules: list[object] = []
 
     async def load_all(self) -> PluginLoadReport:
         self.load_calls += 1
@@ -370,6 +371,39 @@ def test_failed_start_cleans_up_stays_new_and_can_retry(tmp_path):
         with pytest.raises(RuntimeError, match="unexpected loader failure"):
             await app.start()
         assert app._state is AppState.NEW
+        assert await app.start() is manager.report
+        await app.aclose()
+
+    asyncio.run(scenario())
+    assert manager.load_calls == 2
+    assert manager.terminate_calls == 2
+
+
+def test_phase_rebuild_failure_rolls_back_runtime_and_plugin_lifecycle(tmp_path):
+    class DuplicateModule:
+        slot = "plugin.duplicate"
+        requires: tuple[str, ...] = ()
+        produces: tuple[str, ...] = ()
+
+        async def run(self, frame):
+            return frame
+
+    app, manager = _app_with_controlled_manager(tmp_path)
+    manager.before_turn_modules = [DuplicateModule(), DuplicateModule()]
+
+    async def scenario() -> None:
+        with pytest.raises(RuntimeError, match="模块 slot 重复"):
+            await app.start()
+        assert app._state is AppState.NEW
+        assert manager.terminate_calls == 1
+
+        result = await app.runtime.run_turn(
+            session_key="phase:rollback",
+            user_message="still available",
+        )
+        assert result.assistant_response == "assistant reply"
+
+        manager.before_turn_modules = []
         assert await app.start() is manager.report
         await app.aclose()
 

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
+from amadeus.before_turn import BeforeTurnFrame
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.lifecycle import AfterTurnContext, BeforeTurnContext, PromptRenderContext
 from amadeus.provider import (
@@ -98,6 +100,17 @@ class EchoTool:
         return ToolResult(tool_name=self.name, output={"echo": kwargs["text"]})
 
 
+class _RuntimeMarkerModule:
+    slot = "plugin.runtime_marker"
+    requires = ("before_turn.build_ctx", "session:ctx")
+    produces = ("session:ctx",)
+
+    async def run(self, frame: BeforeTurnFrame) -> BeforeTurnFrame:
+        context = cast(BeforeTurnContext, frame.slots["session:ctx"])
+        context.runtime_metadata["phase_plugin"] = "reached provider"
+        return frame
+
+
 def test_passive_runtime_persists_turn_and_emits_committed_event(tmp_path):
     client = FakeClient()
     provider = LLMProvider(
@@ -161,6 +174,74 @@ def test_passive_runtime_applies_before_turn_and_prompt_render_gates(tmp_path):
     assert order == ["before_turn", "prompt_render:full"]
     assert "memory injected by lifecycle" in rendered_text
     assert "prompt marker injected by lifecycle" in rendered_text
+
+
+def test_passive_runtime_phase_module_changes_provider_prompt(tmp_path) -> None:
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_before_turn_plugin_modules([_RuntimeMarkerModule()])
+
+    asyncio.run(runtime.run_turn(session_key="phase:1", user_message="hello"))
+
+    rendered_text = "\n".join(
+        str(message["content"])
+        for message in client.completions.calls[0]["messages"]
+    )
+    assert "phase_plugin: reached provider" in rendered_text
+
+
+def test_failed_phase_rebuild_keeps_previous_runtime_phase(tmp_path) -> None:
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_before_turn_plugin_modules([_RuntimeMarkerModule()])
+
+    with pytest.raises(RuntimeError, match="模块 slot 重复"):
+        runtime.set_before_turn_plugin_modules(
+            [_RuntimeMarkerModule(), _RuntimeMarkerModule()]
+        )
+
+    asyncio.run(runtime.run_turn(session_key="phase:atomic", user_message="hello"))
+    rendered_text = "\n".join(
+        str(message["content"])
+        for message in client.completions.calls[0]["messages"]
+    )
+    assert "phase_plugin: reached provider" in rendered_text
+
+
+def test_setting_empty_phase_snapshot_restores_builtin_runtime(tmp_path) -> None:
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_before_turn_plugin_modules([_RuntimeMarkerModule()])
+    runtime.set_before_turn_plugin_modules([])
+
+    asyncio.run(runtime.run_turn(session_key="phase:reset", user_message="hello"))
+
+    rendered_text = "\n".join(
+        str(message["content"])
+        for message in client.completions.calls[0]["messages"]
+    )
+    assert "phase_plugin" not in rendered_text
 
 
 def test_prompt_render_gate_receives_fresh_context_for_each_retry(tmp_path):
