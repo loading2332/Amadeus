@@ -2,10 +2,28 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
+from amadeus.after_reasoning import (
+    AfterReasoningFrame,
+    AfterReasoningInput,
+    AfterReasoningModules,
+    AfterReasoningResult,
+    default_after_reasoning_modules,
+)
+from amadeus.after_turn import (
+    AfterTurnFrame,
+    AfterTurnInput,
+    AfterTurnModules,
+    default_after_turn_modules,
+)
+from amadeus.before_reasoning import (
+    BeforeReasoningFrame,
+    BeforeReasoningInput,
+    BeforeReasoningModules,
+    default_before_reasoning_modules,
+)
 from amadeus.before_turn import (
     BeforeTurnFrame,
     BeforeTurnInput,
@@ -13,19 +31,37 @@ from amadeus.before_turn import (
     default_before_turn_modules,
 )
 from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
-from amadeus.events import EventBus, ToolCallCompleted, ToolCallStarted, TurnCommitted
+from amadeus.events import EventBus, ToolCallCompleted, ToolCallStarted
 from amadeus.lifecycle import (
+    AfterStepContext,
     AfterTurnContext,
+    BeforeReasoningContext,
+    BeforeStepContext,
     BeforeTurnContext,
-    PromptRenderContext,
     TurnLifecycle,
 )
 from amadeus.memory_engine import MemoryEngine
 from amadeus.phase import Phase
+from amadeus.prompt_render import (
+    PromptRenderFrame,
+    PromptRenderInput,
+    PromptRenderModules,
+    PromptRenderResult,
+    default_prompt_render_modules,
+)
 from amadeus.prompting import build_context_trim_attempts
 from amadeus.provider import ContextLengthError, LLMProvider, LLMResponse
-from amadeus.response_parser import parse_response
 from amadeus.session import Session, SessionManager
+from amadeus.step_phases import (
+    AfterStepFrame,
+    AfterStepInput,
+    AfterStepModules,
+    BeforeStepFrame,
+    BeforeStepInput,
+    BeforeStepModules,
+    default_after_step_modules,
+    default_before_step_modules,
+)
 from amadeus.tool_runtime import (
     append_assistant_tool_calls,
     append_tool_result,
@@ -70,11 +106,85 @@ class PassiveRuntime:
         init=False,
         repr=False,
     )
+    _prompt_render_plugin_modules: PromptRenderModules = field(
+        init=False,
+        default_factory=list,
+        repr=False,
+    )
+    _prompt_render: Phase[PromptRenderInput, PromptRenderResult, PromptRenderFrame] = (
+        field(
+            init=False,
+            repr=False,
+        )
+    )
+    _before_reasoning_plugin_modules: BeforeReasoningModules = field(
+        init=False,
+        default_factory=list,
+        repr=False,
+    )
+    _before_reasoning: Phase[
+        BeforeReasoningInput,
+        BeforeReasoningContext,
+        BeforeReasoningFrame,
+    ] = field(init=False, repr=False)
+    _before_step_plugin_modules: BeforeStepModules = field(
+        init=False,
+        default_factory=list,
+        repr=False,
+    )
+    _before_step: Phase[BeforeStepInput, BeforeStepContext, BeforeStepFrame] = field(
+        init=False,
+        repr=False,
+    )
+    _after_step_plugin_modules: AfterStepModules = field(
+        init=False,
+        default_factory=list,
+        repr=False,
+    )
+    _after_step: Phase[AfterStepInput, AfterStepContext, AfterStepFrame] = field(
+        init=False,
+        repr=False,
+    )
+    _after_reasoning_plugin_modules: AfterReasoningModules = field(
+        init=False,
+        default_factory=list,
+        repr=False,
+    )
+    _after_reasoning: Phase[
+        AfterReasoningInput,
+        AfterReasoningResult,
+        AfterReasoningFrame,
+    ] = field(init=False, repr=False)
+    _after_turn_plugin_modules: AfterTurnModules = field(
+        init=False,
+        default_factory=list,
+        repr=False,
+    )
+    _after_turn: Phase[AfterTurnInput, object, AfterTurnFrame] = field(
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         self.lifecycle = TurnLifecycle(self.event_bus)
         self._before_turn = self._build_before_turn_phase(
             self._before_turn_plugin_modules
+        )
+        self._prompt_render = self._build_prompt_render_phase(
+            self._prompt_render_plugin_modules
+        )
+        self._before_reasoning = self._build_before_reasoning_phase(
+            self._before_reasoning_plugin_modules
+        )
+        self._before_step = self._build_before_step_phase(
+            self._before_step_plugin_modules
+        )
+        self._after_step = self._build_after_step_phase(self._after_step_plugin_modules)
+        self._after_reasoning = self._build_after_reasoning_phase(
+            self._after_reasoning_plugin_modules
+        )
+        self._after_turn = self._build_after_turn_phase(
+            self._after_turn_plugin_modules
         )
 
     def set_before_turn_plugin_modules(self, modules: list[object]) -> None:
@@ -82,6 +192,42 @@ class PassiveRuntime:
         candidate_phase = self._build_before_turn_phase(candidate_modules)
         self._before_turn_plugin_modules = candidate_modules
         self._before_turn = candidate_phase
+
+    def set_prompt_render_plugin_modules(self, modules: list[object]) -> None:
+        candidate_modules = cast(PromptRenderModules, list(modules))
+        candidate_phase = self._build_prompt_render_phase(candidate_modules)
+        self._prompt_render_plugin_modules = candidate_modules
+        self._prompt_render = candidate_phase
+
+    def set_before_reasoning_plugin_modules(self, modules: list[object]) -> None:
+        candidate_modules = cast(BeforeReasoningModules, list(modules))
+        candidate_phase = self._build_before_reasoning_phase(candidate_modules)
+        self._before_reasoning_plugin_modules = candidate_modules
+        self._before_reasoning = candidate_phase
+
+    def set_before_step_plugin_modules(self, modules: list[object]) -> None:
+        candidate_modules = cast(BeforeStepModules, list(modules))
+        candidate_phase = self._build_before_step_phase(candidate_modules)
+        self._before_step_plugin_modules = candidate_modules
+        self._before_step = candidate_phase
+
+    def set_after_step_plugin_modules(self, modules: list[object]) -> None:
+        candidate_modules = cast(AfterStepModules, list(modules))
+        candidate_phase = self._build_after_step_phase(candidate_modules)
+        self._after_step_plugin_modules = candidate_modules
+        self._after_step = candidate_phase
+
+    def set_after_reasoning_plugin_modules(self, modules: list[object]) -> None:
+        candidate_modules = cast(AfterReasoningModules, list(modules))
+        candidate_phase = self._build_after_reasoning_phase(candidate_modules)
+        self._after_reasoning_plugin_modules = candidate_modules
+        self._after_reasoning = candidate_phase
+
+    def set_after_turn_plugin_modules(self, modules: list[object]) -> None:
+        candidate_modules = cast(AfterTurnModules, list(modules))
+        candidate_phase = self._build_after_turn_phase(candidate_modules)
+        self._after_turn_plugin_modules = candidate_modules
+        self._after_turn = candidate_phase
 
     def _build_before_turn_phase(
         self,
@@ -96,6 +242,81 @@ class PassiveRuntime:
                 plugin_modules=plugin_modules,
             ),
             frame_factory=BeforeTurnFrame,
+        )
+
+    def _build_prompt_render_phase(
+        self,
+        plugin_modules: PromptRenderModules,
+    ) -> Phase[PromptRenderInput, PromptRenderResult, PromptRenderFrame]:
+        return Phase(
+            default_prompt_render_modules(
+                lifecycle=self.lifecycle,
+                context_builder=self.context_builder,
+                plugin_modules=plugin_modules,
+            ),
+            frame_factory=PromptRenderFrame,
+        )
+
+    def _build_before_reasoning_phase(
+        self,
+        plugin_modules: BeforeReasoningModules,
+    ) -> Phase[BeforeReasoningInput, BeforeReasoningContext, BeforeReasoningFrame]:
+        return Phase(
+            default_before_reasoning_modules(
+                lifecycle=self.lifecycle,
+                plugin_modules=plugin_modules,
+            ),
+            frame_factory=BeforeReasoningFrame,
+        )
+
+    def _build_before_step_phase(
+        self,
+        plugin_modules: BeforeStepModules,
+    ) -> Phase[BeforeStepInput, BeforeStepContext, BeforeStepFrame]:
+        return Phase(
+            default_before_step_modules(
+                lifecycle=self.lifecycle,
+                plugin_modules=plugin_modules,
+            ),
+            frame_factory=BeforeStepFrame,
+        )
+
+    def _build_after_step_phase(
+        self,
+        plugin_modules: AfterStepModules,
+    ) -> Phase[AfterStepInput, AfterStepContext, AfterStepFrame]:
+        return Phase(
+            default_after_step_modules(
+                lifecycle=self.lifecycle,
+                plugin_modules=plugin_modules,
+            ),
+            frame_factory=AfterStepFrame,
+        )
+
+    def _build_after_reasoning_phase(
+        self,
+        plugin_modules: AfterReasoningModules,
+    ) -> Phase[AfterReasoningInput, AfterReasoningResult, AfterReasoningFrame]:
+        return Phase(
+            default_after_reasoning_modules(
+                lifecycle=self.lifecycle,
+                session_manager=self.session_manager,
+                event_bus=self.event_bus,
+                plugin_modules=plugin_modules,
+            ),
+            frame_factory=AfterReasoningFrame,
+        )
+
+    def _build_after_turn_phase(
+        self,
+        plugin_modules: AfterTurnModules,
+    ) -> Phase[AfterTurnInput, object, AfterTurnFrame]:
+        return Phase(
+            default_after_turn_modules(
+                lifecycle=self.lifecycle,
+                plugin_modules=plugin_modules,
+            ),
+            frame_factory=AfterTurnFrame,
         )
 
     async def run_turn(
@@ -117,11 +338,72 @@ class PassiveRuntime:
                 runtime_metadata=dict(runtime_metadata or {}),
             )
         )
+        if before_turn_context.abort_reply is not None:
+            abort_rendered = self.context_builder.render(
+                RuntimeContext(
+                    workspace_root=self.workspace_root,
+                    history=before_turn_context.history,
+                    current_user_message=user_message,
+                    retrieved_memory=before_turn_context.retrieved_memory,
+                    active_skills=before_turn_context.active_skills,
+                    runtime_metadata=before_turn_context.runtime_metadata,
+                    turn_injection_context=_hint_injection_context(
+                        before_turn_context.extra_hints
+                    ),
+                )
+            )
+            return await self._complete_turn(
+                session_key=session_key,
+                user_message=user_message,
+                assistant_content=before_turn_context.abort_reply,
+                rendered=abort_rendered,
+                provider_raw=None,
+                tool_chain=[],
+                context_retry={
+                    "attempts": [],
+                    "selected_plan": "before_turn_abort",
+                    "trimmed_sections": [],
+                },
+                extra=extra,
+            )
+
+        before_reasoning_context = await self._before_reasoning.run(
+            BeforeReasoningInput(before_turn=before_turn_context)
+        )
+        if before_reasoning_context.abort_reply is not None:
+            abort_rendered = self.context_builder.render(
+                RuntimeContext(
+                    workspace_root=self.workspace_root,
+                    history=before_reasoning_context.history,
+                    current_user_message=user_message,
+                    retrieved_memory=before_reasoning_context.retrieved_memory,
+                    active_skills=before_reasoning_context.active_skills,
+                    runtime_metadata=before_reasoning_context.runtime_metadata,
+                    turn_injection_context=_hint_injection_context(
+                        before_reasoning_context.extra_hints
+                    ),
+                )
+            )
+            return await self._complete_turn(
+                session_key=session_key,
+                user_message=user_message,
+                assistant_content=before_reasoning_context.abort_reply,
+                rendered=abort_rendered,
+                provider_raw=None,
+                tool_chain=[],
+                context_retry={
+                    "attempts": [],
+                    "selected_plan": "before_reasoning_abort",
+                    "trimmed_sections": [],
+                },
+                extra=extra,
+            )
         session = self.session_manager.get_or_create(session_key)
-        history = before_turn_context.history
-        resolved_retrieved_memory = before_turn_context.retrieved_memory
-        resolved_active_skills = before_turn_context.active_skills
-        resolved_runtime_metadata = before_turn_context.runtime_metadata
+        history = before_reasoning_context.history
+        resolved_retrieved_memory = before_reasoning_context.retrieved_memory
+        resolved_active_skills = before_reasoning_context.active_skills
+        resolved_runtime_metadata = before_reasoning_context.runtime_metadata
+        resolved_extra_hints = before_reasoning_context.extra_hints
 
         tool_schemas = (
             self.tool_registry.export_openai_tools() if self.tool_registry is not None else None
@@ -154,18 +436,18 @@ class PassiveRuntime:
                 runtime_metadata=resolved_runtime_metadata,
                 disabled_sections=set(attempt.disabled_sections),
                 history_window=attempt.history_window,
+                turn_injection_context=_hint_injection_context(resolved_extra_hints),
             )
-            prompt_render_context = PromptRenderContext(
-                session_key=session_key,
-                attempt_index=attempt_index,
-                attempt_name=attempt.name,
-                runtime_context=context,
+            prompt_render = await self._prompt_render.run(
+                PromptRenderInput(
+                    session_key=session_key,
+                    attempt_index=attempt_index,
+                    attempt_name=attempt.name,
+                    runtime_context=context,
+                )
             )
-            prompt_render_context = await self.lifecycle.prompt_render(
-                prompt_render_context
-            )
-            rendered = self.context_builder.render(prompt_render_context.runtime_context)
-            messages = [dict(message) for message in rendered.messages]
+            rendered = prompt_render.rendered
+            messages = [dict(message) for message in prompt_render.messages]
             try:
                 response = await self.provider.chat(messages, tools=tool_schemas)
                 provider_raw = response.raw
@@ -202,50 +484,63 @@ class PassiveRuntime:
                 )
                 rendered = self.context_builder.render(context)
 
-        parsed_response = parse_response(assistant_content, tool_chain=[])
-        assistant_response = parsed_response.clean_text
-
-        user_record = session.add_message("user", user_message, **(extra or {}))
-        assistant_extra: dict[str, Any] = {}
-        if tool_chain:
-            assistant_extra["tool_chain"] = tool_chain
-        if context_retry["attempts"]:
-            assistant_extra["context_retry"] = context_retry
-        assistant_record = session.add_message(
-            "assistant", assistant_response, **assistant_extra,
-        )
-        self.session_manager.save(session)
-        await self.event_bus.emit(
-            TurnCommitted(
-                session_key=session_key,
-                input_message=user_message,
-                persisted_user_message=user_message,
-                assistant_response=assistant_response,
-                timestamp=datetime.now().astimezone(),
-                extra={
-                    **({"tool_chain": tool_chain} if tool_chain else {}),
-                    "context_retry": context_retry,
-                },
-            )
-        )
-        result = PassiveTurnResult(
+        if rendered is None:  # pragma: no cover - defensive invariant
+            raise RuntimeError("runtime did not render prompt context")
+        return await self._complete_turn(
             session_key=session_key,
-            user_message_id=str(user_record["id"]),
-            assistant_message_id=str(assistant_record["id"]),
-            assistant_response=assistant_response,
-            context=rendered,
+            user_message=user_message,
+            assistant_content=assistant_content,
+            rendered=rendered,
             provider_raw=provider_raw,
             tool_chain=tool_chain,
             context_retry=context_retry,
+            extra=extra,
         )
-        await self.lifecycle.after_turn(
-            AfterTurnContext(
+
+    async def _complete_turn(
+        self,
+        *,
+        session_key: str,
+        user_message: str,
+        assistant_content: str,
+        rendered: ContextRenderResult,
+        provider_raw: Any,
+        tool_chain: list[dict[str, Any]],
+        context_retry: dict[str, Any],
+        extra: dict[str, Any] | None,
+    ) -> PassiveTurnResult:
+        after_reasoning = await self._after_reasoning.run(
+            AfterReasoningInput(
                 session_key=session_key,
-                user_message_id=result.user_message_id,
-                assistant_message_id=result.assistant_message_id,
-                assistant_response=result.assistant_response,
-                tool_chain=tuple(dict(step) for step in result.tool_chain),
-                context_retry=dict(result.context_retry),
+                user_message=user_message,
+                assistant_content=assistant_content,
+                rendered=rendered,
+                provider_raw=provider_raw,
+                tool_chain=tool_chain,
+                context_retry=context_retry,
+                extra=dict(extra or {}),
+            )
+        )
+        result = PassiveTurnResult(
+            session_key=after_reasoning.session_key,
+            user_message_id=after_reasoning.user_message_id,
+            assistant_message_id=after_reasoning.assistant_message_id,
+            assistant_response=after_reasoning.assistant_response,
+            context=after_reasoning.context,
+            provider_raw=after_reasoning.provider_raw,
+            tool_chain=after_reasoning.tool_chain,
+            context_retry=after_reasoning.context_retry,
+        )
+        await self._after_turn.run(
+            AfterTurnInput(
+                context=AfterTurnContext(
+                    session_key=session_key,
+                    user_message_id=result.user_message_id,
+                    assistant_message_id=result.assistant_message_id,
+                    assistant_response=result.assistant_response,
+                    tool_chain=tuple(dict(step) for step in result.tool_chain),
+                    context_retry=dict(result.context_retry),
+                )
             )
         )
         return result
@@ -274,10 +569,41 @@ class PassiveRuntime:
         current_response = response
         iterations = 0
         tools_used: list[str] = []
+        step_telemetry: list[dict[str, Any]] = []
 
         while current_response.tool_calls:
             if iterations >= self.max_tool_iterations:
                 break
+
+            before_step = await self._before_step.run(
+                BeforeStepInput(
+                    session_key=session_key,
+                    iteration=iterations,
+                    messages=loop_messages,
+                    tool_schemas=tool_schemas,
+                )
+            )
+            if before_step.extra_hints:
+                loop_messages.append(
+                    {
+                        "role": "system",
+                        "content": "\n".join(before_step.extra_hints),
+                    }
+                )
+            if before_step.early_stop_reply is not None:
+                return ReasonerResult(
+                    reply=before_step.early_stop_reply,
+                    tool_chain=tool_chain,
+                    invocations=invocations,
+                    metadata={
+                        "tools_used": tools_used,
+                        "step_telemetry": step_telemetry,
+                        "react_stats": {
+                            "iteration_count": iterations,
+                            "tools_used_count": len(tools_used),
+                        },
+                    },
+                )
 
             # 1. Batch snapshot → 注入每个 ToolExecutionRequest
             tool_batch = tool_call_batch_snapshot(current_response.tool_calls)
@@ -349,6 +675,30 @@ class PassiveRuntime:
                     }
                 )
             tool_chain.append(current_step)
+            after_step = await self._after_step.run(
+                AfterStepInput(
+                    session_key=session_key,
+                    iteration=iterations,
+                    messages=loop_messages,
+                    tool_chain=tool_chain,
+                )
+            )
+            if after_step.telemetry:
+                step_telemetry.append(dict(after_step.telemetry))
+            if after_step.early_stop_reply is not None:
+                return ReasonerResult(
+                    reply=after_step.early_stop_reply,
+                    tool_chain=tool_chain,
+                    invocations=invocations,
+                    metadata={
+                        "tools_used": tools_used,
+                        "step_telemetry": step_telemetry,
+                        "react_stats": {
+                            "iteration_count": iterations + 1,
+                            "tools_used_count": len(tools_used),
+                        },
+                    },
+                )
             iterations += 1
 
             if iterations >= self.max_tool_iterations:
@@ -366,6 +716,7 @@ class PassiveRuntime:
                 invocations=invocations,
                 metadata={
                     "tools_used": tools_used,
+                    "step_telemetry": step_telemetry,
                     "react_stats": {
                         "iteration_count": iterations,
                         "tools_used_count": len(tools_used),
@@ -381,6 +732,7 @@ class PassiveRuntime:
             invocations=invocations,
             metadata={
                 "tools_used": tools_used,
+                "step_telemetry": step_telemetry,
                 "react_stats": {
                     "iteration_count": iterations,
                     "tools_used_count": len(tools_used),
@@ -418,3 +770,7 @@ class PassiveRuntime:
             return json.dumps(output, ensure_ascii=False, sort_keys=True)
         except TypeError:
             return str(output)
+
+
+def _hint_injection_context(hints: list[str]) -> dict[str, str]:
+    return {f"lifecycle_hint_{index}": hint for index, hint in enumerate(hints)}

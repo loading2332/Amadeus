@@ -142,6 +142,89 @@ class PhaseMarker(Plugin):
     ]
 
 
+def test_successful_plugin_contributes_prompt_render_modules(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "prompt_marker",
+        source="""\
+from amadeus.plugin import Plugin
+
+class PromptMarkerModule:
+    slot = "prompt_marker.prompt"
+    requires = ("prompt_render.emit", "prompt:ctx")
+    produces = ("prompt:ctx",)
+    async def run(self, frame):
+        return frame
+
+class PromptMarker(Plugin):
+    name = "prompt_marker"
+    def prompt_render_modules(self):
+        return [PromptMarkerModule()]
+""",
+    )
+    manager = _manager([("workspace", root)])
+
+    report = asyncio.run(manager.load_all())
+
+    assert len(report.loaded) == 1
+    assert [module.slot for module in manager.prompt_render_modules] == [
+        "prompt_marker.prompt"
+    ]
+
+
+def test_successful_plugin_contributes_all_lifecycle_phase_modules(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "lifecycle_modules",
+        source="""\
+from amadeus.plugin import Plugin
+
+class M:
+    def __init__(self, slot):
+        self.slot = slot
+    async def run(self, frame):
+        return frame
+
+class LifecycleModules(Plugin):
+    name = "lifecycle_modules"
+    def before_reasoning_modules(self):
+        return [M("plugin.before_reasoning")]
+    def before_step_modules(self):
+        return [M("plugin.before_step")]
+    def after_step_modules(self):
+        return [M("plugin.after_step")]
+    def after_reasoning_modules(self):
+        return [M("plugin.after_reasoning")]
+    def after_turn_modules(self):
+        return [M("plugin.after_turn")]
+""",
+    )
+    manager = _manager([("workspace", root)])
+
+    report = asyncio.run(manager.load_all())
+
+    assert len(report.loaded) == 1
+    assert [module.slot for module in manager.before_reasoning_modules] == [
+        "plugin.before_reasoning"
+    ]
+    assert [module.slot for module in manager.before_step_modules] == [
+        "plugin.before_step"
+    ]
+    assert [module.slot for module in manager.after_step_modules] == [
+        "plugin.after_step"
+    ]
+    assert [module.slot for module in manager.after_reasoning_modules] == [
+        "plugin.after_reasoning"
+    ]
+    assert [module.slot for module in manager.after_turn_modules] == [
+        "plugin.after_turn"
+    ]
+
+
 def test_invalid_before_turn_module_collection_fails_plugin_transaction(
     tmp_path: Path,
 ) -> None:
@@ -163,6 +246,54 @@ class InvalidModules(Plugin):
     assert report.records[0].status is PluginLoadStatus.FAILED
     assert report.records[0].stage == "phase_modules"
     assert manager.before_turn_modules == []
+    assert manager.loaded_names == []
+
+
+def test_invalid_prompt_render_module_collection_fails_plugin_transaction(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "invalid_prompt_modules",
+        source="""\
+from amadeus.plugin import Plugin
+class InvalidPromptModules(Plugin):
+    def prompt_render_modules(self):
+        return (object(),)
+""",
+    )
+    manager = _manager([("workspace", root)])
+
+    report = asyncio.run(manager.load_all())
+
+    assert report.records[0].status is PluginLoadStatus.FAILED
+    assert report.records[0].stage == "phase_modules"
+    assert manager.prompt_render_modules == []
+    assert manager.loaded_names == []
+
+
+def test_invalid_lifecycle_module_collection_fails_plugin_transaction(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "invalid_lifecycle_modules",
+        source="""\
+from amadeus.plugin import Plugin
+class InvalidLifecycleModules(Plugin):
+    def after_reasoning_modules(self):
+        return (object(),)
+""",
+    )
+    manager = _manager([("workspace", root)])
+
+    report = asyncio.run(manager.load_all())
+
+    assert report.records[0].status is PluginLoadStatus.FAILED
+    assert report.records[0].stage == "phase_modules"
+    assert manager.after_reasoning_modules == []
     assert manager.loaded_names == []
 
 
@@ -193,6 +324,7 @@ class CrashAfterModules(Plugin):
     assert report.records[0].status is PluginLoadStatus.FAILED
     assert report.records[0].stage == "initialize"
     assert manager.before_turn_modules == []
+    assert manager.prompt_render_modules == []
 
 
 def test_terminate_removes_owned_before_turn_modules(tmp_path: Path) -> None:
@@ -217,6 +349,54 @@ class Owner(Plugin):
     asyncio.run(manager.terminate_all())
 
     assert manager.before_turn_modules == []
+
+
+def test_terminate_removes_owned_prompt_render_modules(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "owned_prompt_module",
+        source="""\
+from amadeus.plugin import Plugin
+class OwnedPromptModule:
+    slot = "owned.prompt"
+    async def run(self, frame):
+        return frame
+class Owner(Plugin):
+    def prompt_render_modules(self):
+        return [OwnedPromptModule()]
+""",
+    )
+    manager = _manager([("workspace", root)])
+    asyncio.run(manager.load_all())
+
+    asyncio.run(manager.terminate_all())
+
+    assert manager.prompt_render_modules == []
+
+
+def test_terminate_removes_owned_lifecycle_phase_modules(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _write_plugin(
+        root,
+        "owned_lifecycle_module",
+        source="""\
+from amadeus.plugin import Plugin
+class OwnedModule:
+    slot = "owned.after_reasoning"
+    async def run(self, frame):
+        return frame
+class Owner(Plugin):
+    def after_reasoning_modules(self):
+        return [OwnedModule()]
+""",
+    )
+    manager = _manager([("workspace", root)])
+    asyncio.run(manager.load_all())
+
+    asyncio.run(manager.terminate_all())
+
+    assert manager.after_reasoning_modules == []
 
 
 def test_discovery_is_ordered_first_wins_and_does_not_import_duplicate(

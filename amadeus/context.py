@@ -210,21 +210,40 @@ class ContextBuilder:
         )
 
     def render(self, context: RuntimeContext) -> ContextRenderResult:
+        return self.render_with_sections(context)
+
+    def render_with_sections(
+        self,
+        context: RuntimeContext,
+        *,
+        system_sections_top: list[PromptSectionRender] | None = None,
+        system_sections_bottom: list[PromptSectionRender] | None = None,
+    ) -> ContextRenderResult:
         built = self.system_prompt_builder.build(context)
+        top_sections = list(system_sections_top or [])
+        bottom_sections = list(system_sections_bottom or [])
         assembly = self.prompt_assembler.assemble(
-            built.sections,
+            [*top_sections, *built.sections, *bottom_sections],
             disabled_sections=context.disabled_sections,
             turn_injection_context=context.turn_injection_context,
         )
         system_breakdown = self._filtered_breakdown(
-            built.breakdown,
+            [
+                *self._section_breakdown(top_sections),
+                *built.breakdown,
+                *self._section_breakdown(bottom_sections),
+            ],
             assembly.system_sections,
             context.disabled_sections,
             destination="system",
             context_frame_sections=self.prompt_assembler.context_frame_sections,
         )
         frame_breakdown = self._filtered_breakdown(
-            built.breakdown,
+            [
+                *self._section_breakdown(top_sections),
+                *built.breakdown,
+                *self._section_breakdown(bottom_sections),
+            ],
             assembly.frame_sections,
             context.disabled_sections,
             destination="context_frame",
@@ -253,6 +272,22 @@ class ContextBuilder:
             context_frame=context_frame,
             assembly=assembly,
         )
+
+    @staticmethod
+    def _section_breakdown(
+        sections: list[PromptSectionRender],
+    ) -> list[PromptDebugEntry]:
+        return [
+            PromptDebugEntry(
+                label=section.label,
+                priority=section.priority,
+                rendered=bool(section.content.strip()),
+                char_count=len(section.content.strip()),
+                estimated_tokens=_estimate_tokens(section.content.strip()),
+                empty_reason=None if section.content.strip() else "empty section",
+            )
+            for section in sections
+        ]
 
     @staticmethod
     def _slice_history(

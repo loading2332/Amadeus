@@ -1,5 +1,21 @@
 """Amadeus runtime context and prompt assembly package."""
 
+from amadeus.after_reasoning import (
+    AfterReasoningFrame,
+    AfterReasoningInput,
+    AfterReasoningResult,
+    default_after_reasoning_modules,
+)
+from amadeus.after_turn import (
+    AfterTurnFrame,
+    AfterTurnInput,
+    default_after_turn_modules,
+)
+from amadeus.before_reasoning import (
+    BeforeReasoningFrame,
+    BeforeReasoningInput,
+    default_before_reasoning_modules,
+)
 from amadeus.before_turn import BeforeTurnFrame, BeforeTurnInput
 from amadeus.bootstrap import (
     AppState,
@@ -22,7 +38,11 @@ from amadeus.context import (
 )
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.lifecycle import (
+    AfterReasoningContext,
+    AfterStepContext,
     AfterTurnContext,
+    BeforeReasoningContext,
+    BeforeStepContext,
     BeforeTurnContext,
     PromptRenderContext,
     TurnLifecycle,
@@ -68,6 +88,13 @@ from amadeus.prompt_block import (
     RuntimeMetadataPromptBlock,
     SelfModelPromptBlock,
 )
+from amadeus.prompt_render import (
+    PromptRenderCtx,
+    PromptRenderFrame,
+    PromptRenderInput,
+    PromptRenderResult,
+    default_prompt_render_modules,
+)
 from amadeus.prompting import (
     DEFAULT_CONTEXT_TRIM_PLANS,
     PromptAssembler,
@@ -92,14 +119,37 @@ from amadeus.session import (
     fetch_messages,
     search_messages,
 )
+from amadeus.step_phases import (
+    AfterStepFrame,
+    AfterStepInput,
+    BeforeStepFrame,
+    BeforeStepInput,
+    default_after_step_modules,
+    default_before_step_modules,
+)
 from amadeus.tools import Tool, ToolExecutionRequest, ToolHook, ToolResult, ToolTrace
 from amadeus.workspace import DEFAULT_SELF_MD, initialize_workspace
 
 __all__ = [
     "ActiveSkillsPromptBlock",
+    "AfterReasoningContext",
+    "AfterReasoningFrame",
+    "AfterReasoningInput",
+    "AfterReasoningResult",
+    "AfterStepContext",
+    "AfterStepFrame",
+    "AfterStepInput",
     "AfterTurnContext",
+    "AfterTurnFrame",
+    "AfterTurnInput",
     "AppState",
     "BehaviorRulesPromptBlock",
+    "BeforeReasoningContext",
+    "BeforeReasoningFrame",
+    "BeforeReasoningInput",
+    "BeforeStepContext",
+    "BeforeStepFrame",
+    "BeforeStepInput",
     "BeforeTurnContext",
     "BeforeTurnFrame",
     "BeforeTurnInput",
@@ -146,9 +196,13 @@ __all__ = [
     "PromptBlockRenderResult",
     "PromptAssembler",
     "PromptAssemblyResult",
+    "PromptRenderCtx",
     "PromptDebugEntry",
+    "PromptRenderFrame",
+    "PromptRenderInput",
     "PromptSectionRender",
     "PromptRenderContext",
+    "PromptRenderResult",
     "RecentContextPromptBlock",
     "RetrievedMemoryPromptBlock",
     "RuntimeContext",
@@ -172,6 +226,12 @@ __all__ = [
     "build_markdown_memory_runtime",
     "build_passive_app",
     "build_context_trim_attempts",
+    "default_prompt_render_modules",
+    "default_after_reasoning_modules",
+    "default_after_step_modules",
+    "default_after_turn_modules",
+    "default_before_reasoning_modules",
+    "default_before_step_modules",
     "default_workspace_root",
     "fetch_messages",
     "initialize_workspace",

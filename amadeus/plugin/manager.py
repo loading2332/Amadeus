@@ -65,6 +65,12 @@ class PluginManager:
         self._plugin_ids: dict[str, str] = {}
         self._bindings: dict[str, list[_Binding]] = {}
         self._before_turn_modules: dict[str, tuple[object, ...]] = {}
+        self._prompt_render_modules: dict[str, tuple[object, ...]] = {}
+        self._before_reasoning_modules: dict[str, tuple[object, ...]] = {}
+        self._before_step_modules: dict[str, tuple[object, ...]] = {}
+        self._after_step_modules: dict[str, tuple[object, ...]] = {}
+        self._after_reasoning_modules: dict[str, tuple[object, ...]] = {}
+        self._after_turn_modules: dict[str, tuple[object, ...]] = {}
         self._owner_token = object()
         self._operation_lock = asyncio.Lock()
 
@@ -196,6 +202,24 @@ class PluginManager:
             before_turn_modules = instance.before_turn_modules()
             if not isinstance(before_turn_modules, list):
                 raise TypeError("before_turn_modules must return list")
+            prompt_render_modules = instance.prompt_render_modules()
+            if not isinstance(prompt_render_modules, list):
+                raise TypeError("prompt_render_modules must return list")
+            before_reasoning_modules = instance.before_reasoning_modules()
+            if not isinstance(before_reasoning_modules, list):
+                raise TypeError("before_reasoning_modules must return list")
+            before_step_modules = instance.before_step_modules()
+            if not isinstance(before_step_modules, list):
+                raise TypeError("before_step_modules must return list")
+            after_step_modules = instance.after_step_modules()
+            if not isinstance(after_step_modules, list):
+                raise TypeError("after_step_modules must return list")
+            after_reasoning_modules = instance.after_reasoning_modules()
+            if not isinstance(after_reasoning_modules, list):
+                raise TypeError("after_reasoning_modules must return list")
+            after_turn_modules = instance.after_turn_modules()
+            if not isinstance(after_turn_modules, list):
+                raise TypeError("after_turn_modules must return list")
 
             stage = "initialize"
             await instance.initialize()
@@ -203,6 +227,20 @@ class PluginManager:
             self._before_turn_modules[candidate.import_path] = tuple(
                 before_turn_modules
             )
+            self._prompt_render_modules[candidate.import_path] = tuple(
+                prompt_render_modules
+            )
+            self._before_reasoning_modules[candidate.import_path] = tuple(
+                before_reasoning_modules
+            )
+            self._before_step_modules[candidate.import_path] = tuple(
+                before_step_modules
+            )
+            self._after_step_modules[candidate.import_path] = tuple(after_step_modules)
+            self._after_reasoning_modules[candidate.import_path] = tuple(
+                after_reasoning_modules
+            )
+            self._after_turn_modules[candidate.import_path] = tuple(after_turn_modules)
             self._loaded.add(candidate.import_path)
             self._load_order.append(candidate.import_path)
             self._loaded_names[candidate.import_path] = candidate.name
@@ -291,6 +329,12 @@ class PluginManager:
             ]
             self._loaded_names.pop(import_path, None)
             self._before_turn_modules.pop(import_path, None)
+            self._prompt_render_modules.pop(import_path, None)
+            self._before_reasoning_modules.pop(import_path, None)
+            self._before_step_modules.pop(import_path, None)
+            self._after_step_modules.pop(import_path, None)
+            self._after_reasoning_modules.pop(import_path, None)
+            self._after_turn_modules.pop(import_path, None)
             if plugin_id is not None and self._plugin_ids.get(plugin_id) == import_path:
                 self._plugin_ids.pop(plugin_id, None)
             plugin_registry.release_import_path(import_path, self._owner_token)
@@ -334,6 +378,54 @@ class PluginManager:
             module
             for import_path in self._load_order
             for module in self._before_turn_modules.get(import_path, ())
+        ]
+
+    @property
+    def prompt_render_modules(self) -> list[object]:
+        return [
+            module
+            for import_path in self._load_order
+            for module in self._prompt_render_modules.get(import_path, ())
+        ]
+
+    @property
+    def before_reasoning_modules(self) -> list[object]:
+        return [
+            module
+            for import_path in self._load_order
+            for module in self._before_reasoning_modules.get(import_path, ())
+        ]
+
+    @property
+    def before_step_modules(self) -> list[object]:
+        return [
+            module
+            for import_path in self._load_order
+            for module in self._before_step_modules.get(import_path, ())
+        ]
+
+    @property
+    def after_step_modules(self) -> list[object]:
+        return [
+            module
+            for import_path in self._load_order
+            for module in self._after_step_modules.get(import_path, ())
+        ]
+
+    @property
+    def after_reasoning_modules(self) -> list[object]:
+        return [
+            module
+            for import_path in self._load_order
+            for module in self._after_reasoning_modules.get(import_path, ())
+        ]
+
+    @property
+    def after_turn_modules(self) -> list[object]:
+        return [
+            module
+            for import_path in self._load_order
+            for module in self._after_turn_modules.get(import_path, ())
         ]
 
     @staticmethod

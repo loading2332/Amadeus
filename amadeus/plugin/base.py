@@ -45,3 +45,27 @@ class Plugin(ABC):
     def before_turn_modules(self) -> list[object]:
         """Return phase modules contributed to the before-turn graph."""
         return []
+
+    def prompt_render_modules(self) -> list[object]:
+        """Return phase modules contributed to the prompt-render graph."""
+        return []
+
+    def before_reasoning_modules(self) -> list[object]:
+        """Return phase modules contributed before prompt rendering/reasoning."""
+        return []
+
+    def before_step_modules(self) -> list[object]:
+        """Return phase modules contributed before each tool-loop step."""
+        return []
+
+    def after_step_modules(self) -> list[object]:
+        """Return phase modules contributed after each tool-loop step."""
+        return []
+
+    def after_reasoning_modules(self) -> list[object]:
+        """Return phase modules contributed after reasoning and before persistence."""
+        return []
+
+    def after_turn_modules(self) -> list[object]:
+        """Return phase modules contributed after a persisted turn."""
+        return []

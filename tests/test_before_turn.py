@@ -139,6 +139,37 @@ def test_before_turn_emit_can_replace_context(tmp_path) -> None:
     assert result is replacement
 
 
+class _BeforeTurnExportModule:
+    slot = "plugin.before_turn_exports"
+    requires = ("before_turn.emit", "session:ctx")
+    produces = ("session:extra_hint:test", "session:abort_reply")
+
+    async def run(self, frame: BeforeTurnFrame) -> BeforeTurnFrame:
+        frame.slots["session:extra_hint:test"] = "hint from before_turn"
+        frame.slots["session:abort_reply"] = "blocked before reasoning"
+        return frame
+
+
+def test_before_turn_collects_export_hints_and_abort_reply(tmp_path) -> None:
+    phase = Phase[BeforeTurnInput, BeforeTurnContext, BeforeTurnFrame](
+        default_before_turn_modules(
+            lifecycle=TurnLifecycle(EventBus()),
+            session_manager=SessionManager(tmp_path),
+            memory_engine=None,
+            history_window=500,
+            plugin_modules=[_BeforeTurnExportModule()],
+        ),
+        frame_factory=BeforeTurnFrame,
+    )
+
+    result = asyncio.run(
+        phase.run(BeforeTurnInput(session_key="chat:1", user_message="hello"))
+    )
+
+    assert result.extra_hints == ["hint from before_turn"]
+    assert result.abort_reply == "blocked before reasoning"
+
+
 class _EarlyContextModule:
     slot = "plugin.early_context"
     requires = ("before_turn.acquire_session", "session:session")

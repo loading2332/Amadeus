@@ -3,13 +3,17 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from amadeus.before_reasoning import BeforeReasoningFrame
 from amadeus.before_turn import BeforeTurnFrame
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.lifecycle import AfterTurnContext, BeforeTurnContext, PromptRenderContext
+from amadeus.prompt_render import PromptRenderCtx, PromptRenderFrame
+from amadeus.prompting import PromptSectionRender
 from amadeus.provider import (
     ChatCompletionsClient,
     ChatNamespace,
@@ -18,6 +22,7 @@ from amadeus.provider import (
 )
 from amadeus.runtime import PassiveRuntime
 from amadeus.session import SessionManager
+from amadeus.step_phases import AfterStepFrame, BeforeStepFrame
 from amadeus.tools.base import ToolResult
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
@@ -111,6 +116,84 @@ class _RuntimeMarkerModule:
         return frame
 
 
+class _PromptMarkerModule:
+    slot = "plugin.prompt_marker"
+    requires = ("prompt_render.emit", "prompt:ctx")
+    produces = ("prompt:ctx",)
+
+    async def run(self, frame: PromptRenderFrame) -> PromptRenderFrame:
+        context = cast(PromptRenderCtx, frame.slots["prompt:ctx"])
+        context.system_sections_bottom.append(
+            PromptSectionRender(
+                label="prompt_marker",
+                content=f"prompt marker for {context.attempt_name}",
+                priority=8_000,
+                is_static=False,
+            )
+        )
+        return frame
+
+
+class _BeforeTurnAbortModule:
+    slot = "plugin.before_turn_abort"
+    requires = ("before_turn.emit", "session:ctx")
+    produces = ("session:abort_reply",)
+
+    async def run(self, frame: BeforeTurnFrame) -> BeforeTurnFrame:
+        frame.slots["session:abort_reply"] = "blocked at before_turn"
+        return frame
+
+
+class _BeforeReasoningAbortModule:
+    slot = "plugin.before_reasoning_abort"
+    requires = ("before_reasoning.emit", "reasoning:ctx")
+    produces = ("reasoning:abort_reply",)
+
+    async def run(self, frame: BeforeReasoningFrame) -> BeforeReasoningFrame:
+        frame.slots["reasoning:abort_reply"] = "blocked at before_reasoning"
+        return frame
+
+
+class _LifecycleHintModule:
+    slot = "plugin.lifecycle_hint"
+    requires = ("before_turn.emit", "session:ctx")
+    produces = ("session:extra_hint:test",)
+
+    async def run(self, frame: BeforeTurnFrame) -> BeforeTurnFrame:
+        frame.slots["session:extra_hint:test"] = "remember the lifecycle hint"
+        return frame
+
+
+class _ReasoningHintModule:
+    slot = "plugin.reasoning_hint"
+    requires = ("before_reasoning.emit", "reasoning:ctx")
+    produces = ("reasoning:extra_hint:test",)
+
+    async def run(self, frame: BeforeReasoningFrame) -> BeforeReasoningFrame:
+        frame.slots["reasoning:extra_hint:test"] = "remember the reasoning hint"
+        return frame
+
+
+class _BeforeStepStopModule:
+    slot = "plugin.before_step_stop"
+    requires = ("before_step.emit", "step:before_ctx")
+    produces = ("step:early_stop_reply",)
+
+    async def run(self, frame: BeforeStepFrame) -> BeforeStepFrame:
+        frame.slots["step:early_stop_reply"] = "before step stopped"
+        return frame
+
+
+class _AfterStepStopModule:
+    slot = "plugin.after_step_stop"
+    requires = ("after_step.emit", "step:after_ctx")
+    produces = ("step:early_stop_reply",)
+
+    async def run(self, frame: AfterStepFrame) -> AfterStepFrame:
+        frame.slots["step:early_stop_reply"] = "after step stopped"
+        return frame
+
+
 def test_passive_runtime_persists_turn_and_emits_committed_event(tmp_path):
     client = FakeClient()
     provider = LLMProvider(
@@ -197,6 +280,194 @@ def test_passive_runtime_phase_module_changes_provider_prompt(tmp_path) -> None:
     assert "phase_plugin: reached provider" in rendered_text
 
 
+def test_passive_runtime_prompt_render_module_changes_provider_prompt(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_prompt_render_plugin_modules([_PromptMarkerModule()])
+
+    asyncio.run(runtime.run_turn(session_key="prompt-phase:1", user_message="hello"))
+
+    rendered_text = "\n".join(
+        str(message["content"])
+        for message in client.completions.calls[0]["messages"]
+    )
+    assert "prompt marker for full" in rendered_text
+
+
+def test_before_turn_abort_skips_provider_and_persists_control_reply(tmp_path) -> None:
+    client = FakeClient()
+    manager = SessionManager(tmp_path)
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=manager,
+    )
+    runtime.set_before_turn_plugin_modules([_BeforeTurnAbortModule()])
+
+    result = asyncio.run(
+        runtime.run_turn(session_key="abort:before-turn", user_message="hello")
+    )
+
+    assert client.completions.calls == []
+    assert result.assistant_response == "blocked at before_turn"
+    assert result.context_retry["selected_plan"] == "before_turn_abort"
+    session = manager.get_or_create("abort:before-turn")
+    assert [message["role"] for message in session.messages] == ["user", "assistant"]
+
+
+def test_before_reasoning_abort_skips_provider_and_persists_control_reply(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_before_reasoning_plugin_modules([_BeforeReasoningAbortModule()])
+
+    result = asyncio.run(
+        runtime.run_turn(session_key="abort:before-reasoning", user_message="hello")
+    )
+
+    assert client.completions.calls == []
+    assert result.assistant_response == "blocked at before_reasoning"
+    assert result.context_retry["selected_plan"] == "before_reasoning_abort"
+
+
+def test_before_turn_and_reasoning_hints_reach_prompt(tmp_path: Path) -> None:
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_before_turn_plugin_modules([_LifecycleHintModule()])
+    runtime.set_before_reasoning_plugin_modules([_ReasoningHintModule()])
+
+    asyncio.run(runtime.run_turn(session_key="hint:1", user_message="hello"))
+
+    rendered_text = "\n".join(
+        str(message["content"]) for message in client.completions.calls[0]["messages"]
+    )
+    assert "remember the lifecycle hint" in rendered_text
+    assert "remember the reasoning hint" in rendered_text
+
+
+def test_before_step_early_stop_skips_tool_batch(tmp_path: Path) -> None:
+    client = FakeClient()
+    client.completions.responses = [
+        SimpleNamespace(
+            id="resp_1",
+            model="fake-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call_1",
+                                function=SimpleNamespace(
+                                    name="echo_tool",
+                                    arguments=json.dumps({"text": "should not run"}),
+                                ),
+                            )
+                        ],
+                    )
+                )
+            ],
+            usage={},
+        ),
+    ]
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+        tool_registry=registry,
+        tool_executor=ToolExecutor(registry=registry),
+    )
+    runtime.set_before_step_plugin_modules([_BeforeStepStopModule()])
+
+    result = asyncio.run(
+        runtime.run_turn(session_key="step:before", user_message="use tool")
+    )
+
+    assert result.assistant_response == "before step stopped"
+    assert result.tool_chain == []
+    assert len(client.completions.calls) == 1
+
+
+def test_after_step_early_stop_skips_followup_llm_round(tmp_path: Path) -> None:
+    client = FakeClient()
+    client.completions.responses = [
+        SimpleNamespace(
+            id="resp_1",
+            model="fake-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call_1",
+                                function=SimpleNamespace(
+                                    name="echo_tool",
+                                    arguments=json.dumps({"text": "ran"}),
+                                ),
+                            )
+                        ],
+                    )
+                )
+            ],
+            usage={},
+        ),
+    ]
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+        tool_registry=registry,
+        tool_executor=ToolExecutor(registry=registry),
+    )
+    runtime.set_after_step_plugin_modules([_AfterStepStopModule()])
+
+    result = asyncio.run(
+        runtime.run_turn(session_key="step:after", user_message="use tool")
+    )
+
+    assert result.assistant_response == "after step stopped"
+    assert result.tool_chain[0]["calls"][0]["name"] == "echo_tool"
+    assert len(client.completions.calls) == 1
+
+
 def test_failed_phase_rebuild_keeps_previous_runtime_phase(tmp_path) -> None:
     client = FakeClient()
     runtime = PassiveRuntime(
@@ -222,6 +493,33 @@ def test_failed_phase_rebuild_keeps_previous_runtime_phase(tmp_path) -> None:
     assert "phase_plugin: reached provider" in rendered_text
 
 
+def test_failed_prompt_phase_rebuild_keeps_previous_runtime_phase(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_prompt_render_plugin_modules([_PromptMarkerModule()])
+
+    with pytest.raises(RuntimeError, match="模块 slot 重复"):
+        runtime.set_prompt_render_plugin_modules(
+            [_PromptMarkerModule(), _PromptMarkerModule()]
+        )
+
+    asyncio.run(runtime.run_turn(session_key="prompt-phase:atomic", user_message="hello"))
+    rendered_text = "\n".join(
+        str(message["content"])
+        for message in client.completions.calls[0]["messages"]
+    )
+    assert "prompt marker for full" in rendered_text
+
+
 def test_setting_empty_phase_snapshot_restores_builtin_runtime(tmp_path) -> None:
     client = FakeClient()
     runtime = PassiveRuntime(
@@ -242,6 +540,30 @@ def test_setting_empty_phase_snapshot_restores_builtin_runtime(tmp_path) -> None
         for message in client.completions.calls[0]["messages"]
     )
     assert "phase_plugin" not in rendered_text
+
+
+def test_setting_empty_prompt_phase_snapshot_restores_builtin_runtime(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake-model"),
+            client=client,
+        ),
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_prompt_render_plugin_modules([_PromptMarkerModule()])
+    runtime.set_prompt_render_plugin_modules([])
+
+    asyncio.run(runtime.run_turn(session_key="prompt-phase:reset", user_message="hello"))
+
+    rendered_text = "\n".join(
+        str(message["content"])
+        for message in client.completions.calls[0]["messages"]
+    )
+    assert "prompt marker" not in rendered_text
 
 
 def test_prompt_render_gate_receives_fresh_context_for_each_retry(tmp_path):
@@ -275,6 +597,31 @@ def test_prompt_render_gate_receives_fresh_context_for_each_retry(tmp_path):
     assert "attempt marker 1" not in first_text
     assert "attempt marker 1" in second_text
     assert "attempt marker 0" not in second_text
+
+
+def test_prompt_render_phase_module_receives_fresh_context_for_each_retry(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient(completions=ContextLengthThenSuccessCompletions())
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=provider,
+        session_manager=SessionManager(tmp_path),
+    )
+    runtime.set_prompt_render_plugin_modules([_PromptMarkerModule()])
+
+    asyncio.run(runtime.run_turn(session_key="phase:retry", user_message="hello"))
+
+    first_text = str(client.completions.calls[0]["messages"])
+    second_text = str(client.completions.calls[1]["messages"])
+    assert "prompt marker for full" in first_text
+    assert "prompt marker for trim_runtime_metadata" not in first_text
+    assert "prompt marker for trim_runtime_metadata" in second_text
+    assert "prompt marker for full" not in second_text
 
 
 def test_after_turn_tap_observes_persisted_turn_and_isolates_failures(tmp_path, caplog):

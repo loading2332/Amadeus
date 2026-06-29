@@ -86,9 +86,51 @@ class PassiveApp:
                 self.runtime.set_before_turn_plugin_modules(
                     self.plugin_manager.before_turn_modules
                 )
+                self.runtime.set_prompt_render_plugin_modules(
+                    self.plugin_manager.prompt_render_modules
+                )
+                self.runtime.set_before_reasoning_plugin_modules(
+                    self.plugin_manager.before_reasoning_modules
+                )
+                self.runtime.set_before_step_plugin_modules(
+                    self.plugin_manager.before_step_modules
+                )
+                self.runtime.set_after_step_plugin_modules(
+                    self.plugin_manager.after_step_modules
+                )
+                self.runtime.set_after_reasoning_plugin_modules(
+                    self.plugin_manager.after_reasoning_modules
+                )
+                self.runtime.set_after_turn_plugin_modules(
+                    self.plugin_manager.after_turn_modules
+                )
             except BaseException:
                 try:
                     self.runtime.set_before_turn_plugin_modules([])
+                except BaseException:
+                    pass
+                try:
+                    self.runtime.set_prompt_render_plugin_modules([])
+                except BaseException:
+                    pass
+                try:
+                    self.runtime.set_before_reasoning_plugin_modules([])
+                except BaseException:
+                    pass
+                try:
+                    self.runtime.set_before_step_plugin_modules([])
+                except BaseException:
+                    pass
+                try:
+                    self.runtime.set_after_step_plugin_modules([])
+                except BaseException:
+                    pass
+                try:
+                    self.runtime.set_after_reasoning_plugin_modules([])
+                except BaseException:
+                    pass
+                try:
+                    self.runtime.set_after_turn_plugin_modules([])
                 except BaseException:
                     pass
                 try:
@@ -116,6 +158,23 @@ class PassiveApp:
             except BaseException as error:
                 if first_error is None:
                     first_error = error
+            try:
+                self.runtime.set_prompt_render_plugin_modules([])
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
+            for reset in (
+                self.runtime.set_before_reasoning_plugin_modules,
+                self.runtime.set_before_step_plugin_modules,
+                self.runtime.set_after_step_plugin_modules,
+                self.runtime.set_after_reasoning_plugin_modules,
+                self.runtime.set_after_turn_plugin_modules,
+            ):
+                try:
+                    reset([])
+                except BaseException as error:
+                    if first_error is None:
+                        first_error = error
             try:
                 self.session_manager.store.close()
             except BaseException as error:

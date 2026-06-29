@@ -16,6 +16,51 @@ class BeforeTurnContext:
     retrieved_memory: str | None
     active_skills: list[str] = field(default_factory=list)
     runtime_metadata: dict[str, str] = field(default_factory=dict)
+    extra_hints: list[str] = field(default_factory=list)
+    abort_reply: str | None = None
+
+
+@dataclass
+class BeforeReasoningContext:
+    session_key: str
+    user_message: str
+    history: list[Message]
+    retrieved_memory: str | None
+    active_skills: list[str] = field(default_factory=list)
+    runtime_metadata: dict[str, str] = field(default_factory=dict)
+    extra_hints: list[str] = field(default_factory=list)
+    abort_reply: str | None = None
+
+
+@dataclass
+class BeforeStepContext:
+    session_key: str
+    iteration: int
+    messages: list[dict[str, Any]]
+    tool_schemas: list[dict[str, Any]] | None
+    extra_hints: list[str] = field(default_factory=list)
+    early_stop_reply: str | None = None
+
+
+@dataclass
+class AfterStepContext:
+    session_key: str
+    iteration: int
+    messages: list[dict[str, Any]]
+    tool_chain: list[dict[str, Any]]
+    telemetry: dict[str, Any] = field(default_factory=dict)
+    early_stop_reply: str | None = None
+
+
+@dataclass
+class AfterReasoningContext:
+    session_key: str
+    user_message: str
+    assistant_content: str
+    tool_chain: list[dict[str, Any]]
+    context_retry: dict[str, Any]
+    extra: dict[str, Any] = field(default_factory=dict)
+    assistant_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -59,3 +104,19 @@ class TurnLifecycle:
 
     async def after_turn(self, context: AfterTurnContext) -> None:
         await self._bus.fanout(context)
+
+    async def before_reasoning(
+        self, context: BeforeReasoningContext
+    ) -> BeforeReasoningContext:
+        return await self._bus.emit(context)
+
+    async def before_step(self, context: BeforeStepContext) -> BeforeStepContext:
+        return await self._bus.emit(context)
+
+    async def after_step(self, context: AfterStepContext) -> AfterStepContext:
+        return await self._bus.emit(context)
+
+    async def after_reasoning(
+        self, context: AfterReasoningContext
+    ) -> AfterReasoningContext:
+        return await self._bus.emit(context)

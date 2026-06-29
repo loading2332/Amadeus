@@ -12,6 +12,8 @@ from amadeus.session import Session, SessionManager
 _SESSION_SLOT = "session:session"
 _CONTEXT_BUNDLE_SLOT = "session:context_bundle"
 _CTX_SLOT = "session:ctx"
+_EXTRA_HINT_PREFIX = "session:extra_hint:"
+_ABORT_REPLY_SLOT = "session:abort_reply"
 
 
 @dataclass
@@ -136,10 +138,31 @@ class _EmitBeforeTurnCtxModule:
 
 class _ReturnBeforeTurnCtxModule:
     slot = "before_turn.return"
-    requires = ("before_turn.emit", _CTX_SLOT)
+    requires = ("before_turn.collect_exports", _CTX_SLOT)
 
     async def run(self, frame: BeforeTurnFrame) -> BeforeTurnFrame:
         frame.output = cast(BeforeTurnContext, frame.slots[_CTX_SLOT])
+        return frame
+
+
+class _CollectBeforeTurnExportSlotsModule:
+    slot = "before_turn.collect_exports"
+    requires = ("before_turn.emit", _CTX_SLOT)
+    produces = (_CTX_SLOT,)
+
+    async def run(self, frame: BeforeTurnFrame) -> BeforeTurnFrame:
+        context = cast(BeforeTurnContext, frame.slots[_CTX_SLOT])
+        extra_hints = [
+            str(value)
+            for slot, value in sorted(frame.slots.items())
+            if slot.startswith(_EXTRA_HINT_PREFIX) and value is not None
+        ]
+        if extra_hints:
+            context.extra_hints.extend(extra_hints)
+        abort_reply = frame.slots.get(_ABORT_REPLY_SLOT)
+        if abort_reply is not None:
+            context.abort_reply = str(abort_reply)
+        frame.slots[_CTX_SLOT] = context
         return frame
 
 
@@ -156,6 +179,7 @@ def default_before_turn_modules(
         _PrepareContextModule(memory_engine, history_window),
         _BuildBeforeTurnCtxModule(),
         _EmitBeforeTurnCtxModule(lifecycle),
+        _CollectBeforeTurnExportSlotsModule(),
         _ReturnBeforeTurnCtxModule(),
     ]
     return cast(
