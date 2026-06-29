@@ -1,20 +1,35 @@
-# Mission: 通过 Amadeus 亲手复现并掌握 Akashic
+# Mission: Amadeus as an interview-ready agent project
 
 ## Why
-我要通过在 `Amadeus` 里亲手复现 `Akashic` 的真实设计，真正掌握复杂 agent 系统的架构、状态流、工具链和验证方式，而不是只看源码或只靠 AI 生成。最终我希望在掌握后的基础上继续二开，并把 `Amadeus` 讲成一个可信的简历项目。
+
+Amadeus exists to become a credible resume project for AI agent development. It should be grounded in Akashic's real design, but the near-term target is not to complete a long training track. The near-term target is to build a runnable, verifiable agent system whose core claims can survive interview follow-up.
 
 ## Success looks like
-- 我能按主链清楚讲出 Akashic 某段机制为什么这么设计，以及 Amadeus 是怎么对照复现的
-- 我能不依赖 AI 独立定位核心代码、验证行为、解释常见错误和排错思路
-- 我能把 `Amadeus` 讲成一个有真实架构来源、真实验证闭环和明确取舍的项目
+
+- Real LLM turns can run through the passive runtime and persist useful session state.
+- The memory system supports readable long-term memory, vector/keyword retrieval, source references, correction, forgetting, and traceable evidence.
+- Evaluation exists as a product capability: cases, runner, report, and regression checks for memory, context, tools, and proactive decisions.
+- Telegram-first outbound and proactive behavior can be demonstrated end to end.
+- The user can explain the main code paths, tradeoffs, failure modes, and verification evidence behind each resume claim.
+
+## Current priorities
+
+1. Align documentation and working prompts with interview delivery.
+2. Confirm and harden the existing passive runtime, context, tool loop, phase, plugin, and memory behavior.
+3. Build productized Evaluation before expanding proactive behavior.
+4. Add Telegram outbound and scheduler support.
+5. Implement a minimal but real ProactiveLoop.
+6. Add DriftRunner only after the proactive foundation is demonstrable.
 
 ## Constraints
-- 课程和实现都要用中文
-- 每节课先做 Akashic 源码课，再做 Amadeus 复现练手
-- 未经复述确认，不推进到下一课
-- 不为了快而偏离 Akashic 真实设计
 
-## Out of scope
-- 为了赶进度而先做简化版 agent、最后再整体重构
-- 为了“先跑通”而引入 fake 生产机制、临时 parser 或补丁式 helper
-- 在还没讲清主链前就扩展无关 transport 或 UI 包装
+- Akashic is a reference implementation, not a base class.
+- Amadeus should preserve clean boundaries: `MemoryEngine`, public runtime behavior, eval runner, outbound adapter, scheduler, proactive pipeline.
+- Do not add impressive resume terms unless the repository has code and verification evidence to support them.
+- Do not use fake production mechanisms to make a demo look complete. Deterministic fakes are acceptable in tests and eval fixtures.
+
+## Out of scope for the default mode
+
+- Generating formal study artifacts.
+- Completing every Akashic subsystem before interview delivery.
+- Adding QQ Bot, full MCP integration, dashboard UI, or advanced Drift behavior before Telegram, Evaluation, and ProactiveLoop have a stable vertical slice.

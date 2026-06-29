@@ -1,22 +1,13 @@
-# 教学偏好与工作笔记
+# Current working notes
 
-- 默认用中文教学和写文档。
-- 先讲人话，再补术语。
-- 以后正式 lesson 默认先用一篇完整寓言建立机制直觉，再进入源码术语和调用链。寓言不能只是几句话的类比，也不能先抛出术语再机械套故事；应让人物先经历真实问题、方案演化、正常路径和关键失败边界，直到故事接近结尾时，读者才逐步意识到背后的工程概念。
-- 寓言结束后必须单独增加“故事真正讲了什么”的解释：把人物、物件、规则和异常逐项映射到真实类型、接口、数据流与验证语义，再用一句人话和一段准确术语完成收口。寓言负责形成直觉，源码解释负责保证准确，两者都不能互相替代。
-- 每节课固定两段：Part 1 Akashic 源码课，Part 2 Amadeus 复现练手。
-- 未经用户复述确认，不推进下一课。
-- 重点不是最快做完，而是让用户逐步具备独立定位主链、解释职责、验证行为和排错的能力。
-- 默认不补伪历史课程；从当前真实阶段继续沉淀正式 lesson。
-- 每节课结束后要提炼：关键代码、知识点、关键词、常见错误、排错思路、Akashic 对应实现、Amadeus 复现差异、简历可讲述版本，以及“如果自己重做第一步该看什么”。
-- 从 Lesson 14 起，课程 HTML 要更像交互式课程页面，而不是 Markdown 包装；可以使用 Mermaid、状态流图、对照矩阵、折叠源码精读、轻量交互组件来帮助理解复杂架构。
-- 每节 lesson 仍优先引用 Akashic 源码和测试作为复现对象；Amadeus 代码用于对照练手和 gap audit。
-- 40 节课编号保持不变，但每节 lesson 进入前必须对照 `docs/superpowers/plans/2026-06-18-akashic-关键机制覆盖矩阵.md` 写清 `Coverage / Gap Audit`：本课覆盖什么、不覆盖什么、不覆盖项是否仍是 Akashic 关键机制、补到哪一课、本课 eval seed 是什么。
-- 如果某个概念需要行业语境、协议定义或设计原则支撑，可以适当引用 `RESOURCES.md` 中的外部优质资料，尤其是官方文档和高质量工程文章。
-- 外部资料必须服务于当前概念，不能堆链接；每节课最多选择 1-3 个 primary references，并说明“这份资料帮助理解什么”。
-- 外部资料不能取代 Akashic 主线；如果需要新增外部资料，先加入 `RESOURCES.md`，再在 lesson 中引用。
-- Git 工作默认直接在 `main` 分支进行，不为每个 Lesson 单独创建功能分支；除非用户之后明确要求隔离分支。
-- 教学图表默认使用语义化 HTML/CSS，并把可复用样式沉淀到 `assets/lesson.css`：文字应可搜索、复制、响应式排版和打印。
-- 只有拓扑复杂、手写布局明显降低可维护性时才评估自动布局工具；若以后引入 Mermaid，优先本地资源并保留文本 fallback，不依赖 CDN 或运行时网络。
-- 源码课不能只提供文件跳转：关键调用链应在 lesson 内直接展示源码并结合输入、处理、输出和下一消费者讲解；代码长度服从“能否讲清楚”，不设机械行数上限，完整文件链接只作为继续深读入口。
-- 从总计划 Lesson 19 起，正式 lesson HTML 的所有代码块统一使用 Python 语法高亮；高亮资源放在 `assets/`，页面离线打开时也必须可用。
+- Default language: Chinese for explanations and repository documents.
+- Default delivery mode: interview-ready product evidence, not course production.
+- Explain with concrete code paths, state flow, and verification commands.
+- Keep answers concise unless the user asks for deeper teaching.
+- Do not create formal course artifacts by default.
+- Do not block implementation on oral checks; use code review, tests, eval cases, and runnable demos as the proof of understanding.
+- Preserve Akashic as the reference source for agent design, but keep Amadeus architecture intentionally smaller where that improves delivery and interview clarity.
+- Prefer Telegram over QQ for the first real outbound product slice.
+- Treat Evaluation as a core product subsystem, not a final polish task.
+- Keep resume wording honest: if a feature is only a boundary or future extension, say that in the gap audit instead of claiming it is complete.
+- Git work normally stays on `main`; stage only the requested scope.
