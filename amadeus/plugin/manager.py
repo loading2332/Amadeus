@@ -14,8 +14,7 @@ from typing import Any, cast
 import yaml
 
 from amadeus.events import EventBus
-from amadeus.lifecycle import AfterTurnContext, BeforeTurnContext, PromptRenderContext
-from amadeus.memory_engine import MemoryEngine
+from amadeus.memory.engine import MemoryEngine
 from amadeus.plugin.base import Plugin
 from amadeus.plugin.config import PluginConfig
 from amadeus.plugin.context import PluginContext, PluginKVStore
@@ -27,7 +26,12 @@ from amadeus.plugin.types import (
     PluginLoadReport,
     PluginLoadStatus,
 )
-from amadeus.session import SessionManager
+from amadeus.runtime.lifecycle import (
+    AfterTurnContext,
+    BeforeTurnContext,
+    PromptRenderContext,
+)
+from amadeus.session.store import SessionManager
 from amadeus.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)

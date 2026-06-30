@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from amadeus.events import EventBus
-from amadeus.memory_engine import MemoryEngine
+from amadeus.memory.engine import MemoryEngine
 from amadeus.plugin.config import PluginConfig
-from amadeus.session import SessionManager
+from amadeus.session.store import SessionManager
 from amadeus.tools.registry import ToolRegistry
 
 

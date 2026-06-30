@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from amadeus.memory_engine import MemoryEngine
+from amadeus.memory.engine import MemoryEngine
 from amadeus.tools.base import ToolResult
 
 ToolParameters = dict[str, Any]
