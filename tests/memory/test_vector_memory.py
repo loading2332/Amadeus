@@ -174,22 +174,43 @@ def test_vector_memory_reinforcement_breaks_same_lane_ties(tmp_path):
     store = VectorMemoryStore(tmp_path / "vector_memory.db")
     engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
 
-    first = MemoryIngestRequest(
-        summary="用户偏好中文输出",
-        kind="preference",
-        source_ref='["chat:1:0"]#h:pref1',
+    asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="用户偏好中文输出正式",
+                kind="preference",
+                source_ref='["chat:1:0"]#h:pref1a',
+            )
+        )
     )
-    second = MemoryIngestRequest(
-        summary="用户偏好中文输出",
-        kind="preference",
-        source_ref='["chat:1:1"]#h:pref2',
+    asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="用户偏好中文输出正式",
+                kind="preference",
+                source_ref='["chat:1:1"]#h:pref1b',
+            )
+        )
     )
-
-    asyncio.run(engine.ingest(first))
-    asyncio.run(engine.ingest(second))
+    asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="用户偏好中文输出简洁",
+                kind="preference",
+                source_ref='["chat:1:2"]#h:pref2',
+            )
+        )
+    )
     result = asyncio.run(engine.query(MemoryQuery(text="中文输出", kinds=("preference",))))
 
+    assert [record.summary for record in result.records[:2]] == [
+        "用户偏好中文输出正式",
+        "用户偏好中文输出简洁",
+    ]
+    assert result.records[0].signals["vector_score"] == result.records[1].signals["vector_score"]
+    assert result.records[0].signals["lexical_score"] == result.records[1].signals["lexical_score"]
     assert result.records[0].signals["reinforcement"] >= 2
+    assert result.records[1].signals["reinforcement"] == 1
     assert "reinforcement_boost" in result.records[0].signals
     assert result.trace["records"][0]["id"] == result.records[0].id
 
