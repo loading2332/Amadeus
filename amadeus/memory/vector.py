@@ -7,6 +7,7 @@ import math
 import re
 import sqlite3
 import threading
+from datetime import UTC
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -162,6 +163,7 @@ class VectorMemoryStore:
         item_id = f"mem_{digest}"
         payload = json.dumps([float(value) for value in embedding])
         extra_json = json.dumps(extra or {}, ensure_ascii=False)
+        normalized_happened_at = _normalize_timestamp(happened_at)
         with self._lock:
             existing_source = self._conn.execute(
                 """
@@ -192,7 +194,7 @@ class VectorMemoryStore:
                         happened_at = COALESCE(NULLIF(happened_at, ''), ?)
                     WHERE id = ?
                     """,
-                    (now, happened_at, reinforced_id),
+                    (now, normalized_happened_at, reinforced_id),
                 )
                 self._conn.commit()
                 return reinforced_id, "reinforced"
@@ -212,7 +214,7 @@ class VectorMemoryStore:
                     digest,
                     payload,
                     src,
-                    happened_at,
+                    normalized_happened_at,
                     extra_json,
                     now,
                     now,
@@ -238,11 +240,11 @@ class VectorMemoryStore:
         if time_start is not None:
             clauses.append("happened_at IS NOT NULL")
             clauses.append("datetime(happened_at) >= datetime(?)")
-            params.append(time_start.isoformat())
+            params.append(_normalize_datetime(time_start))
         if time_end is not None:
             clauses.append("happened_at IS NOT NULL")
             clauses.append("datetime(happened_at) <= datetime(?)")
-            params.append(time_end.isoformat())
+            params.append(_normalize_datetime(time_end))
         with self._lock:
             rows = self._conn.execute(
                 f"""
@@ -382,8 +384,8 @@ class VectorMemoryEngine:
             "intent": query.intent,
             "queries": queries,
             "time_filters": {
-                "start": query.time_start.isoformat() if query.time_start else None,
-                "end": query.time_end.isoformat() if query.time_end else None,
+                "start": _normalize_datetime(query.time_start) if query.time_start else None,
+                "end": _normalize_datetime(query.time_end) if query.time_end else None,
             },
             "candidate_count": len(rows),
             "lane_counts": lane_counts,
@@ -536,7 +538,7 @@ def _rank_rows(
             id=item_id,
             kind=str(row_map[item_id]["kind"]),
             summary=str(row_map[item_id]["summary"]),
-            score=rrf_score + reinforcement_boost,
+            score=rrf_score,
             source_ref=str(row_map[item_id]["source_ref"]),
             evidence=_evidence_from_source_ref(str(row_map[item_id]["source_ref"])),
             signals={
@@ -666,7 +668,7 @@ def _rrf_merge(
         scored.append((item_id, rrf, _reinforcement_boost(metadata.get(item_id, {}))))
 
     # 3. \u53d6 top_n
-    scored.sort(key=lambda item: (-(item[1] + item[2]), -item[2], item[0]))
+    scored.sort(key=lambda item: (-item[1], -item[2], item[0]))
     return scored[:top_n]
 
 
@@ -739,7 +741,7 @@ def _max_pool_records(
         for record in records:
             matched_queries.setdefault(record.id, []).append(str(query_index))
             current = pooled.get(record.id)
-            if current is None or record.score > current.score:
+            if current is None or _record_sort_key(record) < _record_sort_key(current):
                 pooled[record.id] = record
     merged: list[MemoryRecord] = []
     for item_id, record in pooled.items():
@@ -756,12 +758,17 @@ def _max_pool_records(
                 signals=signals,
             )
         )
-    return sorted(merged, key=lambda record: (-record.score, record.id))[: max(0, limit)]
+    return sorted(merged, key=_record_sort_key)[: max(0, limit)]
 
 
 def _reinforcement_boost(row: dict[str, Any]) -> float:
     reinforcement = max(1, int(row.get("reinforcement") or 1))
     return math.log1p(reinforcement - 1) * 0.001
+
+
+def _record_sort_key(record: MemoryRecord) -> tuple[float, float, str]:
+    boost = float(record.signals.get("reinforcement_boost", 0.0) or 0.0)
+    return (-record.score, -boost, record.id)
 
 
 def _trace_record(record: MemoryRecord, *, rank: int) -> dict[str, Any]:
@@ -809,3 +816,17 @@ def _source_ref_message_ids(source_ref: str) -> list[str]:
         return [str(item).strip() for item in loaded if str(item).strip()]
     text = str(loaded).strip()
     return [text] if text else []
+
+
+def _normalize_timestamp(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    return _normalize_datetime(datetime.fromisoformat(text))
+
+
+def _normalize_datetime(value: datetime) -> str:
+    normalized = value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo else value.replace(tzinfo=None)
+    return normalized.replace(microsecond=0).isoformat()

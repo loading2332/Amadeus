@@ -170,6 +170,40 @@ def test_vector_memory_query_respects_happened_at_window(tmp_path):
     }
 
 
+def test_vector_memory_normalizes_aware_happened_at_to_utc_naive(tmp_path):
+    store = VectorMemoryStore(tmp_path / "vector_memory.db")
+    engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
+
+    asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="[2026-06-20 09:00] 用户完成 Phase 2 smoke。",
+                kind="event",
+                source_ref='["chat:1:1"]#h:late',
+                happened_at="2026-06-20T09:00:00+08:00",
+            )
+        )
+    )
+
+    active = store.list_active()
+    result = asyncio.run(
+        engine.query(
+            MemoryQuery(
+                text="Phase 2",
+                time_start=datetime.fromisoformat("2026-06-20T00:30:00+00:00"),
+                time_end=datetime.fromisoformat("2026-06-20T01:30:00+00:00"),
+            )
+        )
+    )
+
+    assert active[0]["happened_at"] == "2026-06-20T01:00:00"
+    assert result.trace["time_filters"] == {
+        "start": "2026-06-20T00:30:00",
+        "end": "2026-06-20T01:30:00",
+    }
+    assert [record.source_ref for record in result.records] == ['["chat:1:1"]#h:late']
+
+
 def test_vector_memory_reinforcement_breaks_same_lane_ties(tmp_path):
     store = VectorMemoryStore(tmp_path / "vector_memory.db")
     engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
@@ -449,6 +483,42 @@ def test_rank_rows_rrf_double_lane_wins(tmp_path):
     assert result[1].id == "1", "仅向量高分排第二"
     assert result[2].id == "2", "仅关键词排最后"
     assert result[0].signals["lanes"] == ["vector", "lexical"]
+
+
+def test_rank_rows_reinforcement_does_not_outrank_stronger_dual_lane_match():
+    rows = [
+        {
+            "id": "single", "kind": "event",
+            "summary": "用户喜欢讨论各种游戏机制",
+            "embedding": [0.9, 0.0, 0.0],
+            "source_ref": "",
+            "happened_at": None, "extra_json": "{}", "status": "active",
+            "reinforcement": 1_000_000_000,
+        },
+        {
+            "id": "keyword", "kind": "event",
+            "summary": "仁王是一款硬核动作游戏",
+            "embedding": [0.0, 0.9, 0.0],
+            "source_ref": "",
+            "happened_at": None, "extra_json": "{}", "status": "active",
+            "reinforcement": 1,
+        },
+        {
+            "id": "dual", "kind": "preference",
+            "summary": "仁王游戏的难度设计和boss机制",
+            "embedding": [0.6, 0.5, 0.0],
+            "source_ref": "",
+            "happened_at": None, "extra_json": "{}", "status": "active",
+            "reinforcement": 1,
+        },
+    ]
+
+    result = _rank_rows(rows, [1.0, 0.0, 0.0], "仁王 hardcore", limit=3, threshold=0.3)
+
+    assert result[0].id == "dual"
+    assert result[0].signals["rrf_score"] > result[1].signals["rrf_score"]
+    assert result[1].id == "single"
+    assert result[1].signals["reinforcement"] == 1_000_000_000
 
 
 def test_rrf_equal_scores_use_stable_id_tiebreak():

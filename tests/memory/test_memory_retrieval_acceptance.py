@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 
 from amadeus.memory.engine import MemoryIngestRequest
 from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
@@ -123,3 +124,48 @@ def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_pat
     assert recalled.output["citation_format"] == "§cited:[id1,id2,...]§"
     assert recalled.output["cited_item_ids"] == [memory_id]
     assert "actually used" in recalled.output["citation_rule"]
+
+
+def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
+    engine = VectorMemoryEngine(
+        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
+        embedding_provider=StableEmbeddingProvider(),
+    )
+    asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="[2026-06-01 09:00] 用户开始实现 Phase 2。",
+                kind="event",
+                source_ref='["chat:1:0"]#h:early',
+                happened_at="2026-06-01T09:00:00+08:00",
+            )
+        )
+    )
+    asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="[2026-06-20 09:00] 用户完成 Phase 2 smoke。",
+                kind="event",
+                source_ref='["chat:1:1"]#h:late',
+                happened_at="2026-06-20T09:00:00+08:00",
+            )
+        )
+    )
+
+    recalled = asyncio.run(
+        RecallMemoryTool(memory_engine=engine).execute(
+            query="Phase 2",
+            time_start="2026-06-20T00:30:00+00:00",
+            time_end=datetime.fromisoformat("2026-06-20T01:30:00+00:00"),
+        )
+    )
+
+    assert recalled.output["count"] == 1
+    assert recalled.output["items"][0]["source_ref"] == '["chat:1:1"]#h:late'
+    assert recalled.output["trace"]["time_filters"] == {
+        "start": "2026-06-20T00:30:00",
+        "end": "2026-06-20T01:30:00",
+    }
+    assert recalled.output["trace"]["records"][0]["id"] == recalled.output["items"][0]["id"]
+    assert recalled.output["trace"]["records"][0]["signals"]["lanes"] == ["vector", "lexical"]
+    assert recalled.output["trace"]["records"][0]["signals"]["vector_score"] > 0
