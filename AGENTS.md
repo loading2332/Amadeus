@@ -85,3 +85,17 @@ When reporting verification, say what was tested, what passed, what was not cove
 - Stage and commit only the files required by the current request.
 - Keep runtime/test changes out of documentation-only commits.
 - Clean temporary generated files when they were created only for planning or inspection.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked as local markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default triage vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo unless `CONTEXT-MAP.md` is added later. See `docs/agents/domain.md`.

@@ -1,23 +1,6 @@
 """Amadeus runtime context and prompt assembly package."""
 
-from amadeus.after_reasoning import (
-    AfterReasoningFrame,
-    AfterReasoningInput,
-    AfterReasoningResult,
-    default_after_reasoning_modules,
-)
-from amadeus.after_turn import (
-    AfterTurnFrame,
-    AfterTurnInput,
-    default_after_turn_modules,
-)
-from amadeus.before_reasoning import (
-    BeforeReasoningFrame,
-    BeforeReasoningInput,
-    default_before_reasoning_modules,
-)
-from amadeus.before_turn import BeforeTurnFrame, BeforeTurnInput
-from amadeus.bootstrap import (
+from amadeus.app.bootstrap import (
     AppState,
     PassiveApp,
     RuntimeConfig,
@@ -25,6 +8,7 @@ from amadeus.bootstrap import (
     default_workspace_root,
     load_runtime_config,
 )
+from amadeus.app.workspace import DEFAULT_SELF_MD, initialize_workspace
 from amadeus.context import (
     ContextBuilder,
     ContextFrameResult,
@@ -37,16 +21,6 @@ from amadeus.context import (
     SystemPromptResult,
 )
 from amadeus.events import EventBus, TurnCommitted
-from amadeus.lifecycle import (
-    AfterReasoningContext,
-    AfterStepContext,
-    AfterTurnContext,
-    BeforeReasoningContext,
-    BeforeStepContext,
-    BeforeTurnContext,
-    PromptRenderContext,
-    TurnLifecycle,
-)
 from amadeus.memory import (
     ConsolidateRequest,
     ConsolidateResult,
@@ -58,7 +32,7 @@ from amadeus.memory import (
     RefreshRecentTurnsRequest,
     build_markdown_memory_runtime,
 )
-from amadeus.memory_engine import (
+from amadeus.memory.engine import (
     EvidenceRef,
     MemoryEngine,
     MemoryIngestRequest,
@@ -68,13 +42,6 @@ from amadeus.memory_engine import (
     MemoryQuery,
     MemoryQueryResult,
     MemoryRecord,
-)
-from amadeus.phase import (
-    Phase,
-    PhaseFrame,
-    PhaseModule,
-    inspect_phase,
-    topo_sort_modules,
 )
 from amadeus.prompt_block import (
     ActiveSkillsPromptBlock,
@@ -111,15 +78,42 @@ from amadeus.provider import (
     LLMToolCall,
 )
 from amadeus.response_parser import ParsedResponse, ResponseMetadata, parse_response
-from amadeus.runtime import PassiveRuntime, PassiveTurnResult
-from amadeus.session import (
-    Session,
-    SessionManager,
-    SessionStore,
-    fetch_messages,
-    search_messages,
+from amadeus.runtime.after_reasoning import (
+    AfterReasoningFrame,
+    AfterReasoningInput,
+    AfterReasoningResult,
+    default_after_reasoning_modules,
 )
-from amadeus.step_phases import (
+from amadeus.runtime.after_turn import (
+    AfterTurnFrame,
+    AfterTurnInput,
+    default_after_turn_modules,
+)
+from amadeus.runtime.before_reasoning import (
+    BeforeReasoningFrame,
+    BeforeReasoningInput,
+    default_before_reasoning_modules,
+)
+from amadeus.runtime.before_turn import BeforeTurnFrame, BeforeTurnInput
+from amadeus.runtime.lifecycle import (
+    AfterReasoningContext,
+    AfterStepContext,
+    AfterTurnContext,
+    BeforeReasoningContext,
+    BeforeStepContext,
+    BeforeTurnContext,
+    PromptRenderContext,
+    TurnLifecycle,
+)
+from amadeus.runtime.passive import PassiveRuntime, PassiveTurnResult
+from amadeus.runtime.phase import (
+    Phase,
+    PhaseFrame,
+    PhaseModule,
+    inspect_phase,
+    topo_sort_modules,
+)
+from amadeus.runtime.step_phases import (
     AfterStepFrame,
     AfterStepInput,
     BeforeStepFrame,
@@ -127,8 +121,14 @@ from amadeus.step_phases import (
     default_after_step_modules,
     default_before_step_modules,
 )
+from amadeus.session.store import (
+    Session,
+    SessionManager,
+    SessionStore,
+    fetch_messages,
+    search_messages,
+)
 from amadeus.tools import Tool, ToolExecutionRequest, ToolHook, ToolResult, ToolTrace
-from amadeus.workspace import DEFAULT_SELF_MD, initialize_workspace
 
 __all__ = [
     "ActiveSkillsPromptBlock",

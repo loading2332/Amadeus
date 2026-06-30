@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 from typing import TypeAlias, cast
 
 from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
-from amadeus.lifecycle import PromptRenderContext, TurnLifecycle
-from amadeus.phase import PhaseFrame, PhaseModule, topo_sort_modules
 from amadeus.prompting import PromptSectionRender
+from amadeus.runtime.lifecycle import PromptRenderContext, TurnLifecycle
+from amadeus.runtime.phase import PhaseFrame, PhaseModule, topo_sort_modules
 
 
 @dataclass(frozen=True)

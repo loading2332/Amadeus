@@ -6,8 +6,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from amadeus.app.workspace import initialize_workspace
 from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
-from amadeus.workspace import initialize_workspace
 
 from dev_utils.openai_provider import (
     OpenAICompatibleProvider,

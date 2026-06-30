@@ -1,93 +1,103 @@
-# Interview delivery roadmap
+# 面试交付路线图
 
-This roadmap keeps the resume goal but preserves architecture order. Do not implement upper-layer claims before their lower-layer contracts are verifiable.
+这份路线图的目标是：保留简历项目的交付速度，但不破坏架构顺序。不能在底层契约还没有验证之前，提前实现上层的简历亮点。
 
-## Phase 0: execution protocol
+## 阶段 0：执行协议切换
 
-- Replace the old teaching-oriented workspace instructions with interview delivery mode.
-- Keep Akashic as read-only reference.
-- Maintain this roadmap and `resume-claim-gap-audit.md` as the active planning source.
+- 把旧的教学型工作区提示词切换成面试交付模式。
+- 保留 Akashic 作为只读参考实现。
+- 把本路线图和 `resume-claim-gap-audit.md` 作为当前主动规划来源。
 
-Acceptance:
+验收标准：
 
-- Root prompts no longer default to course artifacts.
-- New tasks can be mapped to a resume claim and a verification path.
+- 根目录提示词不再默认生成课程产物。
+- 新任务都能映射到一条简历亮点和一条验证路径。
 
-## Phase 1: passive runtime confirmation
+## 阶段 1：Akashic-style passive agent runtime ✅
 
-- Run a real or fake-provider smoke through `PassiveRuntime`.
-- Capture prompt sections, context frame, tool schemas, session commit, and memory maintenance behavior.
-- Add or update one smoke case that proves the passive chain end to end.
+Phase 1 实现了一个可面试展示的被动 agent runtime，包括：
 
-Acceptance:
+| Issue | 交付物 | 验证 |
+|-------|--------|------|
+| 01 | Reasoner 独立边界：提取 provider/tool-loop 到 Reasoner，PassiveRuntime 保持 lifecycle orchestration | 300+ 测试，13 个 Reasoner 专用测试 |
+| 02 | 文件工具集：read_file（offset/limit）、write_file、edit_file（exact-match+diff）、list_dir | 22 个文件工具测试 |
+| 03 | Runtime filesystem hook policy：read/list 全 workspace、write/edit 仅 artifacts/ 子目录 | 双层防御验证 |
+| 04 | 把多步 tool loop 完整移入 Reasoner，before_step/after_step 生命周期由 Reasoner 执行 | 多步工具链测试 |
+| 05 | Tool loop guard：重复 tool signature 检测、max iteration guard、stop reason 记录 | 重复检测和上限测试 |
+| 06 | CLI trace 模式：显示 session key、message IDs、tool chain、provider model/usage、sessions DB path | CLI trace formatting 测试 |
+| 07 | 面试文档更新：resume-claim-gap-audit 和 roadmap 反映 Phase 1 完成状态 | 文档可读审查 |
 
-- The user can explain input -> context -> provider/tool loop -> commit -> memory event.
-- A command or test proves the flow still works.
+验收标准：
 
-## Phase 2: memory hardening
+- 能讲清楚 `输入 -> context -> Reasoner.reason() -> tool loop -> commit -> memory event`。
+- 能展示文件工具 write -> read -> edit 的文件操作 trace。
+- 有一条命令或测试证明端到端链路工作。
+- 能解释 Reasoner 与 PassiveRuntime 的边界划分理由。
 
-- Standardize retrieval trace fields.
-- Make reinforcement influence ranking or injection selection.
-- Add time decay only if it can be tested deterministically.
-- Keep source_ref fetch and forget/supersede behavior as non-negotiable contracts.
+## 阶段 2：补强记忆系统
 
-Acceptance:
+- 统一 retrieval trace 字段。
+- 让 reinforcement 真正影响排序或注入选择。
+- 只有在能确定性测试时，才加入 time decay。
+- `source_ref` fetch 和 forget/supersede 是不能退让的核心契约。
 
-- Memory eval cases prove recall, source_ref fetch, correction, forgetting, fallback, and context-frame injection.
-- Resume wording avoids unsupported claims like sqlite-vec or emotional_weight until implemented.
+验收标准：
 
-## Phase 3: Evaluation product slice
+- memory eval 覆盖 recall、source_ref fetch、correction、forgetting、fallback、context-frame injection。
+- 简历措辞不能写尚未实现的 sqlite-vec、emotional_weight 等具体能力。
 
-- Add an eval case schema and runner.
-- Produce a human-readable report and machine-readable JSON result.
-- Cover memory, retrieval, context isolation, tool loop, and proactive decisions.
-- Use deterministic fakes for regression and optional real LLM smoke for integration.
+## 阶段 3：产品化 Evaluation
 
-Acceptance:
+- 增加 eval case schema 和 runner。
+- 输出人类可读报告和机器可读 JSON 结果。
+- 覆盖 memory、retrieval、context isolation、tool loop、proactive decisions。
+- 回归测试使用确定性 fake；集成验证可以额外使用真实 LLM smoke。
 
-- Evaluation can be run independently from ordinary unit tests.
-- Failures explain which public behavior regressed.
+验收标准：
 
-## Phase 4: Telegram outbound
+- Evaluation 能独立于普通单元测试运行。
+- 失败报告能说明哪一个公开行为退化了，而不只是某个私有 helper 失败。
 
-- Define an `OutboundPort` boundary before any Telegram adapter.
-- Add Telegram adapter with dry-run mode and real-send mode.
-- Add a `message_push` style tool or runtime service that uses the outbound boundary.
+## 阶段 4：Telegram Outbound
 
-Acceptance:
+- 在 Telegram adapter 之前先定义 `OutboundPort` 边界。
+- 增加 Telegram adapter，支持 dry-run mode 和 real-send mode。
+- 增加一个类似 `message_push` 的工具或 runtime service，统一走 outbound 边界。
 
-- A smoke proves a message can be prepared in dry-run mode.
-- Real-send verification is available when credentials are configured.
-- Core runtime does not import Telegram-specific implementation details.
+验收标准：
 
-## Phase 5: scheduler
+- dry-run smoke 能证明消息可以被准备和记录。
+- 配置凭据后可以做真实发送验证。
+- 核心 runtime 不直接 import Telegram 具体实现。
 
-- Add scheduled job model, JSON or SQLite store, fire-at parser, and tick execution.
-- Keep instant jobs separate from soft jobs that need an agent/runtime entry.
-- Use outbound dry-run first, then Telegram when configured.
+## 阶段 5：Scheduler
 
-Acceptance:
+- 增加 scheduled job model、JSON 或 SQLite store、fire-at parser、tick execution。
+- 区分 instant jobs 和需要进入 agent/runtime 的 soft jobs。
+- 先走 outbound dry-run，再在配置完整时接 Telegram。
 
-- Eval or smoke proves after/at/every behavior, cancellation, recovery, and no duplicate in-flight execution.
+验收标准：
 
-## Phase 6: ProactiveLoop
+- eval 或 smoke 覆盖 after/at/every、cancel、recovery、避免重复 in-flight execution。
 
-- Implement the minimum real pipeline: gate, DataGateway, LLM judge, resolve, outbound, ACK or dry-run trace.
-- Use local fixture sources first: alert, content, and context.
-- Integrate memory/context only through existing boundaries.
+## 阶段 6：ProactiveLoop
 
-Acceptance:
+- 实现真实 pipeline：gate、DataGateway、LLM judge、resolve、outbound、ACK 或 dry-run trace。
+- 第一版先使用本地 fixture sources：alert、content、context。
+- memory/context 只能通过已有边界接入，不能直接读底层存储。
 
-- Proactive eval proves send, skip, duplicate suppression, no-content skip, and source-bound message evidence.
-- Telegram outbound can be used without coupling ProactiveLoop to Telegram internals.
+验收标准：
 
-## Phase 7: DriftRunner
+- proactive eval 覆盖 send、skip、duplicate suppression、no-content skip、source-bound message evidence。
+- Telegram outbound 可以被使用，但 ProactiveLoop 不耦合 Telegram 内部实现。
 
-- Add only a minimal useful task runner after ProactiveLoop is stable.
-- Start with one maintenance task such as memory audit or proactive rule review.
-- Require explicit finish state and trace.
+## 阶段 7：DriftRunner
 
-Acceptance:
+- 只在 ProactiveLoop 稳定之后增加可用 task runner。
+- 第一版只做一个有价值的维护任务，例如 memory audit 或 proactive rule review。
+- 必须有明确 finish state 和 trace。
 
-- Drift can run silently or produce one outbound summary through the outbound boundary.
-- If not implemented, keep resume wording as planned or future work.
+验收标准：
+
+- Drift 可以静默运行，或通过 outbound 边界产出一条 summary。
+- 如果暂未实现，简历措辞必须保持为计划中或未来工作，不能写成已完成能力。

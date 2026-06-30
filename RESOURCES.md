@@ -30,13 +30,13 @@ This file is the active resource index for interview delivery. Akashic remains t
 
 ## Amadeus current code anchors
 
-- `amadeus/runtime.py`
+- `amadeus/runtime/passive.py`
   PassiveRuntime, phase execution, prompt render, provider call, tool loop, commit, and after-turn hook.
 
-- `amadeus/bootstrap.py`
+- `amadeus/app/bootstrap.py`
   App composition, real provider config, vector memory setup, tool registry, plugin manager, and lifecycle start/close.
 
-- `amadeus/memory.py` and `amadeus/vector_memory.py`
+- `amadeus/memory/markdown.py` and `amadeus/memory/vector.py`
   Markdown memory, optimizer, vector store, retrieval, RRF, source_ref evidence, and forgetting.
 
 - `amadeus/context.py` and `amadeus/prompting/assembler.py`

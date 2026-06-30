@@ -7,3 +7,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 kurisu.md
+sessions.db
+.smoke-workspace/
+memory/*.db
+memory/*.md

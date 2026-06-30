@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from amadeus.memory_engine import MemoryEngine, MemoryQuery
+from amadeus.memory.engine import MemoryEngine, MemoryQuery
 from amadeus.tools.base import ToolResult
 
 ToolParameters = dict[str, Any]
