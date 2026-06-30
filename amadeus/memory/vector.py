@@ -221,7 +221,13 @@ class VectorMemoryStore:
             self._conn.commit()
         return item_id, "new"
 
-    def list_active(self, *, kinds: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    def list_active(
+        self,
+        *,
+        kinds: tuple[str, ...] = (),
+        time_start: datetime | None = None,
+        time_end: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         clauses = ["status = 'active'"]
         params: list[Any] = []
         clean_kinds = tuple(kind.strip() for kind in kinds if kind.strip())
@@ -229,6 +235,14 @@ class VectorMemoryStore:
             placeholders = ",".join("?" for _ in clean_kinds)
             clauses.append(f"kind IN ({placeholders})")
             params.extend(clean_kinds)
+        if time_start is not None:
+            clauses.append("happened_at IS NOT NULL")
+            clauses.append("datetime(happened_at) >= datetime(?)")
+            params.append(time_start.isoformat())
+        if time_end is not None:
+            clauses.append("happened_at IS NOT NULL")
+            clauses.append("datetime(happened_at) <= datetime(?)")
+            params.append(time_end.isoformat())
         with self._lock:
             rows = self._conn.execute(
                 f"""
@@ -332,7 +346,11 @@ class VectorMemoryEngine:
         queries = _dedupe_texts(queries)
 
         kinds = query.kinds or plan.kinds
-        rows = self.store.list_active(kinds=kinds)
+        rows = self.store.list_active(
+            kinds=kinds,
+            time_start=query.time_start,
+            time_end=query.time_end,
+        )
         limit = query.limit if query.limit > 0 else self.top_k
         result_sets: list[list[MemoryRecord]] = []
         lane_counts: dict[str, dict[str, int]] = {}
@@ -363,10 +381,15 @@ class VectorMemoryEngine:
         trace: dict[str, Any] = {
             "intent": query.intent,
             "queries": queries,
+            "time_filters": {
+                "start": query.time_start.isoformat() if query.time_start else None,
+                "end": query.time_end.isoformat() if query.time_end else None,
+            },
             "candidate_count": len(rows),
             "lane_counts": lane_counts,
             "fused_count": sum(len(items) for items in result_sets),
             "record_count": len(records),
+            "records": [_trace_record(record, rank=index) for index, record in enumerate(records)],
             "fallbacks": _dedupe_texts(fallbacks),
             "errors": errors,
         }
@@ -495,8 +518,13 @@ def _rank_rows(
         if keyword_score > 0:
             keyword_scored.append((row_id, keyword_score))
 
-    # 2. RRF 融合
-    top_ids = _rrf_merge(vector_scored, keyword_scored, top_n=max(1, int(limit)))
+    # 2. RRF 融合，reinforcement 参与同 lane 同分时的稳定排序。
+    top_ids = _rrf_merge(
+        vector_scored,
+        keyword_scored,
+        row_map=row_map,
+        top_n=max(1, int(limit)),
+    )
 
     # 3. 保留两路原始信号，避免 RRF 后丢失“双路命中”证据。
     vec_scores = dict(vector_scored)
@@ -508,7 +536,7 @@ def _rank_rows(
             id=item_id,
             kind=str(row_map[item_id]["kind"]),
             summary=str(row_map[item_id]["summary"]),
-            score=rrf_score,
+            score=rrf_score + reinforcement_boost,
             source_ref=str(row_map[item_id]["source_ref"]),
             evidence=_evidence_from_source_ref(str(row_map[item_id]["source_ref"])),
             signals={
@@ -523,10 +551,12 @@ def _rank_rows(
                 "vector_score": vec_scores.get(item_id, 0.0),
                 "lexical_score": kw_scores.get(item_id, 0.0),
                 "rrf_score": rrf_score,
+                "reinforcement": int(row_map[item_id].get("reinforcement") or 1),
+                "reinforcement_boost": reinforcement_boost,
                 "extra": dict(row_map[item_id].get("extra") or {}),
             },
         )
-        for item_id, rrf_score in top_ids
+        for item_id, rrf_score, reinforcement_boost in top_ids
         if item_id in row_map
     ]
 
@@ -588,39 +618,55 @@ def _rrf_merge(
     vector_scored: list[tuple[str, float]],
     keyword_scored: list[tuple[str, float]],
     *,
+    row_map: dict[str, dict[str, Any]] | None = None,
     top_n: int,
-) -> list[tuple[str, float]]:
+) -> list[tuple[str, float, float]]:
     """Reciprocal Rank Fusion: \u878d\u5408\u4e24\u8def\u6392\u540d\uff0c\u8fd4\u56de top_n \u7684 (id, rrf_score)\u3002"""
     if top_n <= 0 or (not vector_scored and not keyword_scored):
         return []
 
     # 1. \u6309 score \u964d\u5e8f\u7f16\u53f7 \u2192 rank
+    metadata = row_map or {}
     vec_rank: dict[str, int] = {
         item_id: idx + 1
         for idx, (item_id, _) in enumerate(
-            sorted(vector_scored, key=lambda item: (-item[1], item[0]))
+            sorted(
+                vector_scored,
+                key=lambda item: (
+                    -item[1],
+                    -int(metadata.get(item[0], {}).get("reinforcement") or 1),
+                    item[0],
+                ),
+            )
         )
     }
     kw_rank: dict[str, int] = {
         item_id: idx + 1
         for idx, (item_id, _) in enumerate(
-            sorted(keyword_scored, key=lambda item: (-item[1], item[0]))
+            sorted(
+                keyword_scored,
+                key=lambda item: (
+                    -item[1],
+                    -int(metadata.get(item[0], {}).get("reinforcement") or 1),
+                    item[0],
+                ),
+            )
         )
     }
 
     # 2. \u5e76\u96c6 \u2192 RRF \u5206\u6570
     all_ids = sorted(set(vec_rank) | set(kw_rank))
-    scored: list[tuple[str, float]] = []
+    scored: list[tuple[str, float, float]] = []
     for item_id in all_ids:
         rrf = 0.0
         if item_id in vec_rank:
             rrf += 1.0 / (_RRF_K + vec_rank[item_id])
         if item_id in kw_rank:
             rrf += _KEYWORD_RRF_WEIGHT / (_RRF_K + kw_rank[item_id])
-        scored.append((item_id, rrf))
+        scored.append((item_id, rrf, _reinforcement_boost(metadata.get(item_id, {}))))
 
     # 3. \u53d6 top_n
-    scored.sort(key=lambda item: (-item[1], item[0]))
+    scored.sort(key=lambda item: (-(item[1] + item[2]), -item[2], item[0]))
     return scored[:top_n]
 
 
@@ -711,6 +757,22 @@ def _max_pool_records(
             )
         )
     return sorted(merged, key=lambda record: (-record.score, record.id))[: max(0, limit)]
+
+
+def _reinforcement_boost(row: dict[str, Any]) -> float:
+    reinforcement = max(1, int(row.get("reinforcement") or 1))
+    return math.log1p(reinforcement - 1) * 0.001
+
+
+def _trace_record(record: MemoryRecord, *, rank: int) -> dict[str, Any]:
+    return {
+        "rank": rank,
+        "id": record.id,
+        "kind": record.kind,
+        "score": record.score,
+        "source_ref": record.source_ref,
+        "signals": dict(record.signals),
+    }
 
 
 def _format_context_record(record: MemoryRecord) -> str:

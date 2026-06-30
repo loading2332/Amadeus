@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
 
 from amadeus.memory import (
@@ -126,6 +127,71 @@ def test_vector_memory_keyword_fallback_finds_literal_match(tmp_path):
 
     assert found.records
     assert found.records[0].signals["lanes"] == ["lexical"]
+
+
+def test_vector_memory_query_respects_happened_at_window(tmp_path):
+    store = VectorMemoryStore(tmp_path / "vector_memory.db")
+    engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
+    asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="[2026-06-01 09:00] 用户开始实现 Phase 2。",
+                kind="event",
+                source_ref='["chat:1:0"]#h:early',
+                happened_at="2026-06-01T09:00:00",
+            )
+        )
+    )
+    asyncio.run(
+        engine.ingest(
+            MemoryIngestRequest(
+                summary="[2026-06-20 09:00] 用户完成 Phase 2 smoke。",
+                kind="event",
+                source_ref='["chat:1:1"]#h:late',
+                happened_at="2026-06-20T09:00:00",
+            )
+        )
+    )
+
+    result = asyncio.run(
+        engine.query(
+            MemoryQuery(
+                text="Phase 2",
+                time_start=datetime.fromisoformat("2026-06-10T00:00:00"),
+                time_end=datetime.fromisoformat("2026-06-30T00:00:00"),
+            )
+        )
+    )
+
+    assert [record.source_ref for record in result.records] == ['["chat:1:1"]#h:late']
+    assert result.trace["time_filters"] == {
+        "start": "2026-06-10T00:00:00",
+        "end": "2026-06-30T00:00:00",
+    }
+
+
+def test_vector_memory_reinforcement_breaks_same_lane_ties(tmp_path):
+    store = VectorMemoryStore(tmp_path / "vector_memory.db")
+    engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
+
+    first = MemoryIngestRequest(
+        summary="用户偏好中文输出",
+        kind="preference",
+        source_ref='["chat:1:0"]#h:pref1',
+    )
+    second = MemoryIngestRequest(
+        summary="用户偏好中文输出",
+        kind="preference",
+        source_ref='["chat:1:1"]#h:pref2',
+    )
+
+    asyncio.run(engine.ingest(first))
+    asyncio.run(engine.ingest(second))
+    result = asyncio.run(engine.query(MemoryQuery(text="中文输出", kinds=("preference",))))
+
+    assert result.records[0].signals["reinforcement"] >= 2
+    assert "reinforcement_boost" in result.records[0].signals
+    assert result.trace["records"][0]["id"] == result.records[0].id
 
 
 def test_vector_memory_context_block_renders_source_refs(tmp_path):
@@ -290,8 +356,10 @@ def test_rrf_single_lane_only():
     """只有一路有结果时，正常返回该路 top_n。"""
     result = _rrf_merge([("a", 0.9), ("b", 0.8)], [], top_n=3)
     assert len(result) == 2
-    assert result[0] == ("a", 1.0 / 61)
-    assert result[1] == ("b", 1.0 / 62)
+    assert result[0][:2] == ("a", 1.0 / 61)
+    assert result[1][:2] == ("b", 1.0 / 62)
+    assert result[0][2] == 0.0
+    assert result[1][2] == 0.0
 
 
 def test_rrf_empty_input_returns_empty():
@@ -363,7 +431,7 @@ def test_rank_rows_rrf_double_lane_wins(tmp_path):
 
 
 def test_rrf_equal_scores_use_stable_id_tiebreak():
-    expected = [("a", 1.0 / 61), ("b", 1.0 / 62)]
+    expected = [("a", 1.0 / 61, 0.0), ("b", 1.0 / 62, 0.0)]
     for _ in range(10):
         assert _rrf_merge([("b", 0.5), ("a", 0.5)], [], top_n=2) == expected
 
