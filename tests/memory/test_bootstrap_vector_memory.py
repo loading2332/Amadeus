@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
+from dataclasses import MISSING
 
 import pytest
 from amadeus.app.bootstrap import load_runtime_config
@@ -55,24 +56,29 @@ def test_memory_runtime_config_can_target_memory2_db(tmp_path, monkeypatch):
 
 def test_memory_protocol_dataclasses_match_task1_plan_shape():
     assert [field.name for field in fields(MemoryScope)] == ["channel", "chat_id"]
+    assert MemoryScope().channel is None
+    assert MemoryScope().chat_id is None
     assert [field.name for field in fields(MemoryRecallRequest)] == [
         "text",
         "intent",
+        "memory_types",
         "limit",
         "time_start",
         "time_end",
         "scope",
-        "memory_types",
         "context",
     ]
     assert [field.name for field in fields(MemoryWriteRequest)] == [
         "summary",
+        "memory_type",
         "source_ref",
         "happened_at",
         "scope",
-        "memory_type",
         "extra",
     ]
+    write_fields = fields(MemoryWriteRequest)
+    assert write_fields[1].default is MISSING
+    assert write_fields[2].default is MISSING
     assert [field.name for field in fields(MemoryContextResult)] == [
         "text",
         "injected_ids",

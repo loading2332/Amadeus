@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from typing import get_type_hints
 
 import pytest
 from amadeus.app.bootstrap import AppState, build_passive_app, load_runtime_config
-from amadeus.memory.engine import MemoryEngine
+from amadeus.memory.engine import MemoryEngine, MemoryRecallRequest
 from amadeus.plugin import Plugin, plugin_registry
 from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatCompletionsClient, ChatNamespace
@@ -250,6 +251,9 @@ def test_memory_engine_protocol_exposes_task1_plan_methods():
         "self",
         "request",
     ]
+    assert (
+        get_type_hints(MemoryEngine.build_context)["request"] is MemoryRecallRequest
+    )
     assert list(inspect.signature(MemoryEngine.run_post_response).parameters) == [
         "self",
         "session_key",

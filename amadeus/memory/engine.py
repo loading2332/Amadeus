@@ -7,8 +7,8 @@ from typing import Any, Protocol
 
 @dataclass(frozen=True)
 class MemoryScope:
-    channel: str = ""
-    chat_id: str = ""
+    channel: str | None = None
+    chat_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,11 +35,11 @@ class MemoryRecord:
 class MemoryRecallRequest:
     text: str
     intent: str = "answer"
+    memory_types: tuple[str, ...] = ()
     limit: int = 8
     time_start: datetime | None = None
     time_end: datetime | None = None
     scope: MemoryScope = field(default_factory=MemoryScope)
-    memory_types: tuple[str, ...] = ()
     context: dict[str, Any] = field(default_factory=dict)
 
 
@@ -71,10 +71,10 @@ class MemoryQueryResult:
 @dataclass(frozen=True)
 class MemoryWriteRequest:
     summary: str
-    source_ref: str = ""
+    memory_type: str
+    source_ref: str
     happened_at: str | None = None
     scope: MemoryScope = field(default_factory=MemoryScope)
-    memory_type: str = "event"
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -123,7 +123,7 @@ class MemoryEngine(Protocol):
 
     def undo_by_source(self, source_ref: str) -> MemoryMutationResult: ...
 
-    async def build_context(self, request: MemoryQueryResult) -> MemoryContextResult: ...
+    async def build_context(self, request: MemoryRecallRequest) -> MemoryContextResult: ...
 
     async def run_post_response(
         self,

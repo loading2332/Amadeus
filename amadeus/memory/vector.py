@@ -374,13 +374,14 @@ class VectorMemoryEngine:
             },
         )
 
-    async def build_context(self, request: MemoryQueryResult) -> MemoryContextResult:
-        text = self.render_context_block(request)
+    async def build_context(self, request: MemoryRecallRequest) -> MemoryContextResult:
+        result = await self.recall(request)
+        text = self.render_context_block(result)
         return MemoryContextResult(
             text=text,
-            injected_ids=list(request.trace.get("injected_ids", [])),
-            omitted_ids=list(request.trace.get("omitted_ids", [])),
-            trace=dict(request.trace),
+            injected_ids=list(result.trace.get("injected_ids", [])),
+            omitted_ids=list(result.trace.get("omitted_ids", [])),
+            trace=dict(result.trace),
         )
 
     async def run_post_response(
