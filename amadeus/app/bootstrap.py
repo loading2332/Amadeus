@@ -6,10 +6,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 from amadeus.app.workspace import initialize_workspace
 from amadeus.events import EventBus
-from amadeus.memory import MarkdownMemoryRuntime, build_markdown_memory_runtime
+from amadeus.memory import (
+    MarkdownMemoryRuntime,
+    MemoryEngine,
+    MemoryWriteRequest,
+    build_markdown_memory_runtime,
+)
 from amadeus.memory.vector import (
     LLMHypothesisProvider,
     OpenAIEmbeddingConfig,
@@ -30,7 +36,6 @@ from amadeus.tools.defaults import (
     SearchMessagesTool,
     WriteFileTool,
 )
-from amadeus.tools.correct_memory import CorrectMemoryTool
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.forget_memory import ForgetMemoryTool
 from amadeus.tools.recall_memory import RecallMemoryTool
@@ -48,6 +53,7 @@ class RuntimeConfig:
     default_session_key: str = "cli:default"
     memory_keep_count: int = 12
     vector_memory_enabled: bool = False
+    vector_memory_db_path: Path | None = None
     embedding_model: str | None = None
     vector_memory_top_k: int = 8
 
@@ -58,6 +64,116 @@ class AppState(str, Enum):  # noqa: UP042
     NEW = "new"
     STARTED = "started"
     CLOSED = "closed"
+
+
+@dataclass
+class MemorizeTool:
+    memory_engine: MemoryEngine | None
+    name: str = "memorize"
+    description: str = "将已核对的事实写入长期记忆。"
+    parameters: dict[str, Any] = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "kind": {"type": "string"},
+                "source_ref": {"type": "string"},
+                "happened_at": {"type": "string"},
+            },
+            "required": ["summary", "source_ref"],
+        }
+    )
+
+    async def execute(self, **kwargs: object):
+        from amadeus.tools.base import ToolResult
+
+        if self.memory_engine is None:
+            return ToolResult(
+                tool_name=self.name,
+                output={"error": "vector memory is not configured"},
+                is_error=True,
+            )
+
+        request = MemoryWriteRequest(
+            summary=str(kwargs.get("summary") or "").strip(),
+            kind=str(kwargs.get("kind") or "event").strip() or "event",
+            source_ref=str(kwargs.get("source_ref") or "").strip(),
+            happened_at=str(kwargs.get("happened_at") or "").strip() or None,
+        )
+        if not request.summary or not request.source_ref:
+            return ToolResult(
+                tool_name=self.name,
+                output={"error": "summary and source_ref are required"},
+                is_error=True,
+            )
+
+        if hasattr(self.memory_engine, "memorize"):
+            result = await self.memory_engine.memorize(request)
+        else:
+            result = await self.memory_engine.ingest(request)  # type: ignore[arg-type]
+        return ToolResult(
+            tool_name=self.name,
+            output={
+                "item_id": result.item_id,
+                "status": result.status,
+                "trace": dict(result.trace),
+            },
+            is_error=result.status not in {"created", "accepted"},
+        )
+
+
+@dataclass
+class UndoMemoryBySourceTool:
+    memory_engine: MemoryEngine | None
+    name: str = "undo_memory_by_source"
+    description: str = "按 source_ref 撤销对应长期记忆。"
+    parameters: dict[str, Any] = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {"source_ref": {"type": "string"}},
+            "required": ["source_ref"],
+        }
+    )
+
+    async def execute(self, **kwargs: object):
+        from amadeus.tools.base import ToolResult
+
+        if self.memory_engine is None:
+            return ToolResult(
+                tool_name=self.name,
+                output={"error": "vector memory is not configured"},
+                is_error=True,
+            )
+
+        source_ref = str(kwargs.get("source_ref") or "").strip()
+        if not source_ref:
+            return ToolResult(
+                tool_name=self.name,
+                output={"error": "source_ref is required"},
+                is_error=True,
+            )
+
+        if hasattr(self.memory_engine, "undo_by_source"):
+            result = await self.memory_engine.undo_by_source(source_ref)
+        else:
+            return ToolResult(
+                tool_name=self.name,
+                output={"error": "undo by source is not supported"},
+                is_error=True,
+            )
+
+        return ToolResult(
+            tool_name=self.name,
+            output={
+                "source_ref": source_ref,
+                "status": result.status,
+                "affected_ids": result.affected_ids,
+                "missing_ids": result.missing_ids,
+                "items": result.items,
+                "trace": dict(result.trace),
+            },
+            is_error=not result.accepted,
+        )
 
 
 @dataclass
@@ -199,7 +315,11 @@ def load_runtime_config(
     env_path: str | Path = ".env",
     workspace_root: str | Path | None = None,
 ) -> RuntimeConfig:
-    root = Path(workspace_root).resolve() if workspace_root is not None else default_workspace_root()
+    root = (
+        Path(workspace_root).resolve()
+        if workspace_root is not None
+        else default_workspace_root()
+    )
     file_values = _read_dotenv(Path(env_path))
     values = {
         "OPENAI_BASE_URL": _config_value("OPENAI_BASE_URL", file_values),
@@ -215,8 +335,11 @@ def load_runtime_config(
     keep_count = _int_config("AMADEUS_MEMORY_KEEP_COUNT", file_values, default=12)
     session_key = _config_value("AMADEUS_SESSION_KEY", file_values) or "cli:default"
     vector_memory_enabled = _bool_config("AMADEUS_VECTOR_MEMORY_ENABLED", file_values)
+    vector_memory_db_path = root / "memory" / "memory2.db"
     embedding_model = _config_value("OPENAI_EMBEDDING_MODEL", file_values)
-    vector_memory_top_k = _int_config("AMADEUS_VECTOR_MEMORY_TOP_K", file_values, default=8)
+    vector_memory_top_k = _int_config(
+        "AMADEUS_VECTOR_MEMORY_TOP_K", file_values, default=8
+    )
     if vector_memory_enabled and not embedding_model:
         raise ValueError("Missing Amadeus runtime config: OPENAI_EMBEDDING_MODEL")
     return RuntimeConfig(
@@ -231,6 +354,7 @@ def load_runtime_config(
         default_session_key=session_key,
         memory_keep_count=keep_count,
         vector_memory_enabled=vector_memory_enabled,
+        vector_memory_db_path=vector_memory_db_path,
         embedding_model=embedding_model,
         vector_memory_top_k=vector_memory_top_k,
     )
@@ -256,9 +380,13 @@ def build_passive_app(
     tool_registry.register(ListDirTool())
     tool_executor = ToolExecutor(registry=tool_registry)
     vector_memory = None
-    if config.vector_memory_enabled and config.embedding_model:
+    if (
+        config.vector_memory_enabled
+        and config.embedding_model
+        and config.vector_memory_db_path is not None
+    ):
         vector_memory = VectorMemoryEngine(
-            store=VectorMemoryStore(config.workspace_root / "memory" / "vector_memory.db"),
+            store=VectorMemoryStore(config.vector_memory_db_path),
             embedding_provider=OpenAIEmbeddingProvider(
                 OpenAIEmbeddingConfig(
                     api_key=config.provider.api_key,
@@ -280,8 +408,9 @@ def build_passive_app(
         vector_memory=vector_memory,
     )
     tool_registry.register(RecallMemoryTool(memory_engine=vector_memory))
-    tool_registry.register(CorrectMemoryTool(memory_engine=vector_memory))
+    tool_registry.register(MemorizeTool(memory_engine=vector_memory))
     tool_registry.register(ForgetMemoryTool(memory_engine=vector_memory))
+    tool_registry.register(UndoMemoryBySourceTool(memory_engine=vector_memory))
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
         provider=provider,

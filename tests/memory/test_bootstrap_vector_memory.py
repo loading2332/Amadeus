@@ -32,6 +32,19 @@ def test_vector_memory_config_can_be_enabled(tmp_path, monkeypatch):
     assert config.vector_memory_top_k == 5
 
 
+def test_memory_runtime_config_can_target_memory2_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setenv("OPENAI_MODEL", "chat-model")
+    monkeypatch.setenv("AMADEUS_VECTOR_MEMORY_ENABLED", "1")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+
+    config = load_runtime_config(workspace_root=tmp_path)
+
+    assert config.vector_memory_enabled is True
+    assert config.vector_memory_db_path == tmp_path / "memory" / "memory2.db"
+
+
 def test_vector_memory_enablement_requires_embedding_model(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "secret")

@@ -2,6 +2,7 @@
 
 from amadeus.memory.engine import (
     EvidenceRef,
+    MemoryContextResult,
     MemoryEngine,
     MemoryIngestRequest,
     MemoryIngestResult,
@@ -9,7 +10,10 @@ from amadeus.memory.engine import (
     MemoryMutationResult,
     MemoryQuery,
     MemoryQueryResult,
+    MemoryRecallRequest,
     MemoryRecord,
+    MemoryScope,
+    MemoryWriteRequest,
 )
 from amadeus.memory.markdown import (
     ConsolidateRequest,
@@ -44,6 +48,7 @@ __all__ = [
     "MarkdownMemoryMaintenance",
     "MarkdownMemoryRuntime",
     "MarkdownMemoryStore",
+    "MemoryContextResult",
     "MemoryEngine",
     "MemoryIngestRequest",
     "MemoryIngestResult",
@@ -53,7 +58,10 @@ __all__ = [
     "MemoryOptimizerBusy",
     "MemoryQuery",
     "MemoryQueryResult",
+    "MemoryRecallRequest",
     "MemoryRecord",
+    "MemoryScope",
+    "MemoryWriteRequest",
     "OpenAIEmbeddingConfig",
     "OpenAIEmbeddingProvider",
     "RefreshRecentTurnsRequest",

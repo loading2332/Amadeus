@@ -197,6 +197,24 @@ def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
     assert "[a-preview] assistant reply" in recent
 
 
+def test_build_passive_app_registers_memory_tools_without_correct_memory(tmp_path):
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=_env_path(tmp_path),
+        client=FakeClient(),
+    )
+
+    tool_names = set(app.tool_registry.names())
+
+    assert "recall_memory" in tool_names
+    assert "memorize" in tool_names
+    assert "forget_memory" in tool_names
+    assert "undo_memory_by_source" in tool_names
+    assert "correct_memory" not in tool_names
+
+    asyncio.run(app.aclose())
+
+
 def test_build_is_composition_only_and_defers_plugin_import(tmp_path):
     marker = tmp_path / "imported.txt"
     plugin_dir = tmp_path / "plugins" / "observable"
