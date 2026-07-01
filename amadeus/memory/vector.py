@@ -274,19 +274,47 @@ class VectorMemoryStore:
         found = {_row_to_item(row)["id"]: _row_to_item(row) for row in rows}
         return [found[item_id] for item_id in ids if item_id in found]
 
-    def mark_superseded_batch(self, ids: list[str]) -> None:
+    def get_item_by_id(self, item_id: str) -> dict[str, Any] | None:
+        rows = self.get_items_by_ids([item_id])
+        return rows[0] if rows else None
+
+    def mark_superseded_batch(
+        self,
+        ids: list[str],
+        *,
+        replacement_id: str | None = None,
+        reason: str = "forget",
+    ) -> None:
         if not ids:
             return
         now = datetime.now().astimezone().isoformat()
+        indexed = {item["id"]: item for item in self.get_items_by_ids(ids)}
+        payloads: list[tuple[str, str, str]] = []
+        for item_id in ids:
+            item = indexed.get(item_id)
+            if item is None:
+                continue
+            extra = dict(item.get("extra") or {})
+            extra.update(
+                {
+                    "superseded_reason": reason,
+                    "replacement_id": replacement_id,
+                    "superseded_at": now,
+                }
+            )
+            payloads.append((now, json.dumps(extra, ensure_ascii=False), item_id))
+        if not payloads:
+            return
         with self._lock:
             self._conn.executemany(
                 """
                 UPDATE memory_items
                 SET status = 'superseded',
-                    updated_at = ?
+                    updated_at = ?,
+                    extra_json = ?
                 WHERE id = ?
                 """,
-                [(now, item_id) for item_id in ids],
+                payloads,
             )
             self._conn.commit()
 
@@ -398,14 +426,16 @@ class VectorMemoryEngine:
         return MemoryQueryResult(records=records, trace=trace)
 
     async def mutate(self, request: MemoryMutation) -> MemoryMutationResult:
-        if request.kind != "forget":
-            return MemoryMutationResult(
-                accepted=False,
-                status="unsupported",
-                missing_ids=list(request.ids),
-                trace={"reason": "unsupported_mutation", "kind": request.kind},
-            )
-        return self.forget(list(request.ids))
+        if request.kind == "forget":
+            return self.forget(list(request.ids))
+        if request.kind == "correct":
+            return await self._correct(request)
+        return MemoryMutationResult(
+            accepted=False,
+            status="unsupported",
+            missing_ids=list(request.ids),
+            trace={"reason": "unsupported_mutation", "kind": request.kind},
+        )
 
     def forget(self, ids: list[str]) -> MemoryMutationResult:
         clean_ids = _dedupe_ids(ids)
@@ -413,13 +443,114 @@ class VectorMemoryEngine:
         found_ids = [str(item["id"]) for item in items if str(item.get("id") or "")]
         missing_ids = [item_id for item_id in clean_ids if item_id not in set(found_ids)]
         if found_ids:
-            self.store.mark_superseded_batch(found_ids)
+            self.store.mark_superseded_batch(found_ids, reason="forget")
         return MemoryMutationResult(
             accepted=bool(found_ids),
             status="superseded" if found_ids else "skipped",
             affected_ids=found_ids,
             missing_ids=missing_ids,
             items=items,
+        )
+
+    async def _correct(self, request: MemoryMutation) -> MemoryMutationResult:
+        clean_ids = _dedupe_ids(list(request.ids))
+        if len(clean_ids) != 1:
+            return MemoryMutationResult(
+                accepted=False,
+                status="invalid",
+                missing_ids=clean_ids,
+                trace={"reason": "exactly_one_memory_id_required"},
+            )
+        memory_id = clean_ids[0]
+        corrected_summary = request.corrected_summary.strip()
+        source_ref = request.source_ref.strip()
+        if not corrected_summary or not source_ref:
+            return MemoryMutationResult(
+                accepted=False,
+                status="invalid",
+                missing_ids=[],
+                trace={"reason": "corrected_summary_and_source_ref_required"},
+            )
+
+        target = self.store.get_item_by_id(memory_id)
+        if target is None:
+            return MemoryMutationResult(
+                accepted=False,
+                status="missing",
+                missing_ids=[memory_id],
+                trace={"reason": "memory_id_not_found"},
+            )
+        if str(target.get("status") or "") != "active":
+            return MemoryMutationResult(
+                accepted=False,
+                status="inactive",
+                affected_ids=[memory_id],
+                items=[target],
+                trace={"reason": "memory_id_not_active"},
+            )
+        target_source_ref = str(target.get("source_ref") or "").strip()
+        if target_source_ref != source_ref:
+            return MemoryMutationResult(
+                accepted=False,
+                status="source_ref_mismatch",
+                affected_ids=[memory_id],
+                items=[target],
+                trace={
+                    "reason": "source_ref_mismatch",
+                    "expected_source_ref": target_source_ref,
+                    "provided_source_ref": source_ref,
+                },
+            )
+
+        replacement = await self.ingest(
+            MemoryIngestRequest(
+                summary=corrected_summary,
+                kind=request.replacement_kind.strip() or str(target.get("kind") or "event"),
+                source_ref=_build_correction_source_ref(source_ref, memory_id),
+                happened_at=str(target.get("happened_at") or "").strip() or None,
+                extra={
+                    **dict(request.extra or {}),
+                    "lifecycle": "correction",
+                    "corrects": memory_id,
+                    "verified_source_ref": source_ref,
+                },
+            )
+        )
+        replacement_id = replacement.item_id
+        if not replacement_id:
+            return MemoryMutationResult(
+                accepted=False,
+                status="skipped",
+                affected_ids=[memory_id],
+                items=[target],
+                trace={"reason": "replacement_not_created", "replacement_status": replacement.status},
+            )
+        if replacement_id == memory_id:
+            return MemoryMutationResult(
+                accepted=False,
+                status="conflict",
+                affected_ids=[memory_id],
+                items=[target],
+                trace={"reason": "replacement_reused_target", "replacement_status": replacement.status},
+            )
+
+        self.store.mark_superseded_batch(
+            [memory_id],
+            replacement_id=replacement_id,
+            reason="correction",
+        )
+        items = self.store.get_items_by_ids([memory_id, replacement_id])
+        return MemoryMutationResult(
+            accepted=True,
+            status="corrected",
+            affected_ids=[memory_id, replacement_id],
+            missing_ids=[],
+            items=items,
+            trace={
+                "superseded_id": memory_id,
+                "replacement_id": replacement_id,
+                "replacement_status": replacement.status,
+            },
         )
 
     def render_context_block(self, result: MemoryQueryResult) -> str:
@@ -491,6 +622,11 @@ def build_entry_source_ref(base_source_ref: str, entry: str) -> str:
     text = entry.strip()
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12] if text else "empty"
     return f"{base}#h:{digest}" if base else f"#h:{digest}"
+
+
+def _build_correction_source_ref(source_ref: str, memory_id: str) -> str:
+    base = source_ref.strip()
+    return f"{base}#corr:{memory_id}" if base else f"#corr:{memory_id}"
 
 
 def _rank_rows(

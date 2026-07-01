@@ -62,6 +62,10 @@ class MemoryIngestResult:
 class MemoryMutation:
     kind: str
     ids: tuple[str, ...] = ()
+    corrected_summary: str = ""
+    source_ref: str = ""
+    replacement_kind: str = ""
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

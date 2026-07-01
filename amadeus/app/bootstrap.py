@@ -30,6 +30,7 @@ from amadeus.tools.defaults import (
     SearchMessagesTool,
     WriteFileTool,
 )
+from amadeus.tools.correct_memory import CorrectMemoryTool
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.forget_memory import ForgetMemoryTool
 from amadeus.tools.recall_memory import RecallMemoryTool
@@ -279,6 +280,7 @@ def build_passive_app(
         vector_memory=vector_memory,
     )
     tool_registry.register(RecallMemoryTool(memory_engine=vector_memory))
+    tool_registry.register(CorrectMemoryTool(memory_engine=vector_memory))
     tool_registry.register(ForgetMemoryTool(memory_engine=vector_memory))
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,

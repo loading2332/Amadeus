@@ -21,7 +21,7 @@ def build_behavior_rules_prompt() -> str:
         "### History Retrieval Protocol\n\n"
         "- 历史事实先用 recall_memory 定位候选记忆；摘要或证据不足时，用 search_messages 补充定位。\n"
         "- recall_memory 的摘要和 search_messages 的预览都不是原文证据；最终使用历史事实前，必须把 evidence 或 source_ref 交给 fetch_messages 回源。\n"
-        "- 用户纠正记忆时，先定位 memory id，再用 fetch_messages 核对原文，最后才调用 forget_memory。\n"
+        "- 用户纠正记忆时，先定位 memory id，再用 fetch_messages 核对原文，优先调用 correct_memory；只有明确要失效不用时才调用 forget_memory。\n"
         "- forget_memory 只接受 recall_memory 返回的 memory id；绝不能把 message id 当作 memory id。"
     )
     return (
