@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
+import amadeus.tools as public_tools
 from amadeus.memory.engine import MemoryIngestRequest
 from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
 from amadeus.prompts import build_behavior_rules_prompt
@@ -92,7 +93,9 @@ def test_correction_fetches_source_then_forgets_memory_id_only(tmp_path):
     assert still_fetchable.output["count"] == 2
 
 
-def test_correct_memory_tool_supersedes_old_item_and_creates_replacement(tmp_path):
+def test_legacy_correct_memory_tool_can_still_supersede_old_item_and_create_replacement(
+    tmp_path,
+):
     manager, engine, memory_id = _memory_fixture(tmp_path)
     tool = CorrectMemoryTool(memory_engine=engine)
 
@@ -120,7 +123,7 @@ def test_correct_memory_tool_supersedes_old_item_and_creates_replacement(tmp_pat
     assert recalled.output["items"][0]["id"] == corrected.output["replacement_id"]
 
 
-def test_correct_memory_tool_rejects_source_ref_mismatch(tmp_path):
+def test_legacy_correct_memory_tool_rejects_source_ref_mismatch(tmp_path):
     _, engine, memory_id = _memory_fixture(tmp_path)
     tool = CorrectMemoryTool(memory_engine=engine)
 
@@ -141,22 +144,30 @@ def test_tool_descriptions_define_candidate_and_original_evidence_boundaries(tmp
     manager = SessionManager(tmp_path)
 
     assert "fetch_messages" in RecallMemoryTool(memory_engine=None).description
-    assert "fetch_messages" in CorrectMemoryTool(memory_engine=None).description
     assert "最终证据" in FetchMessagesTool(store=manager.store).description
     assert "fetch_messages" in SearchMessagesTool(store=manager.store).description
 
 
-def test_behavior_rules_require_fetch_before_factual_use_and_correction_or_forget():
+def test_behavior_rules_require_fetch_before_factual_use_and_current_memory_tools():
     prompt = build_behavior_rules_prompt()
 
     assert "recall_memory" in prompt
     assert "search_messages" in prompt
     assert "fetch_messages" in prompt
-    assert "correct_memory" in prompt
+    assert "memorize" in prompt
     assert "forget_memory" in prompt
+    assert "undo_memory_by_source" in prompt
+    assert "correct_memory" not in prompt
     assert "message id" in prompt.lower()
-    assert prompt.index("fetch_messages") < prompt.index("correct_memory")
-    assert prompt.index("correct_memory") < prompt.index("forget_memory")
+    assert prompt.index("fetch_messages") < prompt.index("memorize")
+    assert prompt.index("memorize") < prompt.index("forget_memory")
+
+
+def test_public_tools_module_matches_bootstrap_memory_contract():
+    assert hasattr(public_tools, "RecallMemoryTool")
+    assert hasattr(public_tools, "ForgetMemoryTool")
+    assert not hasattr(public_tools, "CorrectMemoryTool")
+    assert "CorrectMemoryTool" not in public_tools.__all__
 
 
 def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_path):
