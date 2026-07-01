@@ -26,6 +26,7 @@ from amadeus.memory.markdown import (
     RefreshRecentTurnsRequest,
     build_markdown_memory_runtime,
 )
+from amadeus.memory.store import MemoryStore
 from amadeus.memory.vector import (
     EmbeddingProvider,
     HypothesisProvider,
@@ -61,6 +62,7 @@ __all__ = [
     "MemoryRecallRequest",
     "MemoryRecord",
     "MemoryScope",
+    "MemoryStore",
     "MemoryWriteRequest",
     "OpenAIEmbeddingConfig",
     "OpenAIEmbeddingProvider",
