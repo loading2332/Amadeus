@@ -12,6 +12,8 @@ from amadeus.memory import (
     MemoryOptimizer,
     RefreshRecentTurnsRequest,
 )
+from amadeus.memory.engine import MemoryQuery
+from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
 from amadeus.session.store import SessionManager, fetch_messages, search_messages
 
 
@@ -23,6 +25,18 @@ class FakeProvider:
     async def chat(self, messages: Any, **kwargs: Any) -> SimpleNamespace:
         self.calls.append({"messages": messages, "kwargs": kwargs})
         return SimpleNamespace(content=self.responses.pop(0))
+
+
+class StableEmbeddingProvider:
+    async def embed(self, text: str) -> list[float]:
+        lowered = text.lower()
+        if "面试项目" in text:
+            return [1.0, 0.0, 0.0]
+        if "中文解释" in text:
+            return [0.0, 1.0, 0.0]
+        if "phase 2" in lowered or "phase 2" in text:
+            return [0.0, 0.0, 1.0]
+        return [0.5, 0.5, 0.5]
 
 
 def test_session_store_persists_stable_message_ids_and_fetches_source_ref(tmp_path):
@@ -119,6 +133,70 @@ def test_consolidation_writes_history_pending_recent_context_and_updates_cursor(
     assert "- [identity] 用户正在实现 Amadeus 记忆链。" in store.read_pending()
     assert "Amadeus 记忆链迁移" in store.read_recent_context()
     assert session.last_consolidated > 0
+
+
+def test_consolidation_ingests_pending_profile_preference_and_correction_into_vector_memory(
+    tmp_path,
+):
+    manager = SessionManager(tmp_path)
+    session = manager.get_or_create("chat:1")
+    for index in range(8):
+        session.add_message("user", f"user fact {index}")
+        session.add_message("assistant", f"assistant reply {index}")
+    manager.save(session)
+
+    provider = FakeProvider(
+        """
+        {
+          "history_entries": [{"summary": "[2026-06-05 10:00] 用户推进 Phase 2 记忆闭环。"}],
+          "pending_items": [
+            {"tag": "identity", "content": "用户正在把 Amadeus 打造成面试项目"},
+            {"tag": "preference", "content": "用户偏好中文解释"},
+            {"tag": "correction", "content": "更正：当前优先做 Memory Phase 2，而不是 Telegram"}
+          ]
+        }
+        """,
+        """
+        {
+          "active_topics": ["Phase 2 记忆闭环"],
+          "user_preferences": ["中文解释"],
+          "follow_ups": [],
+          "avoidances": [],
+          "ongoing_threads": []
+        }
+        """,
+    )
+    vector = VectorMemoryEngine(
+        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
+        embedding_provider=StableEmbeddingProvider(),
+    )
+    store = MarkdownMemoryStore(tmp_path)
+    maintenance = MarkdownMemoryMaintenance(
+        store=store,
+        provider=provider,
+        model="fake",
+        keep_count=4,
+        session_manager=manager,
+        vector_memory=vector,
+    )
+
+    result = asyncio.run(maintenance.consolidate(ConsolidateRequest(session=session)))
+    profile = asyncio.run(vector.query(MemoryQuery(text="面试项目", kinds=("profile",))))
+    preference = asyncio.run(
+        vector.query(MemoryQuery(text="中文解释", kinds=("preference",)))
+    )
+    correction = asyncio.run(
+        vector.query(MemoryQuery(text="Memory Phase 2", kinds=("fact",)))
+    )
+
+    assert result.trace["vector_ingest"]["attempted"] == 4
+    assert profile.records[0].kind == "profile"
+    assert profile.records[0].signals["extra"]["memory_tag"] == "identity"
+    assert preference.records[0].kind == "preference"
+    assert preference.records[0].signals["extra"]["memory_tag"] == "preference"
+    assert correction.records[0].kind == "fact"
+    assert correction.records[0].signals["extra"]["memory_tag"] == "correction"
+    assert correction.records[0].signals["extra"]["lifecycle"] == "correction"
 
 
 def test_append_once_deduplicates_same_source_ref(tmp_path):

@@ -465,29 +465,46 @@ class MarkdownMemoryMaintenance:
             "failed": 0,
             "errors": [],
         }
-        if self.vector_memory is None or not entries:
+        if self.vector_memory is None:
             return trace
-        for entry in entries:
+        requests: list[MemoryIngestRequest] = [
+            MemoryIngestRequest(
+                summary=entry,
+                kind="event",
+                source_ref=build_entry_source_ref(draft.source_ref, entry),
+            )
+            for entry in entries
+        ]
+        for line in draft.pending_items.splitlines():
+            request = _pending_line_to_ingest_request(draft.source_ref, line)
+            if request is not None:
+                requests.append(request)
+        if not requests:
+            return trace
+        for request in requests:
             trace["attempted"] += 1
-            source_ref = build_entry_source_ref(draft.source_ref, entry)
             try:
-                result = await self.vector_memory.ingest(
-                    MemoryIngestRequest(
-                        summary=entry,
-                        kind="event",
-                        source_ref=source_ref,
-                    )
-                )
+                result = await self.vector_memory.ingest(request)
             except Exception as error:
                 trace["failed"] += 1
-                trace["errors"].append({"source_ref": source_ref, "error": str(error)})
+                trace["errors"].append(
+                    {
+                        "source_ref": request.source_ref,
+                        "kind": request.kind,
+                        "error": str(error),
+                    }
+                )
                 continue
             if result.status in {"new", "reinforced", "skipped"}:
                 trace["succeeded"] += 1
             else:
                 trace["failed"] += 1
                 trace["errors"].append(
-                    {"source_ref": source_ref, "status": result.status}
+                    {
+                        "source_ref": request.source_ref,
+                        "kind": request.kind,
+                        "status": result.status,
+                    }
                 )
         return trace
 
@@ -680,6 +697,40 @@ def _source_ref(messages: list[dict[str, Any]]) -> str:
 def _entry_source_ref(source_ref: str, entry: str) -> str:
     digest = hashlib.sha1(entry.encode("utf-8")).hexdigest()[:12]
     return f"{source_ref}#h:{digest}"
+
+
+def _pending_line_to_ingest_request(
+    source_ref: str,
+    line: str,
+) -> MemoryIngestRequest | None:
+    match = re.match(r"^- \[(?P<tag>[a-z_]+)\] (?P<content>.+)$", line.strip())
+    if not match:
+        return None
+    tag = match.group("tag")
+    content = match.group("content").strip()
+    if not content:
+        return None
+    kind_by_tag = {
+        "identity": "profile",
+        "preference": "preference",
+        "key_info": "fact",
+        "health_long_term": "fact",
+        "requested_memory": "fact",
+        "correction": "fact",
+        "agent_context": "constraint",
+    }
+    kind = kind_by_tag.get(tag)
+    if kind is None:
+        return None
+    extra = {"memory_tag": tag}
+    if tag == "correction":
+        extra["lifecycle"] = "correction"
+    return MemoryIngestRequest(
+        summary=content,
+        kind=kind,
+        source_ref=build_entry_source_ref(source_ref, line),
+        extra=extra,
+    )
 
 
 def _parse_json_object(text: str) -> dict[str, Any] | None:
