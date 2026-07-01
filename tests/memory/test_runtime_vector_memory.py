@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from amadeus.memory.engine import (
+    MemoryContextResult,
     MemoryEngine,
     MemoryIngestRequest,
     MemoryIngestResult,
@@ -13,6 +14,7 @@ from amadeus.memory.engine import (
     MemoryMutationResult,
     MemoryQuery,
     MemoryQueryResult,
+    MemoryRecallRequest,
 )
 from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
 from amadeus.provider import (
@@ -155,13 +157,19 @@ def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
 def test_runtime_marks_pre_retrieval_as_context_intent(tmp_path):
     class RecordingMemory(MemoryEngine):
         def __init__(self) -> None:
-            self.queries: list[MemoryQuery] = []
+            self.requests: list[MemoryRecallRequest] = []
 
         async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult:
             return MemoryIngestResult(status="skipped")
 
+        async def build_context(
+            self,
+            request: MemoryRecallRequest,
+        ) -> MemoryContextResult:
+            self.requests.append(request)
+            return MemoryContextResult()
+
         async def query(self, query: MemoryQuery) -> MemoryQueryResult:
-            self.queries.append(query)
             return MemoryQueryResult()
 
         async def mutate(self, request: MemoryMutation) -> MemoryMutationResult:
@@ -186,8 +194,8 @@ def test_runtime_marks_pre_retrieval_as_context_intent(tmp_path):
 
     asyncio.run(runtime.run_turn(session_key="chat:1", user_message="hello"))
 
-    assert memory.queries[0].intent == "context"
-    assert memory.queries[0].context == {"history": [], "session_key": "chat:1"}
+    assert memory.requests[0].intent == "context"
+    assert memory.requests[0].context == {"history": [], "session_key": "chat:1"}
 
 
 def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path):

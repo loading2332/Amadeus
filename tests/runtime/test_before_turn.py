@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import cast
 
 from amadeus.events import EventBus
@@ -240,3 +241,7 @@ def test_before_turn_phase_inspection_exposes_real_graph(tmp_path) -> None:
     assert "session:session" in report
     assert "session:context_bundle" in report
     assert "session:ctx" in report
+
+
+def test_before_turn_modules_no_longer_reference_render_context_block() -> None:
+    assert "render_context_block" not in inspect.getsource(default_before_turn_modules)

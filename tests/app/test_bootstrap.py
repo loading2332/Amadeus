@@ -12,11 +12,20 @@ from typing import get_type_hints
 
 import pytest
 from amadeus.app.bootstrap import AppState, build_passive_app, load_runtime_config
-from amadeus.memory.engine import MemoryEngine, MemoryQuery, MemoryRecallRequest
+from amadeus.memory.engine import (
+    MemoryEngine,
+    MemoryQuery,
+    MemoryRecallRequest,
+    MemoryWriteRequest,
+)
 from amadeus.plugin import Plugin, plugin_registry
 from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatCompletionsClient, ChatNamespace
 from amadeus.runtime.lifecycle import BeforeTurnContext
+from amadeus.tools.forget_memory import ForgetMemoryTool
+from amadeus.tools.memorize import MemorizeTool
+from amadeus.tools.recall_memory import RecallMemoryTool
+from amadeus.tools.undo_memory_by_source import UndoMemoryBySourceTool
 
 
 class FakeCompletions:
@@ -293,6 +302,97 @@ def test_build_passive_app_runs_post_response_memory_worker_when_vector_memory_e
         )
     )
     assert recalled.records
+
+
+def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://llm.example.test/v1",
+                "OPENAI_API_KEY=secret",
+                "OPENAI_MODEL=fake-model",
+                "AMADEUS_VECTOR_MEMORY_ENABLED=1",
+                "OPENAI_EMBEDDING_MODEL=fake-embedding",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    class StableEmbeddingProvider:
+        async def embed(self, text: str) -> list[float]:
+            if "中文" in text:
+                return [1.0, 0.0, 0.0]
+            return [0.8, 0.2, 0.0]
+
+    class FakeExtractor:
+        def __init__(self, *, provider, model: str) -> None:
+            self.provider = provider
+            self.model = model
+
+        async def extract(self, *, session_key: str, messages: list[dict[str, Any]]):
+            return []
+
+    monkeypatch.setattr(
+        "amadeus.app.bootstrap.OpenAIEmbeddingProvider",
+        lambda _config: StableEmbeddingProvider(),
+    )
+    monkeypatch.setattr(
+        "amadeus.app.bootstrap.LLMMemoryExtractor",
+        FakeExtractor,
+    )
+
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=env_path,
+        client=FakeClient(),
+    )
+    engine = app.runtime.memory_engine
+    assert engine is not None
+
+    async def scenario():
+        try:
+            remembered = await MemorizeTool(memory_engine=engine).execute(
+                summary="用户长期偏好中文输出",
+                memory_type="preference",
+                source_ref='["chat:1:0"]#h:pref',
+            )
+            replacement = await engine.memorizer.replace(
+                target_id=remembered.output["memory_id"],
+                request=MemoryWriteRequest(
+                    summary="用户长期偏好英文输出",
+                    memory_type="preference",
+                    source_ref='["chat:1:1"]#h:new',
+                ),
+            )
+            restored = UndoMemoryBySourceTool(memory_engine=engine).execute(
+                source_ref='["chat:1:1"]#h:new'
+            )
+            recalled = await RecallMemoryTool(memory_engine=engine).execute(
+                query="中文输出"
+            )
+            turn = await app.runtime.run_turn(
+                session_key="chat:1",
+                user_message="继续这个任务",
+            )
+            forgotten = ForgetMemoryTool(memory_engine=engine).execute(
+                ids=[remembered.output["memory_id"]]
+            )
+            return remembered, replacement, restored, recalled, turn, forgotten
+        finally:
+            await app.aclose()
+
+    remembered, replacement, restored, recalled, turn, forgotten = asyncio.run(scenario())
+
+    assert remembered.output["memory_id"]
+    assert replacement.accepted is True
+    assert remembered.output["memory_id"] in restored.output["restored_ids"]
+    assert forgotten.output["superseded_ids"] == [remembered.output["memory_id"]]
+    assert remembered.output["memory_id"] in [
+        item["id"] for item in recalled.output["items"]
+    ]
+    assert turn.memory_trace["injected_ids"]
+    assert "用户长期偏好中文输出" in (turn.context.messages[-2]["content"])
 
 
 def test_memory_engine_protocol_exposes_task1_plan_methods():

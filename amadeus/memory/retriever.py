@@ -34,26 +34,12 @@ class MemoryRetriever:
             return MemoryQueryResult(trace={"reason": "empty_query"})
 
         query_vector = await self.embedding_provider.embed(text)
-        rows = [
-            {
-                **row,
-                "kind": str(row.get("memory_type") or "event"),
-            }
-            for row in self.store.list_active_items(
-                memory_types=request.memory_types,
-                scope_channel=request.scope.channel,
-                scope_chat_id=request.scope.chat_id,
-                time_start=request.time_start,
-                time_end=request.time_end,
-            )
-        ]
         limit = request.limit if request.limit > 0 else self.top_k
-        ranked = _rank_rows(
-            rows,
-            query_vector,
-            text,
+        rows, ranked, scope_mode = self._load_ranked_rows(
+            request=request,
+            query_vector=query_vector,
+            text=text,
             limit=limit,
-            threshold=self.score_threshold,
         )
         trace: dict[str, Any] = {
             "intent": request.intent,
@@ -61,6 +47,7 @@ class MemoryRetriever:
                 "channel": request.scope.channel,
                 "chat_id": request.scope.chat_id,
             },
+            "scope_mode": scope_mode,
             "time_filters": {
                 "start": _normalize_datetime(request.time_start)
                 if request.time_start
@@ -75,6 +62,51 @@ class MemoryRetriever:
             ],
         }
         return MemoryQueryResult(records=ranked, trace=trace)
+
+    def _load_ranked_rows(
+        self,
+        *,
+        request: MemoryRecallRequest,
+        query_vector: list[float],
+        text: str,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], list[Any], str]:
+        scoped_rows = _normalize_rows(
+            self.store.list_active_items(
+                memory_types=request.memory_types,
+                scope_channel=request.scope.channel,
+                scope_chat_id=request.scope.chat_id,
+                time_start=request.time_start,
+                time_end=request.time_end,
+            )
+        )
+        ranked = _rank_rows(
+            scoped_rows,
+            query_vector,
+            text,
+            limit=limit,
+            threshold=self.score_threshold,
+        )
+        if ranked or (
+            request.scope.channel is None and request.scope.chat_id is None
+        ):
+            return scoped_rows, ranked, "scoped"
+
+        global_rows = _normalize_rows(
+            self.store.list_active_items(
+                memory_types=request.memory_types,
+                time_start=request.time_start,
+                time_end=request.time_end,
+            )
+        )
+        global_ranked = _rank_rows(
+            global_rows,
+            query_vector,
+            text,
+            limit=limit,
+            threshold=self.score_threshold,
+        )
+        return global_rows, global_ranked, "global-fallback"
 
     async def build_context(self, request: MemoryRecallRequest) -> MemoryContextResult:
         result = await self.recall(request)
@@ -143,3 +175,13 @@ def _render_priority_sections(
         handled.add(record.id)
 
     return "\n\n".join(selected_parts), injected_ids, omitted_ids
+
+
+def _normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            **row,
+            "kind": str(row.get("memory_type") or "event"),
+        }
+        for row in rows
+    ]

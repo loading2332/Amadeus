@@ -16,6 +16,23 @@ class FakeClient:
         self.chat = type("Chat", (), {"completions": self.completions})()
 
 
+def _memory_env_path(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://llm.example.test/v1",
+                "OPENAI_API_KEY=secret",
+                "OPENAI_MODEL=fake-model",
+                "AMADEUS_VECTOR_MEMORY_ENABLED=1",
+                "OPENAI_EMBEDDING_MODEL=fake-embedding",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return env_path
+
+
 def test_build_passive_app_exposes_readonly_tool_runtime(tmp_path):
     env_path = tmp_path / ".env"
     env_path.write_text(
@@ -103,3 +120,48 @@ def test_build_passive_app_uses_akashic_style_unscoped_file_tools(tmp_path):
     assert write_result.output["path"] == str(target.resolve())
     assert edit_trace.status == "success"
     assert target.read_text(encoding="utf-8") == "after"
+
+
+def test_build_passive_app_composes_store_retriever_memorizer_and_worker(
+    tmp_path,
+    monkeypatch,
+):
+    class StableEmbeddingProvider:
+        async def embed(self, text: str) -> list[float]:
+            return [1.0, 0.0, 0.0]
+
+    class FakeExtractor:
+        def __init__(self, *, provider, model: str) -> None:
+            self.provider = provider
+            self.model = model
+
+        async def extract(
+            self,
+            *,
+            session_key: str,
+            messages: list[dict[str, object]],
+        ):
+            return []
+
+    monkeypatch.setattr(
+        "amadeus.app.bootstrap.OpenAIEmbeddingProvider",
+        lambda _config: StableEmbeddingProvider(),
+    )
+    monkeypatch.setattr(
+        "amadeus.app.bootstrap.LLMMemoryExtractor",
+        FakeExtractor,
+    )
+
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=_memory_env_path(tmp_path),
+        client=FakeClient(),
+    )
+
+    engine = app.runtime.memory_engine
+    assert engine is not None
+    assert engine.__class__.__name__ == "AkashicMemoryEngine"
+    assert engine.store.__class__.__name__ == "MemoryStore"
+    assert engine.retriever.__class__.__name__ == "MemoryRetriever"
+    assert engine.memorizer.__class__.__name__ == "MemoryMemorizer"
+    assert engine.worker.__class__.__name__ == "PostResponseMemoryWorker"
