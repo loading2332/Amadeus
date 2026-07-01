@@ -34,16 +34,42 @@ Phase 1 实现了一个可面试展示的被动 agent runtime，包括：
 - 有一条命令或测试证明端到端链路工作。
 - 能解释 Reasoner 与 PassiveRuntime 的边界划分理由。
 
-## 阶段 2：补强记忆系统
+## 阶段 2：完整记忆能力 ✅
 
-- 统一 retrieval trace 字段。
-- 让 reinforcement 真正影响排序或注入选择。
-- 只有在能确定性测试时，才加入 time decay。
-- `source_ref` fetch 和 forget/supersede 是不能退让的核心契约。
+Phase 2 的目标不是只补几个 retrieval 细节，而是把 Amadeus 的具体记忆能力交付完整：长期记忆写入、检索、回源、更正、遗忘、排序、注入和可验证行为都必须形成闭环。完成后，简历可以安全描述为“Akashic-inspired memory system with retrieval, source references, correction, and forgetting”。
+
+Phase 2 verification command：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest `
+  tests/memory/test_vector_memory.py `
+  tests/memory/test_session_memory_runtime.py `
+  tests/memory/test_memory_retrieval_acceptance.py `
+  tests/memory/test_runtime_vector_memory.py `
+  tests/app/test_cli.py `
+  tests/app/test_bootstrap_tool_runtime.py -v
+```
+
+当前验收状态（2026-07-01）：通过。上述 focused suite 本次运行结果为 `54 passed`。
+
+交付范围：
+
+- Markdown memory：保留可读的 SELF/MEMORY/HISTORY/PENDING/RECENT_CONTEXT 文件语义，明确 profile、history、pending、correction 等条目的生命周期。
+- Vector memory：SQLite-backed retrieval store 支持 embedding 写入、source_ref 去重、kind 过滤、happened_at、status、reinforcement 和可解释 scoring signals。
+- Retrieval：支持 vector、lexical、RRF 融合、query planning、hypothesis fallback、timeline/procedure/context/answer 等公开查询意图。
+- Ranking：reinforcement 必须真实影响排序或 context 注入选择；time decay 只有在能给出确定性测试和清晰面试解释时才加入。
+- Source references：`recall_memory` 返回的候选记忆必须带 `source_ref`/evidence，并能通过 `fetch_messages` 回源到原始 session messages。
+- Correction：用户纠正记忆时，必须先定位 memory id，再回源核对，最后 soft-delete 或写入更正记忆；不能把 message id 当作 memory id。
+- Forgetting：`forget_memory`/mutation 必须把错误记忆标记为 superseded，查询和 context 注入默认不再使用，同时原始消息仍可回源。
+- Context injection：被动 runtime 只能通过 `MemoryEngine` 或明确 context contract 注入 retrieved memory，且 retrieved memory 进入 context frame，不污染稳定 system prompt。
+- Retrieval trace：统一记录 query plan、candidate count、lane counts、score signals、fallbacks、errors、injected/omitted ids、source_ref/evidence 状态。
+- Verification：用 focused tests 和 memory-specific eval/smoke cases 覆盖公开行为；完整产品化 Evaluation runner 仍属于阶段 3。
 
 验收标准：
 
-- memory eval 覆盖 recall、source_ref fetch、correction、forgetting、fallback、context-frame injection。
+- 能演示一条完整记忆链路：session 消息 -> Markdown consolidation -> vector ingest -> recall -> fetch_messages 回源 -> correction/forget -> 后续 query 不再使用旧记忆。
+- memory-specific eval 或 smoke 覆盖 recall、source_ref fetch、correction、forgetting、fallback、context-frame injection、reinforcement ranking、retrieval trace。
+- 所有记忆相关能力都有代码证据和验证命令，面试时能指向公开工具、runtime 行为或 trace，而不只解释内部 helper。
 - 简历措辞不能写尚未实现的 sqlite-vec、emotional_weight 等具体能力。
 
 ## 阶段 3：产品化 Evaluation
