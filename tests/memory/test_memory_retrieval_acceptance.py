@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 from datetime import datetime
 
 import amadeus.tools as public_tools
 from amadeus.memory.engine import MemoryIngestRequest
 from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
 from amadeus.prompts import build_behavior_rules_prompt
-from amadeus.tools.correct_memory import CorrectMemoryTool
 from amadeus.session.store import SessionManager
 from amadeus.tools.defaults import FetchMessagesTool, SearchMessagesTool
 from amadeus.tools.forget_memory import ForgetMemoryTool
@@ -93,53 +93,6 @@ def test_correction_fetches_source_then_forgets_memory_id_only(tmp_path):
     assert still_fetchable.output["count"] == 2
 
 
-def test_legacy_correct_memory_tool_can_still_supersede_old_item_and_create_replacement(
-    tmp_path,
-):
-    manager, engine, memory_id = _memory_fixture(tmp_path)
-    tool = CorrectMemoryTool(memory_engine=engine)
-
-    fetched = FetchMessagesTool(store=manager.store).execute(
-        source_ref='["chat:1:0","chat:1:1"]#h:acceptance'
-    )
-    assert fetched.output["count"] == 2
-
-    corrected = asyncio.run(
-        tool.execute(
-            memory_id=memory_id,
-            corrected_summary="用户正在实现完整的 Phase 2 memory closure",
-            source_ref='["chat:1:0","chat:1:1"]#h:acceptance',
-            kind="event",
-        )
-    )
-    recalled = asyncio.run(
-        RecallMemoryTool(memory_engine=engine).execute(query="Phase 2 memory closure")
-    )
-
-    assert corrected.is_error is False
-    assert corrected.output["superseded_id"] == memory_id
-    assert corrected.output["replacement_id"] is not None
-    assert corrected.output["replacement_id"] != memory_id
-    assert recalled.output["items"][0]["id"] == corrected.output["replacement_id"]
-
-
-def test_legacy_correct_memory_tool_rejects_source_ref_mismatch(tmp_path):
-    _, engine, memory_id = _memory_fixture(tmp_path)
-    tool = CorrectMemoryTool(memory_engine=engine)
-
-    result = asyncio.run(
-        tool.execute(
-            memory_id=memory_id,
-            corrected_summary="错误修正",
-            source_ref='["chat:999:0"]#h:wrong',
-            kind="event",
-        )
-    )
-
-    assert result.is_error is True
-    assert result.output["error"] == "source_ref does not match target memory"
-
-
 def test_tool_descriptions_define_candidate_and_original_evidence_boundaries(tmp_path):
     manager = SessionManager(tmp_path)
 
@@ -168,6 +121,10 @@ def test_public_tools_module_matches_bootstrap_memory_contract():
     assert hasattr(public_tools, "ForgetMemoryTool")
     assert not hasattr(public_tools, "CorrectMemoryTool")
     assert "CorrectMemoryTool" not in public_tools.__all__
+
+
+def test_correct_memory_module_is_not_publicly_importable():
+    assert importlib.util.find_spec("amadeus.tools.correct_memory") is None
 
 
 def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_path):
