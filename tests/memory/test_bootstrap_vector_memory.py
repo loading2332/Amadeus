@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import fields
+
 import pytest
 from amadeus.app.bootstrap import load_runtime_config
+from amadeus.memory.engine import (
+    MemoryContextResult,
+    MemoryRecallRequest,
+    MemoryScope,
+    MemoryWriteRequest,
+)
 
 
 def test_vector_memory_disabled_by_default(tmp_path, monkeypatch):
@@ -43,6 +51,34 @@ def test_memory_runtime_config_can_target_memory2_db(tmp_path, monkeypatch):
 
     assert config.vector_memory_enabled is True
     assert config.vector_memory_db_path == tmp_path / "memory" / "memory2.db"
+
+
+def test_memory_protocol_dataclasses_match_task1_plan_shape():
+    assert [field.name for field in fields(MemoryScope)] == ["channel", "chat_id"]
+    assert [field.name for field in fields(MemoryRecallRequest)] == [
+        "text",
+        "intent",
+        "limit",
+        "time_start",
+        "time_end",
+        "scope",
+        "memory_types",
+        "context",
+    ]
+    assert [field.name for field in fields(MemoryWriteRequest)] == [
+        "summary",
+        "source_ref",
+        "happened_at",
+        "scope",
+        "memory_type",
+        "extra",
+    ]
+    assert [field.name for field in fields(MemoryContextResult)] == [
+        "text",
+        "injected_ids",
+        "omitted_ids",
+        "trace",
+    ]
 
 
 def test_vector_memory_enablement_requires_embedding_model(tmp_path, monkeypatch):

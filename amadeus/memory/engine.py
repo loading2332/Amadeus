@@ -7,11 +7,8 @@ from typing import Any, Protocol
 
 @dataclass(frozen=True)
 class MemoryScope:
-    session_key: str = ""
-    user_id: str = ""
-    thread_id: str = ""
-    tags: tuple[str, ...] = ()
-    metadata: dict[str, Any] = field(default_factory=dict)
+    channel: str = ""
+    chat_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -37,12 +34,12 @@ class MemoryRecord:
 @dataclass(frozen=True)
 class MemoryRecallRequest:
     text: str
-    scope: MemoryScope = field(default_factory=MemoryScope)
     intent: str = "answer"
-    kinds: tuple[str, ...] = ()
     limit: int = 8
     time_start: datetime | None = None
     time_end: datetime | None = None
+    scope: MemoryScope = field(default_factory=MemoryScope)
+    memory_types: tuple[str, ...] = ()
     context: dict[str, Any] = field(default_factory=dict)
 
 
@@ -59,8 +56,9 @@ class MemoryQuery:
 
 @dataclass(frozen=True)
 class MemoryContextResult:
-    records: list[MemoryRecord] = field(default_factory=list)
-    rendered: str = ""
+    text: str = ""
+    injected_ids: list[str] = field(default_factory=list)
+    omitted_ids: list[str] = field(default_factory=list)
     trace: dict[str, Any] = field(default_factory=dict)
 
 
@@ -73,10 +71,10 @@ class MemoryQueryResult:
 @dataclass(frozen=True)
 class MemoryWriteRequest:
     summary: str
-    scope: MemoryScope = field(default_factory=MemoryScope)
-    kind: str = "event"
     source_ref: str = ""
     happened_at: str | None = None
+    scope: MemoryScope = field(default_factory=MemoryScope)
+    memory_type: str = "event"
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -123,11 +121,17 @@ class MemoryEngine(Protocol):
 
     def forget(self, ids: list[str]) -> MemoryMutationResult: ...
 
-    async def undo_by_source(self, source_ref: str) -> MemoryMutationResult: ...
+    def undo_by_source(self, source_ref: str) -> MemoryMutationResult: ...
 
-    def build_context(self, result: MemoryQueryResult) -> MemoryContextResult: ...
+    async def build_context(self, request: MemoryQueryResult) -> MemoryContextResult: ...
 
-    async def run_post_response(self) -> None: ...
+    async def run_post_response(
+        self,
+        *,
+        session_key: str,
+        messages: list[dict[str, Any]],
+        explicit_memory_ids: list[str],
+    ) -> dict[str, Any]: ...
 
     # Legacy compatibility during the migration.
     async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult: ...

@@ -36,6 +36,7 @@ from amadeus.tools.defaults import (
     SearchMessagesTool,
     WriteFileTool,
 )
+from amadeus.tools.base import ToolResult
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.forget_memory import ForgetMemoryTool
 from amadeus.tools.recall_memory import RecallMemoryTool
@@ -76,7 +77,7 @@ class MemorizeTool:
             "type": "object",
             "properties": {
                 "summary": {"type": "string"},
-                "kind": {"type": "string"},
+                "memory_type": {"type": "string"},
                 "source_ref": {"type": "string"},
                 "happened_at": {"type": "string"},
             },
@@ -84,9 +85,7 @@ class MemorizeTool:
         }
     )
 
-    async def execute(self, **kwargs: object):
-        from amadeus.tools.base import ToolResult
-
+    async def execute(self, **kwargs: object) -> ToolResult:
         if self.memory_engine is None:
             return ToolResult(
                 tool_name=self.name,
@@ -96,9 +95,9 @@ class MemorizeTool:
 
         request = MemoryWriteRequest(
             summary=str(kwargs.get("summary") or "").strip(),
-            kind=str(kwargs.get("kind") or "event").strip() or "event",
             source_ref=str(kwargs.get("source_ref") or "").strip(),
             happened_at=str(kwargs.get("happened_at") or "").strip() or None,
+            memory_type=str(kwargs.get("memory_type") or "event").strip() or "event",
         )
         if not request.summary or not request.source_ref:
             return ToolResult(
@@ -107,10 +106,7 @@ class MemorizeTool:
                 is_error=True,
             )
 
-        if hasattr(self.memory_engine, "memorize"):
-            result = await self.memory_engine.memorize(request)
-        else:
-            result = await self.memory_engine.ingest(request)  # type: ignore[arg-type]
+        result = await self.memory_engine.memorize(request)
         return ToolResult(
             tool_name=self.name,
             output={
@@ -135,9 +131,7 @@ class UndoMemoryBySourceTool:
         }
     )
 
-    async def execute(self, **kwargs: object):
-        from amadeus.tools.base import ToolResult
-
+    def execute(self, **kwargs: object) -> ToolResult:
         if self.memory_engine is None:
             return ToolResult(
                 tool_name=self.name,
@@ -153,14 +147,7 @@ class UndoMemoryBySourceTool:
                 is_error=True,
             )
 
-        if hasattr(self.memory_engine, "undo_by_source"):
-            result = await self.memory_engine.undo_by_source(source_ref)
-        else:
-            return ToolResult(
-                tool_name=self.name,
-                output={"error": "undo by source is not supported"},
-                is_error=True,
-            )
+        result = self.memory_engine.undo_by_source(source_ref)
 
         return ToolResult(
             tool_name=self.name,

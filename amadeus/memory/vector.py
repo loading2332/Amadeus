@@ -17,13 +17,16 @@ from openai import AsyncOpenAI
 
 from amadeus.memory.engine import (
     EvidenceRef,
+    MemoryContextResult,
     MemoryIngestRequest,
     MemoryIngestResult,
     MemoryMutation,
     MemoryMutationResult,
     MemoryQuery,
     MemoryQueryResult,
+    MemoryRecallRequest,
     MemoryRecord,
+    MemoryWriteRequest,
 )
 
 _TIME_PREFIX_RE = re.compile(
@@ -336,6 +339,64 @@ class VectorMemoryEngine:
         self.score_threshold = float(score_threshold)
         self.top_k = max(1, int(top_k))
         self.context_char_budget = max(0, int(context_char_budget))
+
+    async def recall(self, request: MemoryRecallRequest) -> MemoryQueryResult:
+        return await self.query(
+            MemoryQuery(
+                text=request.text,
+                intent=request.intent,
+                kinds=request.memory_types,
+                limit=request.limit,
+                time_start=request.time_start,
+                time_end=request.time_end,
+                context=dict(request.context),
+            )
+        )
+
+    async def memorize(self, request: MemoryWriteRequest) -> MemoryIngestResult:
+        return await self.ingest(
+            MemoryIngestRequest(
+                summary=request.summary,
+                kind=request.memory_type,
+                source_ref=request.source_ref,
+                happened_at=request.happened_at,
+                extra=dict(request.extra),
+            )
+        )
+
+    def undo_by_source(self, source_ref: str) -> MemoryMutationResult:
+        return MemoryMutationResult(
+            accepted=False,
+            status="unsupported",
+            trace={
+                "reason": "undo_by_source_not_implemented",
+                "source_ref": source_ref,
+            },
+        )
+
+    async def build_context(self, request: MemoryQueryResult) -> MemoryContextResult:
+        text = self.render_context_block(request)
+        return MemoryContextResult(
+            text=text,
+            injected_ids=list(request.trace.get("injected_ids", [])),
+            omitted_ids=list(request.trace.get("omitted_ids", [])),
+            trace=dict(request.trace),
+        )
+
+    async def run_post_response(
+        self,
+        *,
+        session_key: str,
+        messages: list[dict[str, Any]],
+        explicit_memory_ids: list[str],
+    ) -> dict[str, Any]:
+        return {
+            "status": "skipped",
+            "session_key": session_key,
+            "message_count": len(messages),
+            "explicit_memory_ids": list(explicit_memory_ids),
+            "reason": "post_response_not_implemented",
+        }
 
     async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult:
         summary = request.summary.strip()

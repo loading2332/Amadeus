@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import shutil
 import sys
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from typing import Any
 
 import pytest
 from amadeus.app.bootstrap import AppState, build_passive_app, load_runtime_config
+from amadeus.memory.engine import MemoryEngine
 from amadeus.plugin import Plugin, plugin_registry
 from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatCompletionsClient, ChatNamespace
@@ -213,6 +215,47 @@ def test_build_passive_app_registers_memory_tools_without_correct_memory(tmp_pat
     assert "correct_memory" not in tool_names
 
     asyncio.run(app.aclose())
+
+
+def test_memory_engine_protocol_exposes_task1_plan_methods():
+    assert hasattr(MemoryEngine, "recall")
+    assert hasattr(MemoryEngine, "memorize")
+    assert hasattr(MemoryEngine, "forget")
+    assert hasattr(MemoryEngine, "undo_by_source")
+    assert hasattr(MemoryEngine, "build_context")
+    assert hasattr(MemoryEngine, "run_post_response")
+    assert inspect.iscoroutinefunction(MemoryEngine.recall)
+    assert inspect.iscoroutinefunction(MemoryEngine.memorize)
+    assert not inspect.iscoroutinefunction(MemoryEngine.forget)
+    assert not inspect.iscoroutinefunction(MemoryEngine.undo_by_source)
+    assert inspect.iscoroutinefunction(MemoryEngine.build_context)
+    assert inspect.iscoroutinefunction(MemoryEngine.run_post_response)
+    assert list(inspect.signature(MemoryEngine.recall).parameters) == [
+        "self",
+        "request",
+    ]
+    assert list(inspect.signature(MemoryEngine.memorize).parameters) == [
+        "self",
+        "request",
+    ]
+    assert list(inspect.signature(MemoryEngine.forget).parameters) == [
+        "self",
+        "ids",
+    ]
+    assert list(inspect.signature(MemoryEngine.undo_by_source).parameters) == [
+        "self",
+        "source_ref",
+    ]
+    assert list(inspect.signature(MemoryEngine.build_context).parameters) == [
+        "self",
+        "request",
+    ]
+    assert list(inspect.signature(MemoryEngine.run_post_response).parameters) == [
+        "self",
+        "session_key",
+        "messages",
+        "explicit_memory_ids",
+    ]
 
 
 def test_build_is_composition_only_and_defers_plugin_import(tmp_path):
