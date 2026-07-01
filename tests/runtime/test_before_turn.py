@@ -4,7 +4,11 @@ import asyncio
 from typing import cast
 
 from amadeus.events import EventBus
-from amadeus.memory.engine import MemoryEngine, MemoryQuery, MemoryQueryResult
+from amadeus.memory.engine import (
+    MemoryContextResult,
+    MemoryEngine,
+    MemoryRecallRequest,
+)
 from amadeus.runtime.before_turn import (
     BeforeTurnFrame,
     BeforeTurnInput,
@@ -53,21 +57,28 @@ def test_before_turn_phase_builds_context_from_session_history(tmp_path) -> None
     )
 
 
-class _QueryMemory:
+class _BuildContextMemory:
     def __init__(self) -> None:
-        self.queries: list[MemoryQuery] = []
+        self.requests: list[MemoryRecallRequest] = []
 
-    async def query(self, query: MemoryQuery) -> MemoryQueryResult:
-        self.queries.append(query)
-        return MemoryQueryResult()
+    async def build_context(
+        self,
+        request: MemoryRecallRequest,
+    ) -> MemoryContextResult:
+        self.requests.append(request)
+        return MemoryContextResult(
+            text="memory from build_context",
+            injected_ids=["mem_1"],
+            omitted_ids=[],
+            trace={"record_count": 1},
+        )
 
-    def render_context_block(self, _result: MemoryQueryResult) -> str:
-        return "memory from engine"
 
-
-def test_before_turn_queries_memory_when_caller_did_not_supply_it(tmp_path) -> None:
+def test_before_turn_uses_build_context_when_caller_did_not_supply_it(
+    tmp_path,
+) -> None:
     manager = SessionManager(tmp_path)
-    memory = _QueryMemory()
+    memory = _BuildContextMemory()
     phase = Phase[BeforeTurnInput, BeforeTurnContext, BeforeTurnFrame](
         default_before_turn_modules(
             lifecycle=TurnLifecycle(EventBus()),
@@ -82,14 +93,21 @@ def test_before_turn_queries_memory_when_caller_did_not_supply_it(tmp_path) -> N
         phase.run(BeforeTurnInput(session_key="chat:1", user_message="remember"))
     )
 
-    assert result.retrieved_memory == "memory from engine"
-    assert memory.queries[0].text == "remember"
-    assert memory.queries[0].context["session_key"] == "chat:1"
+    assert result.retrieved_memory == "memory from build_context"
+    assert memory.requests[0].text == "remember"
+    assert memory.requests[0].intent == "context"
+    assert memory.requests[0].scope.chat_id == "chat:1"
+    assert memory.requests[0].context["session_key"] == "chat:1"
+    assert result.memory_trace["injected_ids"] == ["mem_1"]
+    assert result.memory_trace["record_count"] == 1
 
 
-class _FailingMemory(_QueryMemory):
-    async def query(self, query: MemoryQuery) -> MemoryQueryResult:
-        self.queries.append(query)
+class _FailingMemory(_BuildContextMemory):
+    async def build_context(
+        self,
+        request: MemoryRecallRequest,
+    ) -> MemoryContextResult:
+        self.requests.append(request)
         raise RuntimeError("memory unavailable")
 
 
@@ -110,7 +128,7 @@ def test_before_turn_keeps_memory_query_failure_fail_open(tmp_path) -> None:
     )
 
     assert result.retrieved_memory is None
-    assert len(memory.queries) == 1
+    assert len(memory.requests) == 1
 
 
 def test_before_turn_emit_can_replace_context(tmp_path) -> None:

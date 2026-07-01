@@ -27,6 +27,7 @@ from amadeus.memory.markdown import (
     build_markdown_memory_runtime,
 )
 from amadeus.memory.memorizer import MemoryMemorizer
+from amadeus.memory.retriever import MemoryRetriever
 from amadeus.memory.store import MemoryStore
 from amadeus.memory.vector import (
     EmbeddingProvider,
@@ -51,6 +52,7 @@ __all__ = [
     "MarkdownMemoryRuntime",
     "MarkdownMemoryStore",
     "MemoryMemorizer",
+    "MemoryRetriever",
     "MemoryContextResult",
     "MemoryEngine",
     "MemoryIngestRequest",

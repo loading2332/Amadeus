@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import TypeAlias, cast
 
 from amadeus.context import Message
-from amadeus.memory.engine import MemoryEngine, MemoryQuery
+from amadeus.memory.engine import MemoryEngine, MemoryRecallRequest, MemoryScope
 from amadeus.runtime.lifecycle import BeforeTurnContext, TurnLifecycle
 from amadeus.runtime.phase import PhaseFrame, PhaseModule, topo_sort_modules
 from amadeus.session.store import Session, SessionManager
@@ -78,23 +78,24 @@ class _PrepareContextModule:
         memory_trace: dict[str, object] = {}
         if retrieved_memory is None and self._memory_engine is not None:
             try:
-                memory_result = await self._memory_engine.query(
-                    MemoryQuery(
+                context_result = await self._memory_engine.build_context(
+                    MemoryRecallRequest(
                         text=frame.input.user_message,
                         intent="context",
+                        scope=MemoryScope(chat_id=frame.input.session_key),
                         context={
                             "history": history,
                             "session_key": frame.input.session_key,
                         },
                     )
                 )
-                retrieved_memory = self._memory_engine.render_context_block(
-                    memory_result
-                )
-                memory_trace = dict(memory_result.trace)
+                retrieved_memory = context_result.text
+                memory_trace = dict(context_result.trace)
+                memory_trace["injected_ids"] = list(context_result.injected_ids)
+                memory_trace["omitted_ids"] = list(context_result.omitted_ids)
             except Exception as error:
                 memory_trace = {
-                    "errors": [f"context_query: {error}"],
+                    "errors": [f"context_build: {error}"],
                     "record_count": 0,
                 }
                 retrieved_memory = None
