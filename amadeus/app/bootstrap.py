@@ -15,10 +15,8 @@ from amadeus.memory import (
     LLMMemoryExtractor,
     MarkdownMemoryRuntime,
     MemoryMemorizer,
-    MemoryEngine,
     MemoryRetriever,
     MemoryStore,
-    MemoryWriteRequest,
     PostResponseMemoryWorker,
     build_markdown_memory_runtime,
 )
@@ -40,11 +38,14 @@ from amadeus.tools.defaults import (
     SearchMessagesTool,
     WriteFileTool,
 )
-from amadeus.tools.base import ToolResult
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.forget_memory import ForgetMemoryTool
+from amadeus.tools.memorize import MemorizeTool as RuntimeMemorizeTool
 from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.registry import ToolRegistry
+from amadeus.tools.undo_memory_by_source import (
+    UndoMemoryBySourceTool as RuntimeUndoMemoryBySourceTool,
+)
 
 
 def default_workspace_root() -> Path:
@@ -69,102 +70,6 @@ class AppState(str, Enum):  # noqa: UP042
     NEW = "new"
     STARTED = "started"
     CLOSED = "closed"
-
-
-@dataclass
-class MemorizeTool:
-    memory_engine: MemoryEngine | None
-    name: str = "memorize"
-    description: str = "将已核对的事实写入长期记忆。"
-    parameters: dict[str, Any] = field(
-        default_factory=lambda: {
-            "type": "object",
-            "properties": {
-                "summary": {"type": "string"},
-                "memory_type": {"type": "string"},
-                "source_ref": {"type": "string"},
-                "happened_at": {"type": "string"},
-            },
-            "required": ["summary", "source_ref"],
-        }
-    )
-
-    async def execute(self, **kwargs: object) -> ToolResult:
-        if self.memory_engine is None:
-            return ToolResult(
-                tool_name=self.name,
-                output={"error": "vector memory is not configured"},
-                is_error=True,
-            )
-
-        request = MemoryWriteRequest(
-            summary=str(kwargs.get("summary") or "").strip(),
-            source_ref=str(kwargs.get("source_ref") or "").strip(),
-            happened_at=str(kwargs.get("happened_at") or "").strip() or None,
-            memory_type=str(kwargs.get("memory_type") or "event").strip() or "event",
-        )
-        if not request.summary or not request.source_ref:
-            return ToolResult(
-                tool_name=self.name,
-                output={"error": "summary and source_ref are required"},
-                is_error=True,
-            )
-
-        result = await self.memory_engine.memorize(request)
-        return ToolResult(
-            tool_name=self.name,
-            output={
-                "item_id": result.item_id,
-                "status": result.status,
-                "trace": dict(result.trace),
-            },
-            is_error=result.status not in {"created", "accepted"},
-        )
-
-
-@dataclass
-class UndoMemoryBySourceTool:
-    memory_engine: MemoryEngine | None
-    name: str = "undo_memory_by_source"
-    description: str = "按 source_ref 撤销对应长期记忆。"
-    parameters: dict[str, Any] = field(
-        default_factory=lambda: {
-            "type": "object",
-            "properties": {"source_ref": {"type": "string"}},
-            "required": ["source_ref"],
-        }
-    )
-
-    def execute(self, **kwargs: object) -> ToolResult:
-        if self.memory_engine is None:
-            return ToolResult(
-                tool_name=self.name,
-                output={"error": "vector memory is not configured"},
-                is_error=True,
-            )
-
-        source_ref = str(kwargs.get("source_ref") or "").strip()
-        if not source_ref:
-            return ToolResult(
-                tool_name=self.name,
-                output={"error": "source_ref is required"},
-                is_error=True,
-            )
-
-        result = self.memory_engine.undo_by_source(source_ref)
-
-        return ToolResult(
-            tool_name=self.name,
-            output={
-                "source_ref": source_ref,
-                "status": result.status,
-                "affected_ids": result.affected_ids,
-                "missing_ids": result.missing_ids,
-                "items": result.items,
-                "trace": dict(result.trace),
-            },
-            is_error=not result.accepted,
-        )
 
 
 @dataclass
@@ -416,9 +321,11 @@ def build_passive_app(
         vector_memory=vector_memory,
     )
     tool_registry.register(RecallMemoryTool(memory_engine=vector_memory))
-    tool_registry.register(MemorizeTool(memory_engine=vector_memory))
+    tool_registry.register(RuntimeMemorizeTool(memory_engine=vector_memory))
     tool_registry.register(ForgetMemoryTool(memory_engine=vector_memory))
-    tool_registry.register(UndoMemoryBySourceTool(memory_engine=vector_memory))
+    tool_registry.register(
+        RuntimeUndoMemoryBySourceTool(memory_engine=vector_memory)
+    )
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
         provider=provider,

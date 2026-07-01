@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from amadeus.memory.engine import MemoryEngine, MemoryQuery
+from amadeus.memory.engine import MemoryEngine, MemoryRecallRequest
 from amadeus.tools.base import ToolResult
 
 ToolParameters = dict[str, Any]
@@ -112,16 +112,16 @@ class RecallMemoryTool:
         time_start = _parse_iso_datetime(kwargs.get("time_start"))
         time_end = _parse_iso_datetime(kwargs.get("time_end"))
 
-        memory_query = MemoryQuery(
+        memory_query = MemoryRecallRequest(
             text=query_text.strip(),
             intent=str(kwargs.get("intent", "answer")),
-            kinds=_string_list(kwargs.get("kinds")),
+            memory_types=_string_list(kwargs.get("memory_types") or kwargs.get("kinds")),
             limit=_positive_limit(kwargs.get("limit")),
             time_start=datetime.fromisoformat(time_start) if time_start else None,
             time_end=datetime.fromisoformat(time_end) if time_end else None,
         )
 
-        result = await self.memory_engine.query(memory_query)
+        result = await self.memory_engine.recall(memory_query)
 
         items = [
             {

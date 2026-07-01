@@ -119,6 +119,8 @@ def test_behavior_rules_require_fetch_before_factual_use_and_current_memory_tool
 def test_public_tools_module_matches_bootstrap_memory_contract():
     assert hasattr(public_tools, "RecallMemoryTool")
     assert hasattr(public_tools, "ForgetMemoryTool")
+    assert hasattr(public_tools, "MemorizeTool")
+    assert hasattr(public_tools, "UndoMemoryBySourceTool")
     assert not hasattr(public_tools, "CorrectMemoryTool")
     assert "CorrectMemoryTool" not in public_tools.__all__
 

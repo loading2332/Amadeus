@@ -9,12 +9,15 @@ from amadeus.tools.defaults import FetchMessagesTool, ReadFileTool, SearchMessag
 from amadeus.tools.executor import ToolExecutionDenied, ToolExecutor
 from amadeus.tools.forget_memory import ForgetMemoryTool
 from amadeus.tools.hooks import ReadOnlyFilesystemHook
+from amadeus.tools.memorize import MemorizeTool
 from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.registry import ToolRegistry
+from amadeus.tools.undo_memory_by_source import UndoMemoryBySourceTool
 
 __all__ = [
     "FetchMessagesTool",
     "ForgetMemoryTool",
+    "MemorizeTool",
     "ReadFileTool",
     "RecallMemoryTool",
     "SearchMessagesTool",
@@ -27,4 +30,5 @@ __all__ = [
     "ToolRegistry",
     "ToolResult",
     "ToolTrace",
+    "UndoMemoryBySourceTool",
 ]
