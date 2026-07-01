@@ -30,6 +30,7 @@ class _BeforeTurnContextBundle:
     session: Session
     history: tuple[Message, ...]
     retrieved_memory: str | None
+    memory_trace: dict[str, object]
 
 
 @dataclass
@@ -74,6 +75,7 @@ class _PrepareContextModule:
         session = cast(Session, frame.slots[_SESSION_SLOT])
         history = session.get_history(self._history_window)
         retrieved_memory = frame.input.retrieved_memory
+        memory_trace: dict[str, object] = {}
         if retrieved_memory is None and self._memory_engine is not None:
             try:
                 memory_result = await self._memory_engine.query(
@@ -89,12 +91,18 @@ class _PrepareContextModule:
                 retrieved_memory = self._memory_engine.render_context_block(
                     memory_result
                 )
-            except Exception:
+                memory_trace = dict(memory_result.trace)
+            except Exception as error:
+                memory_trace = {
+                    "errors": [f"context_query: {error}"],
+                    "record_count": 0,
+                }
                 retrieved_memory = None
         frame.slots[_CONTEXT_BUNDLE_SLOT] = _BeforeTurnContextBundle(
             session=session,
             history=tuple(history),
             retrieved_memory=retrieved_memory,
+            memory_trace=memory_trace,
         )
         return frame
 
@@ -116,6 +124,7 @@ class _BuildBeforeTurnCtxModule:
             user_message=frame.input.user_message,
             history=list(bundle.history),
             retrieved_memory=bundle.retrieved_memory,
+            memory_trace=dict(bundle.memory_trace),
             active_skills=list(frame.input.active_skills),
             runtime_metadata=dict(frame.input.runtime_metadata),
         )

@@ -39,6 +39,7 @@ class _BuildBeforeReasoningCtxModule:
             user_message=before_turn.user_message,
             history=list(before_turn.history),
             retrieved_memory=before_turn.retrieved_memory,
+            memory_trace=dict(before_turn.memory_trace),
             active_skills=list(before_turn.active_skills),
             runtime_metadata=dict(before_turn.runtime_metadata),
             extra_hints=list(before_turn.extra_hints),

@@ -125,6 +125,18 @@ def _format_trace(result: PassiveTurnResult, app: object) -> str:
         for call in calls:
             parts.append(f"      {call.get('name', '?')}  status={call.get('status', '?')}")
 
+    memory_trace = getattr(result, "memory_trace", {}) or {}
+    if memory_trace:
+        parts.append(f"  Memory intent:      {memory_trace.get('intent', 'N/A')}")
+        parts.append(f"  Memory candidates:  {memory_trace.get('candidate_count', 0)}")
+        parts.append(f"  Memory records:     {memory_trace.get('record_count', 0)}")
+        injected = ",".join(memory_trace.get("injected_ids", [])) or "-"
+        omitted = ",".join(memory_trace.get("omitted_ids", [])) or "-"
+        fallbacks = ",".join(memory_trace.get("fallbacks", [])) or "-"
+        parts.append(f"  Memory injected:    {injected}")
+        parts.append(f"  Memory omitted:     {omitted}")
+        parts.append(f"  Memory fallbacks:   {fallbacks}")
+
     # Provider info
     raw = getattr(result, "provider_raw", None)
     if raw is not None:

@@ -14,6 +14,7 @@ class BeforeTurnContext:
     user_message: str
     history: list[Message]
     retrieved_memory: str | None
+    memory_trace: dict[str, Any] = field(default_factory=dict)
     active_skills: list[str] = field(default_factory=list)
     runtime_metadata: dict[str, str] = field(default_factory=dict)
     extra_hints: list[str] = field(default_factory=list)
@@ -26,6 +27,7 @@ class BeforeReasoningContext:
     user_message: str
     history: list[Message]
     retrieved_memory: str | None
+    memory_trace: dict[str, Any] = field(default_factory=dict)
     active_skills: list[str] = field(default_factory=list)
     runtime_metadata: dict[str, str] = field(default_factory=dict)
     extra_hints: list[str] = field(default_factory=list)
@@ -79,6 +81,7 @@ class AfterTurnContext:
     assistant_response: str
     tool_chain: tuple[dict[str, Any], ...]
     context_retry: dict[str, Any]
+    memory_trace: dict[str, Any] = field(default_factory=dict)
 
 
 class TurnLifecycle:

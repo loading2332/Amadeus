@@ -94,6 +94,33 @@ def test_runtime_retrieves_memory_into_context_frame(tmp_path):
     )
 
 
+def test_runtime_exposes_memory_trace_on_turn_result(tmp_path):
+    vector = VectorMemoryEngine(
+        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+    asyncio.run(
+        vector.ingest(
+            MemoryIngestRequest(
+                summary="[2026-06-06 10:00] 用户完成 Memory Phase 2 设计。",
+                source_ref='["chat:1:0"]#h:trace',
+            )
+        )
+    )
+    client = FakeClient()
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(LLMProviderConfig(api_key="secret", model="fake"), client=client),
+        session_manager=SessionManager(tmp_path),
+        memory_engine=vector,
+    )
+
+    result = asyncio.run(runtime.run_turn(session_key="chat:1", user_message="Memory Phase 2 到哪了？"))
+
+    assert result.memory_trace["record_count"] >= 1
+    assert result.memory_trace["injected_ids"]
+
+
 def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
     class BrokenMemory(MemoryEngine):
         async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult:

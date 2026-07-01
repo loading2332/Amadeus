@@ -201,3 +201,43 @@ def test_format_trace_includes_session_and_tool_chain():
     assert "Retry plan:         full" in output
     assert "Provider model:     gpt-4" in output
     assert "Usage:" in output
+
+
+def test_format_trace_includes_memory_retrieval_section():
+    import amadeus.context as context
+    from amadeus.app.cli import _format_trace
+    from amadeus.prompting.assembler import PromptAssemblyResult
+    from amadeus.runtime.passive import PassiveTurnResult
+
+    output = _format_trace(
+        PassiveTurnResult(
+            session_key="trace:1",
+            user_message_id="trace:1:0",
+            assistant_message_id="trace:1:1",
+            assistant_response="done",
+            context=context.ContextRenderResult(
+                messages=[],
+                system_prompt=context.SystemPromptResult(prompt="", breakdown=[], sections=[]),
+                context_frame=context.ContextFrameResult(prompt="", breakdown=[], sections=[]),
+                assembly=PromptAssemblyResult(),
+            ),
+            tool_chain=[],
+            context_retry={},
+            memory_trace={
+                "intent": "context",
+                "candidate_count": 4,
+                "record_count": 2,
+                "fallbacks": ["lexical_only"],
+                "injected_ids": ["mem_a"],
+                "omitted_ids": ["mem_b"],
+            },
+        ),
+        None,
+    )
+
+    assert "Memory intent:      context" in output
+    assert "Memory candidates:  4" in output
+    assert "Memory records:     2" in output
+    assert "Memory injected:    mem_a" in output
+    assert "Memory omitted:     mem_b" in output
+    assert "Memory fallbacks:   lexical_only" in output

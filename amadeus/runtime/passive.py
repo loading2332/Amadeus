@@ -76,6 +76,7 @@ class PassiveTurnResult:
     provider_raw: Any = None
     tool_chain: list[dict[str, Any]] = field(default_factory=list)
     context_retry: dict[str, Any] = field(default_factory=dict)
+    memory_trace: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -370,6 +371,7 @@ class PassiveRuntime:
                     "selected_plan": "before_turn_abort",
                     "trimmed_sections": [],
                 },
+                memory_trace=dict(before_turn_context.memory_trace),
                 extra=extra,
             )
 
@@ -402,11 +404,13 @@ class PassiveRuntime:
                     "selected_plan": "before_reasoning_abort",
                     "trimmed_sections": [],
                 },
+                memory_trace=dict(before_reasoning_context.memory_trace),
                 extra=extra,
             )
         session = self.session_manager.get_or_create(session_key)
         history = before_reasoning_context.history
         resolved_retrieved_memory = before_reasoning_context.retrieved_memory
+        resolved_memory_trace = before_reasoning_context.memory_trace
         resolved_active_skills = before_reasoning_context.active_skills
         resolved_runtime_metadata = before_reasoning_context.runtime_metadata
         resolved_extra_hints = before_reasoning_context.extra_hints
@@ -493,6 +497,7 @@ class PassiveRuntime:
             provider_raw=provider_raw,
             tool_chain=tool_chain,
             context_retry=context_retry,
+            memory_trace=dict(resolved_memory_trace),
             extra=extra,
         )
 
@@ -506,6 +511,7 @@ class PassiveRuntime:
         provider_raw: Any,
         tool_chain: list[dict[str, Any]],
         context_retry: dict[str, Any],
+        memory_trace: dict[str, Any],
         extra: dict[str, Any] | None,
     ) -> PassiveTurnResult:
         after_reasoning = await self._after_reasoning.run(
@@ -529,6 +535,7 @@ class PassiveRuntime:
             provider_raw=after_reasoning.provider_raw,
             tool_chain=after_reasoning.tool_chain,
             context_retry=after_reasoning.context_retry,
+            memory_trace=dict(memory_trace),
         )
         await self._after_turn.run(
             AfterTurnInput(
@@ -539,6 +546,7 @@ class PassiveRuntime:
                     assistant_response=result.assistant_response,
                     tool_chain=tuple(dict(step) for step in result.tool_chain),
                     context_retry=dict(result.context_retry),
+                    memory_trace=dict(result.memory_trace),
                 )
             )
         )
