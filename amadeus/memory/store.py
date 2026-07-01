@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ class MemoryStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._init_schema()
 
     def close(self) -> None:
@@ -128,6 +129,101 @@ class MemoryStore:
             )
             self._conn.commit()
 
+    def upsert_item(
+        self,
+        *,
+        memory_type: str,
+        summary: str,
+        embedding: list[float],
+        source_ref: str,
+        happened_at: str | None = None,
+        scope_channel: str | None = None,
+        scope_chat_id: str | None = None,
+        emotional_weight: float = 0.0,
+        extra: dict[str, Any] | None = None,
+    ) -> tuple[str, str]:
+        normalized_type = memory_type.strip() or "event"
+        text = summary.strip()
+        src = source_ref.strip()
+        if not text or not src:
+            return "", "invalid"
+        digest = _content_hash(text, normalized_type)
+        item_id = f"mem_{digest}"
+        now = datetime.now().astimezone().isoformat()
+        extra_payload = dict(extra or {})
+        extra_payload["scope_channel"] = scope_channel
+        extra_payload["scope_chat_id"] = scope_chat_id
+        with self._lock:
+            existing_source = self._conn.execute(
+                """
+                SELECT id
+                FROM memory_items
+                WHERE source_ref = ? AND memory_type = ?
+                """,
+                (src, normalized_type),
+            ).fetchone()
+            if existing_source is not None:
+                return str(existing_source["id"]), "skipped"
+
+            existing_hash = self._conn.execute(
+                """
+                SELECT id
+                FROM memory_items
+                WHERE content_hash = ? AND memory_type = ?
+                """,
+                (digest, normalized_type),
+            ).fetchone()
+            if existing_hash is not None:
+                reinforced_id = str(existing_hash["id"])
+                self._conn.execute(
+                    """
+                    UPDATE memory_items
+                    SET reinforcement = reinforcement + 1,
+                        updated_at = ?,
+                        happened_at = COALESCE(NULLIF(happened_at, ''), ?)
+                    WHERE id = ?
+                    """,
+                    (now, happened_at, reinforced_id),
+                )
+                self._conn.commit()
+                return reinforced_id, "reinforced"
+
+            self._conn.execute(
+                """
+                INSERT INTO memory_items (
+                    id,
+                    memory_type,
+                    summary,
+                    content_hash,
+                    embedding,
+                    source_ref,
+                    happened_at,
+                    status,
+                    reinforcement,
+                    emotional_weight,
+                    created_at,
+                    updated_at,
+                    extra_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, ?, ?, ?)
+                """,
+                (
+                    item_id,
+                    normalized_type,
+                    text,
+                    digest,
+                    json.dumps([float(value) for value in embedding]),
+                    src,
+                    happened_at,
+                    float(emotional_weight),
+                    now,
+                    now,
+                    json.dumps(extra_payload, ensure_ascii=False),
+                ),
+            )
+            self._conn.commit()
+        return item_id, "new"
+
     def record_replacement(
         self,
         old_item_id: str,
@@ -165,6 +261,26 @@ class MemoryStore:
             {
                 "old_item_id": str(row["old_item_id"]),
                 "new_item_id": str(row["new_item_id"]),
+            }
+            for row in rows
+        ]
+
+    def find_replacements_by_source_ref(self, source_ref: str) -> list[dict[str, str]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT old_item_id, new_item_id, source_ref
+                FROM memory_replacements
+                WHERE source_ref = ?
+                ORDER BY created_at ASC
+                """,
+                (source_ref,),
+            ).fetchall()
+        return [
+            {
+                "old_item_id": str(row["old_item_id"]),
+                "new_item_id": str(row["new_item_id"]),
+                "source_ref": str(row["source_ref"]),
             }
             for row in rows
         ]
@@ -295,3 +411,8 @@ def _normalize_datetime(value: datetime) -> str:
         else value.replace(tzinfo=None)
     )
     return normalized.replace(microsecond=0).isoformat()
+
+
+def _content_hash(summary: str, memory_type: str) -> str:
+    normalized = " ".join(summary.lower().split())
+    return hashlib.sha256(f"{memory_type}:{normalized}".encode()).hexdigest()[:16]

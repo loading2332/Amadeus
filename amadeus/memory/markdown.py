@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from amadeus.events import EventBus, TurnCommitted
-from amadeus.memory.engine import MemoryEngine, MemoryIngestRequest
+from amadeus.memory.engine import MemoryEngine, MemoryIngestRequest, MemoryWriteRequest
 from amadeus.memory.vector import build_entry_source_ref
 from amadeus.provider import LLMProvider
 from amadeus.session.store import Session, SessionManager, is_real_memory_message
@@ -484,7 +484,15 @@ class MarkdownMemoryMaintenance:
         for request in requests:
             trace["attempted"] += 1
             try:
-                result = await self.vector_memory.ingest(request)
+                result = await self.vector_memory.memorize(
+                    MemoryWriteRequest(
+                        summary=request.summary,
+                        memory_type=request.kind,
+                        source_ref=request.source_ref,
+                        happened_at=request.happened_at,
+                        extra=dict(request.extra),
+                    )
+                )
             except Exception as error:
                 trace["failed"] += 1
                 trace["errors"].append(
