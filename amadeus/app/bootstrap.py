@@ -11,17 +11,21 @@ from typing import Any
 from amadeus.app.workspace import initialize_workspace
 from amadeus.events import EventBus
 from amadeus.memory import (
+    AkashicMemoryEngine,
+    LLMMemoryExtractor,
     MarkdownMemoryRuntime,
+    MemoryMemorizer,
     MemoryEngine,
+    MemoryRetriever,
+    MemoryStore,
     MemoryWriteRequest,
+    PostResponseMemoryWorker,
     build_markdown_memory_runtime,
 )
 from amadeus.memory.vector import (
     LLMHypothesisProvider,
     OpenAIEmbeddingConfig,
     OpenAIEmbeddingProvider,
-    VectorMemoryEngine,
-    VectorMemoryStore,
 )
 from amadeus.plugin.manager import PluginManager
 from amadeus.plugin.types import PluginLoadReport
@@ -372,18 +376,35 @@ def build_passive_app(
         and config.embedding_model
         and config.vector_memory_db_path is not None
     ):
-        vector_memory = VectorMemoryEngine(
-            store=VectorMemoryStore(config.vector_memory_db_path),
-            embedding_provider=OpenAIEmbeddingProvider(
-                OpenAIEmbeddingConfig(
-                    api_key=config.provider.api_key,
-                    base_url=config.provider.base_url,
-                    model=config.embedding_model,
-                    timeout_seconds=config.provider.timeout_seconds,
-                )
+        embedding_provider = OpenAIEmbeddingProvider(
+            OpenAIEmbeddingConfig(
+                api_key=config.provider.api_key,
+                base_url=config.provider.base_url,
+                model=config.embedding_model,
+                timeout_seconds=config.provider.timeout_seconds,
+            )
+        )
+        store = MemoryStore(config.vector_memory_db_path)
+        memorizer = MemoryMemorizer(
+            store=store,
+            embedding_provider=embedding_provider,
+        )
+        vector_memory = AkashicMemoryEngine(
+            store=store,
+            retriever=MemoryRetriever(
+                store=store,
+                embedding_provider=embedding_provider,
+                hypothesis_provider=LLMHypothesisProvider(provider=provider),
+                top_k=config.vector_memory_top_k,
             ),
-            hypothesis_provider=LLMHypothesisProvider(provider=provider),
-            top_k=config.vector_memory_top_k,
+            memorizer=memorizer,
+            worker=PostResponseMemoryWorker(
+                memorizer=memorizer,
+                extractor=LLMMemoryExtractor(
+                    provider=provider,
+                    model=config.provider.model,
+                ),
+            ),
         )
     memory = build_markdown_memory_runtime(
         workspace_root=config.workspace_root,

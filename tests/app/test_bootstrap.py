@@ -12,7 +12,7 @@ from typing import get_type_hints
 
 import pytest
 from amadeus.app.bootstrap import AppState, build_passive_app, load_runtime_config
-from amadeus.memory.engine import MemoryEngine, MemoryRecallRequest
+from amadeus.memory.engine import MemoryEngine, MemoryQuery, MemoryRecallRequest
 from amadeus.plugin import Plugin, plugin_registry
 from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatCompletionsClient, ChatNamespace
@@ -216,6 +216,83 @@ def test_build_passive_app_registers_memory_tools_without_correct_memory(tmp_pat
     assert "correct_memory" not in tool_names
 
     asyncio.run(app.aclose())
+
+
+def test_build_passive_app_runs_post_response_memory_worker_when_vector_memory_enabled(
+    tmp_path,
+    monkeypatch,
+):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://llm.example.test/v1",
+                "OPENAI_API_KEY=secret",
+                "OPENAI_MODEL=fake-model",
+                "AMADEUS_VECTOR_MEMORY_ENABLED=1",
+                "OPENAI_EMBEDDING_MODEL=fake-embedding",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    class StableEmbeddingProvider:
+        async def embed(self, text: str) -> list[float]:
+            if "中文" in text:
+                return [1.0, 0.0, 0.0]
+            return [0.8, 0.2, 0.0]
+
+    class FakeExtractor:
+        def __init__(self, *, provider, model: str) -> None:
+            self.provider = provider
+            self.model = model
+
+        async def extract(self, *, session_key: str, messages: list[dict[str, Any]]):
+            return [
+                {
+                    "summary": "用户明确要求长期记住：默认用中文",
+                    "memory_type": "preference",
+                    "source_ref": '["chat:1:0"]#h:extract',
+                }
+            ]
+
+    monkeypatch.setattr(
+        "amadeus.app.bootstrap.OpenAIEmbeddingProvider",
+        lambda _config: StableEmbeddingProvider(),
+    )
+    monkeypatch.setattr(
+        "amadeus.app.bootstrap.LLMMemoryExtractor",
+        FakeExtractor,
+    )
+
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=env_path,
+        client=FakeClient(),
+    )
+
+    async def scenario():
+        try:
+            return await app.runtime.run_turn(
+                session_key="chat:1",
+                user_message="以后默认中文回复",
+            )
+        finally:
+            await app.aclose()
+
+    result = asyncio.run(scenario())
+
+    assert result.memory_trace["post_response"]["written_count"] == 1
+    assert app.runtime.memory_engine is not None
+    recalled = asyncio.run(
+        app.runtime.memory_engine.query(
+            MemoryQuery(
+                text="默认用中文",
+                kinds=("preference",),
+            )
+        )
+    )
+    assert recalled.records
 
 
 def test_memory_engine_protocol_exposes_task1_plan_methods():

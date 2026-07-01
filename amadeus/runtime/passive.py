@@ -27,6 +27,7 @@ from amadeus.runtime.after_turn import (
     AfterTurnFrame,
     AfterTurnInput,
     AfterTurnModules,
+    AfterTurnResult,
     default_after_turn_modules,
 )
 from amadeus.runtime.before_reasoning import (
@@ -156,7 +157,7 @@ class PassiveRuntime:
         default_factory=list,
         repr=False,
     )
-    _after_turn: Phase[AfterTurnInput, object, AfterTurnFrame] = field(
+    _after_turn: Phase[AfterTurnInput, AfterTurnResult, AfterTurnFrame] = field(
         init=False,
         repr=False,
     )
@@ -317,10 +318,12 @@ class PassiveRuntime:
     def _build_after_turn_phase(
         self,
         plugin_modules: AfterTurnModules,
-    ) -> Phase[AfterTurnInput, object, AfterTurnFrame]:
+    ) -> Phase[AfterTurnInput, AfterTurnResult, AfterTurnFrame]:
         return Phase(
             default_after_turn_modules(
                 lifecycle=self.lifecycle,
+                memory_engine=self.memory_engine,
+                session_manager=self.session_manager,
                 plugin_modules=plugin_modules,
             ),
             frame_factory=AfterTurnFrame,
@@ -526,7 +529,21 @@ class PassiveRuntime:
                 extra=dict(extra or {}),
             )
         )
-        result = PassiveTurnResult(
+        after_turn_context = AfterTurnContext(
+            session_key=session_key,
+            user_message_id=after_reasoning.user_message_id,
+            assistant_message_id=after_reasoning.assistant_message_id,
+            assistant_response=after_reasoning.assistant_response,
+            tool_chain=tuple(dict(step) for step in after_reasoning.tool_chain),
+            context_retry=dict(after_reasoning.context_retry),
+            memory_trace=dict(memory_trace),
+        )
+        after_turn_result = await self._after_turn.run(
+            AfterTurnInput(
+                context=after_turn_context
+            )
+        )
+        return PassiveTurnResult(
             session_key=after_reasoning.session_key,
             user_message_id=after_reasoning.user_message_id,
             assistant_message_id=after_reasoning.assistant_message_id,
@@ -535,22 +552,8 @@ class PassiveRuntime:
             provider_raw=after_reasoning.provider_raw,
             tool_chain=after_reasoning.tool_chain,
             context_retry=after_reasoning.context_retry,
-            memory_trace=dict(memory_trace),
+            memory_trace=dict(after_turn_result.context.memory_trace),
         )
-        await self._after_turn.run(
-            AfterTurnInput(
-                context=AfterTurnContext(
-                    session_key=session_key,
-                    user_message_id=result.user_message_id,
-                    assistant_message_id=result.assistant_message_id,
-                    assistant_response=result.assistant_response,
-                    tool_chain=tuple(dict(step) for step in result.tool_chain),
-                    context_retry=dict(result.context_retry),
-                    memory_trace=dict(result.memory_trace),
-                )
-            )
-        )
-        return result
 
     def _trim_session_history(self, session: Session, history_window: int) -> None:
         if history_window <= 0:

@@ -189,7 +189,10 @@ def test_after_reasoning_persists_turn_and_metadata(tmp_path) -> None:
     assert events[0].assistant_response == "saved reply"
 
 
-def test_after_turn_phase_calls_existing_tap_and_isolates_failures(caplog) -> None:
+def test_after_turn_phase_calls_existing_tap_and_isolates_failures(
+    tmp_path,
+    caplog,
+) -> None:
     bus = EventBus()
     lifecycle = TurnLifecycle(bus)
     observed: list[str] = []
@@ -203,7 +206,11 @@ def test_after_turn_phase_calls_existing_tap_and_isolates_failures(caplog) -> No
     lifecycle.on_after_turn(broken)
     lifecycle.on_after_turn(observe)
     phase = Phase(
-        default_after_turn_modules(lifecycle=lifecycle),
+        default_after_turn_modules(
+            lifecycle=lifecycle,
+            memory_engine=None,
+            session_manager=SessionManager(tmp_path),
+        ),
         frame_factory=AfterTurnFrame,
     )
 
