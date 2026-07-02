@@ -303,6 +303,58 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
     assert recalled.records
 
 
+def test_build_passive_app_uses_dedicated_embedding_provider_config(
+    tmp_path,
+    monkeypatch,
+):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://chat.example.test/v1",
+                "OPENAI_API_KEY=chat-secret",
+                "OPENAI_MODEL=fake-model",
+                "AMADEUS_LONG_TERM_MEMORY_ENABLED=1",
+                "OPENAI_EMBEDDING_MODEL=text-embedding-v4",
+                "OPENAI_EMBEDDING_BASE_URL=https://embed.example.test/compatible-mode/v1",
+                "OPENAI_EMBEDDING_API_KEY=embed-secret",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, Any] = {}
+
+    class StableEmbeddingProvider:
+        async def embed(self, text: str) -> list[float]:
+            return [0.8, 0.2, 0.0]
+
+    def fake_embedding_provider(config):
+        captured["api_key"] = config.api_key
+        captured["base_url"] = config.base_url
+        captured["model"] = config.model
+        return StableEmbeddingProvider()
+
+    monkeypatch.setattr(
+        "amadeus.app.bootstrap.OpenAIEmbeddingProvider",
+        fake_embedding_provider,
+    )
+
+    app = build_passive_app(
+        workspace_root=tmp_path,
+        env_path=env_path,
+        client=FakeClient(),
+    )
+
+    assert app.runtime.memory_engine is not None
+    assert captured == {
+        "api_key": "embed-secret",
+        "base_url": "https://embed.example.test/compatible-mode/v1",
+        "model": "text-embedding-v4",
+    }
+
+    asyncio.run(app.aclose())
+
+
 def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(

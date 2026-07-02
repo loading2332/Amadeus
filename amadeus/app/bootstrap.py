@@ -59,6 +59,8 @@ class RuntimeConfig:
     long_term_memory_enabled: bool = False
     long_term_memory_db_path: Path | None = None
     embedding_model: str | None = None
+    embedding_api_key: str | None = None
+    embedding_base_url: str | None = None
     long_term_memory_top_k: int = 8
 
 
@@ -233,6 +235,14 @@ def load_runtime_config(
     )
     long_term_memory_db_path = root / "memory" / "long_term_memory.db"
     embedding_model = _config_value("OPENAI_EMBEDDING_MODEL", file_values)
+    embedding_api_key = (
+        _config_value("OPENAI_EMBEDDING_API_KEY", file_values)
+        or str(values["OPENAI_API_KEY"])
+    )
+    embedding_base_url = (
+        _config_value("OPENAI_EMBEDDING_BASE_URL", file_values)
+        or str(values["OPENAI_BASE_URL"])
+    )
     long_term_memory_top_k = _int_config(
         "AMADEUS_LONG_TERM_MEMORY_TOP_K", file_values, default=8
     )
@@ -252,6 +262,8 @@ def load_runtime_config(
         long_term_memory_enabled=long_term_memory_enabled,
         long_term_memory_db_path=long_term_memory_db_path,
         embedding_model=embedding_model,
+        embedding_api_key=embedding_api_key,
+        embedding_base_url=embedding_base_url,
         long_term_memory_top_k=long_term_memory_top_k,
     )
 
@@ -283,8 +295,8 @@ def build_passive_app(
     ):
         embedding_provider = OpenAIEmbeddingProvider(
             OpenAIEmbeddingConfig(
-                api_key=config.provider.api_key,
-                base_url=config.provider.base_url,
+                api_key=str(config.embedding_api_key or config.provider.api_key),
+                base_url=config.embedding_base_url or config.provider.base_url,
                 model=config.embedding_model,
                 timeout_seconds=config.provider.timeout_seconds,
             )

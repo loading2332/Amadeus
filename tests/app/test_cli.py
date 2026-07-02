@@ -241,3 +241,43 @@ def test_format_trace_includes_memory_retrieval_section():
     assert "Memory injected:    mem_a" in output
     assert "Memory omitted:     mem_b" in output
     assert "Memory fallbacks:   lexical_only" in output
+
+
+def test_run_eval_memory_recall_prints_summary(monkeypatch, capsys, tmp_path):
+    from amadeus.app.cli import _run_eval_memory_recall
+
+    captured: dict[str, object] = {}
+
+    def fake_run_memory_recall_evaluation(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            total_cases=3,
+            passed_cases=2,
+            failed_case_ids=["case-b"],
+            experiment_name="amadeus-memory-recall-001",
+            experiment_url="https://smith.example.test/e/1",
+            summary_path=tmp_path / "summary.md",
+            results_path=tmp_path / "results.json",
+        )
+
+    monkeypatch.setattr(
+        "amadeus.app.cli.run_memory_recall_evaluation",
+        fake_run_memory_recall_evaluation,
+    )
+    args = argparse.Namespace(
+        env=tmp_path / ".env",
+        case_file=tmp_path / "cases.yaml",
+        dataset_name="amadeus-memory-recall-v1",
+        experiment_prefix="amadeus-memory-recall",
+        judge_model=None,
+        artifacts_dir=tmp_path / "runtime-artifacts" / "evaluation",
+    )
+
+    _run_eval_memory_recall(args)
+
+    output = capsys.readouterr().out
+    assert captured["dataset_name"] == "amadeus-memory-recall-v1"
+    assert "Total cases: 3" in output
+    assert "Passed cases: 2" in output
+    assert "Failed cases: case-b" in output
+    assert "LangSmith experiment: amadeus-memory-recall-001" in output

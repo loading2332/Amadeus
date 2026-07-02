@@ -1,0 +1,71 @@
+cases:
+  - id: runtime_turn_preference_context
+    mode: runtime_turn
+    title: runtime turn injects preference memory into context
+    seed_session_messages:
+      - role: user
+        content: 以后默认用中文回答。
+        timestamp: "2026-07-01T09:00:00+08:00"
+      - role: assistant
+        content: 好的，我会默认用中文回答。
+        timestamp: "2026-07-01T09:00:05+08:00"
+    seed_long_term_memories:
+      - summary: 用户偏好中文回答。
+        memory_type: preference
+        source_message_indexes: [0]
+    input:
+      user_message: 之后默认用什么语言回复我？
+    expect:
+      memory_intent: context
+      candidate_count_min: 1
+      injected_count_min: 1
+      context_contains:
+        - 用户偏好中文回答
+      answer_keywords_any:
+        - 中文
+      judge_rubric: The answer should say the default reply language is Chinese.
+  - id: recall_tool_returns_source_refs
+    mode: recall_tool
+    title: recall_memory returns source refs and fetch_messages can resolve them
+    seed_session_messages:
+      - role: user
+        content: 我正在把 Amadeus 做成面试项目。
+        timestamp: "2026-07-01T10:00:00+08:00"
+      - role: assistant
+        content: 记住了，这是当前项目定位。
+        timestamp: "2026-07-01T10:00:05+08:00"
+    seed_long_term_memories:
+      - summary: 用户正在把 Amadeus 做成面试项目。
+        memory_type: profile
+        source_message_indexes: [0]
+    input:
+      recall_query: 面试项目
+    expect:
+      source_ref_required: true
+      fetched_messages_contains:
+        - 我正在把 Amadeus 做成面试项目
+      answer_keywords_any:
+        - 面试项目
+      judge_rubric: The retrieved result should clearly indicate Amadeus is being built as an interview project.
+  - id: runtime_turn_global_scope_fallback
+    mode: runtime_turn
+    title: runtime turn can fall back to global memory when session-scoped memory is absent
+    seed_session_messages:
+      - role: user
+        content: 记住：Memory Phase 3 先做 Evaluation。
+        timestamp: "2026-07-01T11:00:00+08:00"
+    seed_long_term_memories:
+      - summary: 当前优先做 Memory Phase 3 Evaluation。
+        memory_type: fact
+        source_message_indexes: [0]
+    input:
+      user_message: Memory Phase 3 现在先做什么？
+    expect:
+      memory_intent: context
+      candidate_count_min: 1
+      injected_count_min: 1
+      fallbacks_contains:
+        - global-fallback
+      answer_keywords_any:
+        - Evaluation
+      judge_rubric: The answer should mention Evaluation as the current Phase 3 priority.

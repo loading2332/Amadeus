@@ -1,0 +1,45 @@
+{
+  "dataset_name": "amadeus-memory-recall-smoke-1case",
+  "experiment_name": "amadeus-memory-recall-smoke-5c1d1218",
+  "experiment_url": "https://smith.langchain.com/o/de366803-2911-4f09-9fc4-1c5724ca9f57/datasets/d9de21ee-fd22-4250-b8de-4ac012b4b8e0/compare?selectedSessions=d4882d05-ee8f-4ca8-8113-a8d7d9594eb6",
+  "total_cases": 1,
+  "passed_cases": 1,
+  "failed_case_ids": [],
+  "records": [
+    {
+      "case_id": "runtime_turn_preference_context",
+      "title": "runtime turn injects preference memory into context",
+      "mode": "runtime_turn",
+      "passed": true,
+      "assistant_response": "中文啊。你刚才不就是用中文在跟我说话嘛，我跟着你的语言走就行。",
+      "elapsed_ms": 11349,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "trace",
+          "score": true,
+          "value": null,
+          "comment": "trace expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "matched expected answer keywords"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer explicitly states that the default reply language is Chinese (\"中文啊\") and explains that it follows the user's language, satisfying the rubric."
+        }
+      ]
+    }
+  ]
+}

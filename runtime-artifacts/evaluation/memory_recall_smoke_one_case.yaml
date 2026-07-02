@@ -1,0 +1,27 @@
+cases:
+- id: runtime_turn_preference_context
+  mode: runtime_turn
+  title: runtime turn injects preference memory into context
+  seed_session_messages:
+  - role: user
+    content: 以后默认用中文回答。
+    timestamp: '2026-07-01T09:00:00+08:00'
+  - role: assistant
+    content: 好的，我会默认用中文回答。
+    timestamp: '2026-07-01T09:00:05+08:00'
+  seed_long_term_memories:
+  - summary: 用户偏好中文回答。
+    memory_type: preference
+    source_message_indexes:
+    - 0
+  input:
+    user_message: 之后默认用什么语言回复我？
+  expect:
+    memory_intent: context
+    candidate_count_min: 1
+    injected_count_min: 1
+    context_contains:
+    - 用户偏好中文回答
+    answer_keywords_any:
+    - 中文
+    judge_rubric: The answer should say the default reply language is Chinese.
