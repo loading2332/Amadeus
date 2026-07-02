@@ -166,7 +166,7 @@ Amadeus 对应：
 
 ### 目标
 
-把 Akashic 的 `memory2` 设计迁成 Amadeus 的第二层记忆：Markdown 管人类可读全景，vector memory 管可检索细节。
+把 Akashic 的 `memory2` 设计迁成 Amadeus 的第二层记忆：Markdown 管人类可读全景，long-term memory 管可检索细节。
 
 ### Akashic 参考
 

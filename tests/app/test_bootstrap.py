@@ -14,7 +14,6 @@ import pytest
 from amadeus.app.bootstrap import AppState, build_passive_app, load_runtime_config
 from amadeus.memory.engine import (
     MemoryEngine,
-    MemoryQuery,
     MemoryRecallRequest,
     MemoryWriteRequest,
 )
@@ -227,7 +226,7 @@ def test_build_passive_app_registers_memory_tools_without_correct_memory(tmp_pat
     asyncio.run(app.aclose())
 
 
-def test_build_passive_app_runs_post_response_memory_worker_when_vector_memory_enabled(
+def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memory_enabled(
     tmp_path,
     monkeypatch,
 ):
@@ -238,7 +237,7 @@ def test_build_passive_app_runs_post_response_memory_worker_when_vector_memory_e
                 "OPENAI_BASE_URL=https://llm.example.test/v1",
                 "OPENAI_API_KEY=secret",
                 "OPENAI_MODEL=fake-model",
-                "AMADEUS_VECTOR_MEMORY_ENABLED=1",
+                "AMADEUS_LONG_TERM_MEMORY_ENABLED=1",
                 "OPENAI_EMBEDDING_MODEL=fake-embedding",
             ]
         ),
@@ -294,10 +293,10 @@ def test_build_passive_app_runs_post_response_memory_worker_when_vector_memory_e
     assert result.memory_trace["post_response"]["written_count"] == 1
     assert app.runtime.memory_engine is not None
     recalled = asyncio.run(
-        app.runtime.memory_engine.query(
-            MemoryQuery(
+        app.runtime.memory_engine.recall(
+            MemoryRecallRequest(
                 text="默认用中文",
-                kinds=("preference",),
+                memory_types=("preference",),
             )
         )
     )
@@ -312,7 +311,7 @@ def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatc
                 "OPENAI_BASE_URL=https://llm.example.test/v1",
                 "OPENAI_API_KEY=secret",
                 "OPENAI_MODEL=fake-model",
-                "AMADEUS_VECTOR_MEMORY_ENABLED=1",
+                "AMADEUS_LONG_TERM_MEMORY_ENABLED=1",
                 "OPENAI_EMBEDDING_MODEL=fake-embedding",
             ]
         ),
@@ -396,12 +395,20 @@ def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatc
 
 
 def test_memory_engine_protocol_exposes_task1_plan_methods():
-    assert hasattr(MemoryEngine, "recall")
-    assert hasattr(MemoryEngine, "memorize")
-    assert hasattr(MemoryEngine, "forget")
-    assert hasattr(MemoryEngine, "undo_by_source")
-    assert hasattr(MemoryEngine, "build_context")
-    assert hasattr(MemoryEngine, "run_post_response")
+    public_methods = {
+        name
+        for name, value in inspect.getmembers(MemoryEngine)
+        if inspect.isfunction(value) and not name.startswith("_")
+    }
+
+    assert public_methods == {
+        "recall",
+        "memorize",
+        "forget",
+        "undo_by_source",
+        "build_context",
+        "run_post_response",
+    }
     assert inspect.iscoroutinefunction(MemoryEngine.recall)
     assert inspect.iscoroutinefunction(MemoryEngine.memorize)
     assert not inspect.iscoroutinefunction(MemoryEngine.forget)

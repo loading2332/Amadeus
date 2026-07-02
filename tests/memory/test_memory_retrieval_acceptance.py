@@ -5,8 +5,14 @@ import importlib.util
 from datetime import datetime
 
 import amadeus.tools as public_tools
-from amadeus.memory.engine import MemoryIngestRequest
-from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
+from amadeus.memory import (
+    AkashicMemoryEngine,
+    MemoryMemorizer,
+    MemoryRetriever,
+    MemoryStore,
+    MemoryWriteRequest,
+    PostResponseMemoryWorker,
+)
 from amadeus.prompts import build_behavior_rules_prompt
 from amadeus.session.store import SessionManager
 from amadeus.tools.defaults import FetchMessagesTool, SearchMessagesTool
@@ -19,20 +25,35 @@ class StableEmbeddingProvider:
         return [1.0, 0.0, 0.0]
 
 
+class FakeExtractor:
+    async def extract(
+        self,
+        *,
+        session_key: str,
+        messages: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return []
+
+
 def _memory_fixture(tmp_path):
     manager = SessionManager(tmp_path)
     session = manager.get_or_create("chat:1")
     session.add_message("user", "用户正在学习 memory evidence")
     session.add_message("assistant", "原始消息必须通过 fetch_messages 回源")
     manager.save(session)
-    engine = VectorMemoryEngine(
-        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
-        embedding_provider=StableEmbeddingProvider(),
+    store = MemoryStore(tmp_path / "long_term_memory.db")
+    memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
+    engine = AkashicMemoryEngine(
+        store=store,
+        retriever=MemoryRetriever(store=store, embedding_provider=StableEmbeddingProvider()),
+        memorizer=memorizer,
+        worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
     )
     ingested = asyncio.run(
-        engine.ingest(
-            MemoryIngestRequest(
+        engine.memorize(
+            MemoryWriteRequest(
                 summary="用户正在学习 memory evidence",
+                memory_type="event",
                 source_ref='["chat:1:0","chat:1:1"]#h:acceptance',
             )
         )
@@ -146,25 +167,29 @@ def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_pat
 
 
 def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
-    engine = VectorMemoryEngine(
-        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
-        embedding_provider=StableEmbeddingProvider(),
+    store = MemoryStore(tmp_path / "long_term_memory.db")
+    memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
+    engine = AkashicMemoryEngine(
+        store=store,
+        retriever=MemoryRetriever(store=store, embedding_provider=StableEmbeddingProvider()),
+        memorizer=memorizer,
+        worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
     )
     asyncio.run(
-        engine.ingest(
-            MemoryIngestRequest(
+        engine.memorize(
+            MemoryWriteRequest(
                 summary="[2026-06-01 09:00] 用户开始实现 Phase 2。",
-                kind="event",
+                memory_type="event",
                 source_ref='["chat:1:0"]#h:early',
                 happened_at="2026-06-01T09:00:00+08:00",
             )
         )
     )
     asyncio.run(
-        engine.ingest(
-            MemoryIngestRequest(
+        engine.memorize(
+            MemoryWriteRequest(
                 summary="[2026-06-20 09:00] 用户完成 Phase 2 smoke。",
-                kind="event",
+                memory_type="event",
                 source_ref='["chat:1:1"]#h:late',
                 happened_at="2026-06-20T09:00:00+08:00",
             )

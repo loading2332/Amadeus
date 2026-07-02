@@ -19,7 +19,7 @@ class StableEmbeddingProvider:
 
 
 def test_retriever_prefers_scope_matched_procedure_then_preference(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "memory2.db")
+    store = MemoryStore(tmp_path / "long_term_memory.db")
     memorizer = MemoryMemorizer(
         store=store,
         embedding_provider=StableEmbeddingProvider(),

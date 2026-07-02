@@ -5,18 +5,22 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
+from amadeus.memory import (
+    AkashicMemoryEngine,
+    MemoryMemorizer,
+    MemoryRetriever,
+    MemoryStore,
+    MemoryWriteRequest,
+    PostResponseMemoryWorker,
+)
 from amadeus.memory.engine import (
     MemoryContextResult,
     MemoryEngine,
-    MemoryIngestRequest,
     MemoryIngestResult,
-    MemoryMutation,
     MemoryMutationResult,
-    MemoryQuery,
     MemoryQueryResult,
     MemoryRecallRequest,
 )
-from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
 from amadeus.provider import (
     ChatCompletionsClient,
     ChatNamespace,
@@ -33,6 +37,16 @@ from amadeus.tools.registry import ToolRegistry
 class FakeEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
         return [1.0, 0.0, 0.0] if "Amadeus" in text or "检索" in text else [0.0, 1.0, 0.0]
+
+
+class FakeExtractor:
+    async def extract(
+        self,
+        *,
+        session_key: str,
+        messages: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return []
 
 
 class FakeCompletions:
@@ -63,15 +77,25 @@ class FakeClient:
         self.chat: ChatNamespace = FakeChatNamespace(completions=self.completions)
 
 
-def test_runtime_retrieves_memory_into_context_frame(tmp_path):
-    vector = VectorMemoryEngine(
-        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
-        embedding_provider=FakeEmbeddingProvider(),
+def _build_engine(tmp_path) -> AkashicMemoryEngine:
+    provider = FakeEmbeddingProvider()
+    store = MemoryStore(tmp_path / "long_term_memory.db")
+    memorizer = MemoryMemorizer(store=store, embedding_provider=provider)
+    return AkashicMemoryEngine(
+        store=store,
+        retriever=MemoryRetriever(store=store, embedding_provider=provider),
+        memorizer=memorizer,
+        worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
     )
+
+
+def test_runtime_retrieves_memory_into_context_frame(tmp_path):
+    engine = _build_engine(tmp_path)
     asyncio.run(
-        vector.ingest(
-            MemoryIngestRequest(
+        engine.memorize(
+            MemoryWriteRequest(
                 summary="[2026-06-06 10:00] 用户确认正在迁移 Amadeus 检索记忆。",
+                memory_type="event",
                 source_ref='["chat:1:0"]#h:abc123',
             )
         )
@@ -82,7 +106,7 @@ def test_runtime_retrieves_memory_into_context_frame(tmp_path):
         workspace_root=tmp_path,
         provider=provider,
         session_manager=SessionManager(tmp_path),
-        memory_engine=vector,
+        memory_engine=engine,
     )
 
     result = asyncio.run(runtime.run_turn(session_key="chat:1", user_message="Amadeus 检索做到哪了？"))
@@ -97,14 +121,12 @@ def test_runtime_retrieves_memory_into_context_frame(tmp_path):
 
 
 def test_runtime_exposes_memory_trace_on_turn_result(tmp_path):
-    vector = VectorMemoryEngine(
-        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
-        embedding_provider=FakeEmbeddingProvider(),
-    )
+    engine = _build_engine(tmp_path)
     asyncio.run(
-        vector.ingest(
-            MemoryIngestRequest(
+        engine.memorize(
+            MemoryWriteRequest(
                 summary="[2026-06-06 10:00] 用户完成 Memory Phase 2 设计。",
+                memory_type="event",
                 source_ref='["chat:1:0"]#h:trace',
             )
         )
@@ -114,7 +136,7 @@ def test_runtime_exposes_memory_trace_on_turn_result(tmp_path):
         workspace_root=tmp_path,
         provider=LLMProvider(LLMProviderConfig(api_key="secret", model="fake"), client=client),
         session_manager=SessionManager(tmp_path),
-        memory_engine=vector,
+        memory_engine=engine,
     )
 
     result = asyncio.run(runtime.run_turn(session_key="chat:1", user_message="Memory Phase 2 到哪了？"))
@@ -125,20 +147,29 @@ def test_runtime_exposes_memory_trace_on_turn_result(tmp_path):
 
 def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
     class BrokenMemory(MemoryEngine):
-        async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult:
-            return MemoryIngestResult(status="skipped")
-
-        async def query(self, query: MemoryQuery) -> MemoryQueryResult:
+        async def recall(self, request: MemoryRecallRequest) -> MemoryQueryResult:
             raise RuntimeError("embedding unavailable")
 
-        async def mutate(self, request: MemoryMutation) -> MemoryMutationResult:
-            return MemoryMutationResult()
+        async def memorize(self, request) -> MemoryIngestResult:
+            return MemoryIngestResult(status="skipped")
 
         def forget(self, ids: list[str]) -> MemoryMutationResult:
             return MemoryMutationResult()
 
-        def render_context_block(self, result: MemoryQueryResult) -> str:
-            return "should not render"
+        def undo_by_source(self, source_ref: str) -> MemoryMutationResult:
+            return MemoryMutationResult()
+
+        async def build_context(self, request: MemoryRecallRequest) -> MemoryContextResult:
+            raise RuntimeError("embedding unavailable")
+
+        async def run_post_response(
+            self,
+            *,
+            session_key: str,
+            messages: list[dict[str, Any]],
+            explicit_memory_ids: list[str],
+        ) -> dict[str, Any]:
+            return {"status": "skipped"}
 
     client = FakeClient()
     provider = LLMProvider(LLMProviderConfig(api_key="secret", model="fake"), client=client)
@@ -159,27 +190,30 @@ def test_runtime_marks_pre_retrieval_as_context_intent(tmp_path):
         def __init__(self) -> None:
             self.requests: list[MemoryRecallRequest] = []
 
-        async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult:
-            return MemoryIngestResult(status="skipped")
-
-        async def build_context(
-            self,
-            request: MemoryRecallRequest,
-        ) -> MemoryContextResult:
-            self.requests.append(request)
-            return MemoryContextResult()
-
-        async def query(self, query: MemoryQuery) -> MemoryQueryResult:
+        async def recall(self, request: MemoryRecallRequest) -> MemoryQueryResult:
             return MemoryQueryResult()
 
-        async def mutate(self, request: MemoryMutation) -> MemoryMutationResult:
-            return MemoryMutationResult()
+        async def memorize(self, request) -> MemoryIngestResult:
+            return MemoryIngestResult(status="skipped")
 
         def forget(self, ids: list[str]) -> MemoryMutationResult:
             return MemoryMutationResult()
 
-        def render_context_block(self, result: MemoryQueryResult) -> str:
-            return ""
+        def undo_by_source(self, source_ref: str) -> MemoryMutationResult:
+            return MemoryMutationResult()
+
+        async def build_context(self, request: MemoryRecallRequest) -> MemoryContextResult:
+            self.requests.append(request)
+            return MemoryContextResult()
+
+        async def run_post_response(
+            self,
+            *,
+            session_key: str,
+            messages: list[dict[str, Any]],
+            explicit_memory_ids: list[str],
+        ) -> dict[str, Any]:
+            return {"status": "skipped"}
 
     memory = RecordingMemory()
     client = FakeClient()
@@ -199,14 +233,12 @@ def test_runtime_marks_pre_retrieval_as_context_intent(tmp_path):
 
 
 def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path):
-    vector = VectorMemoryEngine(
-        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
-        embedding_provider=FakeEmbeddingProvider(),
-    )
+    engine = _build_engine(tmp_path)
     asyncio.run(
-        vector.ingest(
-            MemoryIngestRequest(
+        engine.memorize(
+            MemoryWriteRequest(
                 summary="用户完成 Amadeus 检索重构",
+                memory_type="event",
                 source_ref='["chat:1:0"]',
             )
         )
@@ -245,12 +277,12 @@ def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path):
         LLMProviderConfig(api_key="secret", model="fake"), client=client
     )
     registry = ToolRegistry()
-    registry.register(RecallMemoryTool(memory_engine=vector))
+    registry.register(RecallMemoryTool(memory_engine=engine))
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
         session_manager=SessionManager(tmp_path),
-        memory_engine=vector,
+        memory_engine=engine,
         tool_registry=registry,
         tool_executor=ToolExecutor(registry=registry),
     )

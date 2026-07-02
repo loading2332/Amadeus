@@ -28,7 +28,7 @@ class FakeExtractor:
 def test_post_response_worker_writes_implicit_memory_once(tmp_path) -> None:
     worker = PostResponseMemoryWorker(
         memorizer=MemoryMemorizer(
-            store=MemoryStore(tmp_path / "memory2.db"),
+            store=MemoryStore(tmp_path / "long_term_memory.db"),
             embedding_provider=StableEmbeddingProvider(),
         ),
         extractor=FakeExtractor(),

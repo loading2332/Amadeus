@@ -14,7 +14,7 @@ class StableEmbeddingProvider:
 
 def test_memorizer_reinforces_same_content(tmp_path):
     memorizer = MemoryMemorizer(
-        store=MemoryStore(tmp_path / "memory2.db"),
+        store=MemoryStore(tmp_path / "long_term_memory.db"),
         embedding_provider=StableEmbeddingProvider(),
     )
 
@@ -46,7 +46,7 @@ def test_memorizer_reinforces_same_content(tmp_path):
 
 def test_memorizer_can_replace_and_undo_by_source(tmp_path):
     memorizer = MemoryMemorizer(
-        store=MemoryStore(tmp_path / "memory2.db"),
+        store=MemoryStore(tmp_path / "long_term_memory.db"),
         embedding_provider=StableEmbeddingProvider(),
     )
 

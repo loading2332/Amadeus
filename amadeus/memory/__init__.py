@@ -5,11 +5,8 @@ from amadeus.memory.engine import (
     EvidenceRef,
     MemoryContextResult,
     MemoryEngine,
-    MemoryIngestRequest,
     MemoryIngestResult,
-    MemoryMutation,
     MemoryMutationResult,
-    MemoryQuery,
     MemoryQueryResult,
     MemoryRecallRequest,
     MemoryRecord,
@@ -32,19 +29,17 @@ from amadeus.memory.post_response_worker import (
     LLMMemoryExtractor,
     PostResponseMemoryWorker,
 )
-from amadeus.memory.retriever import MemoryRetriever
-from amadeus.memory.store import MemoryStore
-from amadeus.memory.vector import (
+from amadeus.memory.providers import (
     EmbeddingProvider,
     HypothesisProvider,
     LLMHypothesisProvider,
     OpenAIEmbeddingConfig,
     OpenAIEmbeddingProvider,
-    VectorMemoryEngine,
-    VectorMemoryStore,
-    build_entry_source_ref,
-    parse_history_entry_happened_at,
 )
+from amadeus.memory.ranking import build_query_plan, extract_terms, rank_rows, rrf_merge
+from amadeus.memory.retriever import MemoryRetriever
+from amadeus.memory.source_refs import build_entry_source_ref, parse_history_entry_happened_at
+from amadeus.memory.store import MemoryStore
 
 __all__ = [
     "ConsolidateRequest",
@@ -62,14 +57,11 @@ __all__ = [
     "MemoryRetriever",
     "MemoryContextResult",
     "MemoryEngine",
-    "MemoryIngestRequest",
     "MemoryIngestResult",
-    "MemoryMutation",
     "MemoryMutationResult",
     "MemoryOptimizer",
     "MemoryOptimizerBusy",
     "PostResponseMemoryWorker",
-    "MemoryQuery",
     "MemoryQueryResult",
     "MemoryRecallRequest",
     "MemoryRecord",
@@ -79,9 +71,11 @@ __all__ = [
     "OpenAIEmbeddingConfig",
     "OpenAIEmbeddingProvider",
     "RefreshRecentTurnsRequest",
-    "VectorMemoryEngine",
-    "VectorMemoryStore",
     "build_entry_source_ref",
+    "build_query_plan",
     "build_markdown_memory_runtime",
+    "extract_terms",
     "parse_history_entry_happened_at",
+    "rank_rows",
+    "rrf_merge",
 ]

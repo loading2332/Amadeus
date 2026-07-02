@@ -44,17 +44,6 @@ class MemoryRecallRequest:
 
 
 @dataclass(frozen=True)
-class MemoryQuery:
-    text: str
-    intent: str = "answer"
-    kinds: tuple[str, ...] = ()
-    limit: int = 8
-    time_start: datetime | None = None
-    time_end: datetime | None = None
-    context: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class MemoryContextResult:
     text: str = ""
     injected_ids: list[str] = field(default_factory=list)
@@ -79,29 +68,10 @@ class MemoryWriteRequest:
 
 
 @dataclass(frozen=True)
-class MemoryIngestRequest:
-    summary: str
-    kind: str = "event"
-    source_ref: str = ""
-    happened_at: str | None = None
-    extra: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class MemoryIngestResult:
     item_id: str | None = None
     status: str = "skipped"
     trace: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class MemoryMutation:
-    kind: str
-    ids: tuple[str, ...] = ()
-    corrected_summary: str = ""
-    source_ref: str = ""
-    replacement_kind: str = ""
-    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -132,12 +102,3 @@ class MemoryEngine(Protocol):
         messages: list[dict[str, Any]],
         explicit_memory_ids: list[str],
     ) -> dict[str, Any]: ...
-
-    # Legacy compatibility during the migration.
-    async def ingest(self, request: MemoryIngestRequest) -> MemoryIngestResult: ...
-
-    async def query(self, query: MemoryQuery) -> MemoryQueryResult: ...
-
-    async def mutate(self, request: MemoryMutation) -> MemoryMutationResult: ...
-
-    def render_context_block(self, result: MemoryQueryResult) -> str: ...

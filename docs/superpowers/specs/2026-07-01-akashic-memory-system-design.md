@@ -4,14 +4,14 @@
 
 ## 1. 目标
 
-本次重构把 Amadeus 现有的 `vector_memory` + `markdown memory` 组合，升级为更接近 Akashic 的完整记忆系统主链路，优先落地以下可证明能力：
+本次重构把 Amadeus 现有的 `long_term_memory` + `markdown memory` 组合，升级为更接近 Akashic 的完整记忆系统主链路，优先落地以下可证明能力：
 
 - 被动 runtime 在 `before_turn` 自动检索并注入长期记忆；
 - 记忆写入经过统一的 `memorizer` 生命周期，而不是散落在 tool、markdown consolidation、store 中；
 - 支持显式 `memorize`、`recall_memory`、`forget_memory`、`undo_memory_by_source`；
 - 支持 replacement graph，而不是只做单点 `correct_memory` 覆盖；
 - 支持按 scope、类型、时间和热度进行检索与注入；
-- 允许清空旧 `vector_memory.db`，迁移到新的长期记忆主库。
+- 允许清空旧 `long_term_memory.db`，迁移到新的长期记忆主库。
 
 本轮明确不做：
 
@@ -54,7 +54,7 @@ Akashic 参考来源：
 
 ## 4. 方案比较
 
-### 方案 A：在现有 `VectorMemoryEngine` 上继续追加能力
+### 方案 A：在现有 `AkashicMemoryEngine` 上继续追加能力
 
 优点：
 
@@ -135,7 +135,7 @@ Akashic 参考来源：
 - `PENDING.md`：markdown consolidation 暂存层；
 - `RECENT_CONTEXT.md`：近期上下文压缩层。
 
-长期语义检索的真源改为 `memory/memory2.db`。
+长期语义检索的真源改为 `memory/long_term_memory.db`。
 
 ## 6. Public Contract
 
@@ -176,9 +176,9 @@ tool 层只是参数校验和 I/O 包装，不再自己发明 mutation 语义。
 
 ### 7.1 数据库
 
-弃用当前 `memory/vector_memory.db` 作为长期真源，改为新库：
+弃用当前 `memory/long_term_memory.db` 作为长期真源，改为新库：
 
-- `memory/memory2.db`
+- `memory/long_term_memory.db`
 
 允许清空旧 vector DB，不做在线兼容迁移。
 
@@ -440,7 +440,7 @@ worker 在每轮 response 后运行，至少处理：
 按依赖顺序执行：
 
 1. 重构 `MemoryEngine` contract 和 bootstrap 组装方式
-2. 建 `memory2.db` schema 与 store
+2. 建 `long_term_memory.db` schema 与 store
 3. 建 memorizer，接管 ingest/forget/replacement/undo
 4. 建 retriever，接管 recall/build_context
 5. 接入 `before_turn` 与 `after_turn`/worker
@@ -453,7 +453,7 @@ worker 在每轮 response 后运行，至少处理：
 以下条件同时满足才算本次 memory 迁移完成：
 
 - 不再依赖 `correct_memory` 作为核心更正路径；
-- 长期记忆真源是 `memory/memory2.db`；
+- 长期记忆真源是 `memory/long_term_memory.db`；
 - 所有长期记忆写入都经过 memorizer；
 - `before_turn` 通过新 retriever 自动注入记忆；
 - runtime 中存在 post-response memory worker；
@@ -469,3 +469,4 @@ worker 在每轮 response 后运行，至少处理：
 - inspection CLI
 - dashboard
 - 更复杂的 proactive memory strategy
+

@@ -24,7 +24,7 @@ def _memory_env_path(tmp_path):
                 "OPENAI_BASE_URL=https://llm.example.test/v1",
                 "OPENAI_API_KEY=secret",
                 "OPENAI_MODEL=fake-model",
-                "AMADEUS_VECTOR_MEMORY_ENABLED=1",
+                "AMADEUS_LONG_TERM_MEMORY_ENABLED=1",
                 "OPENAI_EMBEDDING_MODEL=fake-embedding",
             ]
         ),

@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
-from amadeus.memory.engine import MemoryIngestRequest
-from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
+from amadeus.memory import (
+    AkashicMemoryEngine,
+    MemoryMemorizer,
+    MemoryRetriever,
+    MemoryStore,
+    MemoryWriteRequest,
+    PostResponseMemoryWorker,
+)
 from amadeus.tools.forget_memory import ForgetMemoryTool
 
 
@@ -12,13 +18,34 @@ class FakeEmbeddingProvider:
         return [1.0, 0.0] if "Amadeus" in text else [0.0, 1.0]
 
 
+class FakeExtractor:
+    async def extract(
+        self,
+        *,
+        session_key: str,
+        messages: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return []
+
+
+def _build_engine(tmp_path):
+    store = MemoryStore(tmp_path / "long_term_memory.db")
+    memorizer = MemoryMemorizer(store=store, embedding_provider=FakeEmbeddingProvider())
+    return store, AkashicMemoryEngine(
+        store=store,
+        retriever=MemoryRetriever(store=store, embedding_provider=FakeEmbeddingProvider()),
+        memorizer=memorizer,
+        worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
+    )
+
+
 def test_forget_memory_tool_marks_existing_items_superseded(tmp_path):
-    store = VectorMemoryStore(tmp_path / "vector_memory.db")
-    engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
+    store, engine = _build_engine(tmp_path)
     result = asyncio.run(
-        engine.ingest(
-            MemoryIngestRequest(
+        engine.memorize(
+            MemoryWriteRequest(
                 summary="[2026-06-06 10:00] 用户确认迁移 Amadeus 检索记忆。",
+                memory_type="event",
                 source_ref='["chat:1:0"]#h:abc123',
             )
         )
@@ -37,12 +64,12 @@ def test_forget_memory_tool_marks_existing_items_superseded(tmp_path):
 
 
 def test_forget_memory_tool_ignores_duplicates_and_reports_missing(tmp_path):
-    store = VectorMemoryStore(tmp_path / "vector_memory.db")
-    engine = VectorMemoryEngine(store=store, embedding_provider=FakeEmbeddingProvider())
+    _store, engine = _build_engine(tmp_path)
     result = asyncio.run(
-        engine.ingest(
-            MemoryIngestRequest(
+        engine.memorize(
+            MemoryWriteRequest(
                 summary="[2026-06-06 10:00] 用户确认迁移 Amadeus 检索记忆。",
+                memory_type="event",
                 source_ref='["chat:1:0"]#h:abc123',
             )
         )
@@ -58,10 +85,10 @@ def test_forget_memory_tool_ignores_duplicates_and_reports_missing(tmp_path):
     assert output.output["missing_ids"] == ["missing"]
 
 
-def test_forget_memory_tool_reports_unconfigured_vector_memory():
+def test_forget_memory_tool_reports_unconfigured_memory_engine():
     tool = ForgetMemoryTool(memory_engine=None)
 
     output = tool.execute(ids=["mem_missing"])
 
     assert output.is_error is True
-    assert output.output["error"] == "vector memory is not configured"
+    assert output.output["error"] == "memory engine is not configured"

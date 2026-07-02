@@ -42,10 +42,10 @@ Phase 2 verification command：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest `
-  tests/memory/test_vector_memory.py `
+  tests/memory/test_memory_ranking.py `
   tests/memory/test_session_memory_runtime.py `
   tests/memory/test_memory_retrieval_acceptance.py `
-  tests/memory/test_runtime_vector_memory.py `
+  tests/memory/test_runtime_memory.py `
   tests/app/test_cli.py `
   tests/app/test_bootstrap_tool_runtime.py -v
 ```
@@ -55,7 +55,7 @@ Phase 2 verification command：
 交付范围：
 
 - Markdown memory：保留可读的 SELF/MEMORY/HISTORY/PENDING/RECENT_CONTEXT 文件语义，明确 profile、history、pending、correction 等条目的生命周期。
-- Vector memory：SQLite-backed retrieval store 支持 embedding 写入、source_ref 去重、kind 过滤、happened_at、status、reinforcement 和可解释 scoring signals。
+- Long-term memory store：SQLite-backed retrieval store 支持 embedding 写入、source_ref 去重、kind 过滤、happened_at、status、reinforcement 和可解释 scoring signals。
 - Retrieval：支持 vector、lexical、RRF 融合、query planning、hypothesis fallback、timeline/procedure/context/answer 等公开查询意图。
 - Ranking：reinforcement 必须真实影响排序或 context 注入选择；time decay 只有在能给出确定性测试和清晰面试解释时才加入。
 - Source references：`recall_memory` 返回的候选记忆必须带 `source_ref`/evidence，并能通过 `fetch_messages` 回源到原始 session messages。
@@ -67,7 +67,7 @@ Phase 2 verification command：
 
 验收标准：
 
-- 能演示一条完整记忆链路：session 消息 -> Markdown consolidation -> vector ingest -> recall -> fetch_messages 回源 -> correction/forget -> 后续 query 不再使用旧记忆。
+- 能演示一条完整记忆链路：session 消息 -> Markdown consolidation -> long-term memory ingest -> recall -> fetch_messages 回源 -> forget -> 后续 query 不再使用旧记忆。
 - memory-specific eval 或 smoke 覆盖 recall、source_ref fetch、correction、forgetting、fallback、context-frame injection、reinforcement ranking、retrieval trace。
 - 所有记忆相关能力都有代码证据和验证命令，面试时能指向公开工具、runtime 行为或 trace，而不只解释内部 helper。
 - 简历措辞不能写尚未实现的 sqlite-vec、emotional_weight 等具体能力。

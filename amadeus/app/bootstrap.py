@@ -13,17 +13,15 @@ from amadeus.events import EventBus
 from amadeus.memory import (
     AkashicMemoryEngine,
     LLMMemoryExtractor,
+    LLMHypothesisProvider,
     MarkdownMemoryRuntime,
     MemoryMemorizer,
     MemoryRetriever,
     MemoryStore,
-    PostResponseMemoryWorker,
-    build_markdown_memory_runtime,
-)
-from amadeus.memory.vector import (
-    LLMHypothesisProvider,
     OpenAIEmbeddingConfig,
     OpenAIEmbeddingProvider,
+    PostResponseMemoryWorker,
+    build_markdown_memory_runtime,
 )
 from amadeus.plugin.manager import PluginManager
 from amadeus.plugin.types import PluginLoadReport
@@ -58,10 +56,10 @@ class RuntimeConfig:
     provider: LLMProviderConfig
     default_session_key: str = "cli:default"
     memory_keep_count: int = 12
-    vector_memory_enabled: bool = False
-    vector_memory_db_path: Path | None = None
+    long_term_memory_enabled: bool = False
+    long_term_memory_db_path: Path | None = None
     embedding_model: str | None = None
-    vector_memory_top_k: int = 8
+    long_term_memory_top_k: int = 8
 
 
 class AppState(str, Enum):  # noqa: UP042
@@ -230,13 +228,15 @@ def load_runtime_config(
     max_tokens = _int_config("OPENAI_MAX_TOKENS", file_values, default=2048)
     keep_count = _int_config("AMADEUS_MEMORY_KEEP_COUNT", file_values, default=12)
     session_key = _config_value("AMADEUS_SESSION_KEY", file_values) or "cli:default"
-    vector_memory_enabled = _bool_config("AMADEUS_VECTOR_MEMORY_ENABLED", file_values)
-    vector_memory_db_path = root / "memory" / "memory2.db"
-    embedding_model = _config_value("OPENAI_EMBEDDING_MODEL", file_values)
-    vector_memory_top_k = _int_config(
-        "AMADEUS_VECTOR_MEMORY_TOP_K", file_values, default=8
+    long_term_memory_enabled = _bool_config(
+        "AMADEUS_LONG_TERM_MEMORY_ENABLED", file_values
     )
-    if vector_memory_enabled and not embedding_model:
+    long_term_memory_db_path = root / "memory" / "long_term_memory.db"
+    embedding_model = _config_value("OPENAI_EMBEDDING_MODEL", file_values)
+    long_term_memory_top_k = _int_config(
+        "AMADEUS_LONG_TERM_MEMORY_TOP_K", file_values, default=8
+    )
+    if long_term_memory_enabled and not embedding_model:
         raise ValueError("Missing Amadeus runtime config: OPENAI_EMBEDDING_MODEL")
     return RuntimeConfig(
         workspace_root=root,
@@ -249,10 +249,10 @@ def load_runtime_config(
         ),
         default_session_key=session_key,
         memory_keep_count=keep_count,
-        vector_memory_enabled=vector_memory_enabled,
-        vector_memory_db_path=vector_memory_db_path,
+        long_term_memory_enabled=long_term_memory_enabled,
+        long_term_memory_db_path=long_term_memory_db_path,
         embedding_model=embedding_model,
-        vector_memory_top_k=vector_memory_top_k,
+        long_term_memory_top_k=long_term_memory_top_k,
     )
 
 
@@ -275,11 +275,11 @@ def build_passive_app(
     tool_registry.register(EditFileTool())
     tool_registry.register(ListDirTool())
     tool_executor = ToolExecutor(registry=tool_registry)
-    vector_memory = None
+    long_term_memory = None
     if (
-        config.vector_memory_enabled
+        config.long_term_memory_enabled
         and config.embedding_model
-        and config.vector_memory_db_path is not None
+        and config.long_term_memory_db_path is not None
     ):
         embedding_provider = OpenAIEmbeddingProvider(
             OpenAIEmbeddingConfig(
@@ -289,18 +289,18 @@ def build_passive_app(
                 timeout_seconds=config.provider.timeout_seconds,
             )
         )
-        store = MemoryStore(config.vector_memory_db_path)
+        store = MemoryStore(config.long_term_memory_db_path)
         memorizer = MemoryMemorizer(
             store=store,
             embedding_provider=embedding_provider,
         )
-        vector_memory = AkashicMemoryEngine(
+        long_term_memory = AkashicMemoryEngine(
             store=store,
             retriever=MemoryRetriever(
                 store=store,
                 embedding_provider=embedding_provider,
                 hypothesis_provider=LLMHypothesisProvider(provider=provider),
-                top_k=config.vector_memory_top_k,
+                top_k=config.long_term_memory_top_k,
             ),
             memorizer=memorizer,
             worker=PostResponseMemoryWorker(
@@ -318,20 +318,20 @@ def build_passive_app(
         session_manager=session_manager,
         event_bus=event_bus,
         keep_count=config.memory_keep_count,
-        vector_memory=vector_memory,
+        long_term_memory=long_term_memory,
     )
-    tool_registry.register(RecallMemoryTool(memory_engine=vector_memory))
-    tool_registry.register(RuntimeMemorizeTool(memory_engine=vector_memory))
-    tool_registry.register(ForgetMemoryTool(memory_engine=vector_memory))
+    tool_registry.register(RecallMemoryTool(memory_engine=long_term_memory))
+    tool_registry.register(RuntimeMemorizeTool(memory_engine=long_term_memory))
+    tool_registry.register(ForgetMemoryTool(memory_engine=long_term_memory))
     tool_registry.register(
-        RuntimeUndoMemoryBySourceTool(memory_engine=vector_memory)
+        RuntimeUndoMemoryBySourceTool(memory_engine=long_term_memory)
     )
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
         provider=provider,
         session_manager=session_manager,
         event_bus=event_bus,
-        memory_engine=vector_memory,
+        memory_engine=long_term_memory,
         tool_registry=tool_registry,
         tool_executor=tool_executor,
     )
@@ -344,7 +344,7 @@ def build_passive_app(
         tool_registry=tool_registry,
         workspace=config.workspace_root,
         session_manager=session_manager,
-        memory_engine=vector_memory,
+        memory_engine=long_term_memory,
     )
     return PassiveApp(
         config=config,

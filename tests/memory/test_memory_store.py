@@ -4,7 +4,7 @@ from amadeus.memory.store import MemoryStore
 
 
 def test_store_creates_memory2_schema(tmp_path):
-    store = MemoryStore(tmp_path / "memory2.db")
+    store = MemoryStore(tmp_path / "long_term_memory.db")
 
     names = store.list_table_names()
 
@@ -13,7 +13,7 @@ def test_store_creates_memory2_schema(tmp_path):
 
 
 def test_store_can_record_and_read_replacement_chain(tmp_path):
-    store = MemoryStore(tmp_path / "memory2.db")
+    store = MemoryStore(tmp_path / "long_term_memory.db")
     store.insert_item(
         item_id="mem_old",
         memory_type="fact",

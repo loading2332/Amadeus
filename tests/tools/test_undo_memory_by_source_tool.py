@@ -35,7 +35,7 @@ class FakeExtractor:
 
 def _build_memory_engine(tmp_path):
     provider = StableEmbeddingProvider()
-    store = MemoryStore(tmp_path / "memory2.db")
+    store = MemoryStore(tmp_path / "long_term_memory.db")
     memorizer = MemoryMemorizer(store=store, embedding_provider=provider)
     retriever = MemoryRetriever(store=store, embedding_provider=provider)
     worker = PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor())

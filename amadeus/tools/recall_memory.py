@@ -97,7 +97,7 @@ class RecallMemoryTool:
                 output={
                     "count": 0,
                     "items": [],
-                    "error": "vector memory is not configured",
+                    "error": "memory engine is not configured",
                 },
                 is_error=True,
             )

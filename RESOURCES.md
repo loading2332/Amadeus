@@ -34,10 +34,10 @@ This file is the active resource index for interview delivery. Akashic remains t
   PassiveRuntime, phase execution, prompt render, provider call, tool loop, commit, and after-turn hook.
 
 - `amadeus/app/bootstrap.py`
-  App composition, real provider config, vector memory setup, tool registry, plugin manager, and lifecycle start/close.
+  App composition, real provider config, long-term memory setup, tool registry, plugin manager, and lifecycle start/close.
 
-- `amadeus/memory/markdown.py` and `amadeus/memory/vector.py`
-  Markdown memory, optimizer, vector store, retrieval, RRF, source_ref evidence, and forgetting.
+- `amadeus/memory/markdown.py`, `amadeus/memory/akashic.py`, `amadeus/memory/retriever.py`, and `amadeus/memory/ranking.py`
+  Markdown memory, optimizer, long-term memory store, retrieval, RRF, source_ref evidence, and forgetting.
 
 - `amadeus/context.py` and `amadeus/prompting/assembler.py`
   Prompt sections, context frame, dynamic context isolation, section disabling, and message envelope.

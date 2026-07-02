@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import re
 import shutil
@@ -13,8 +12,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from amadeus.events import EventBus, TurnCommitted
-from amadeus.memory.engine import MemoryEngine, MemoryIngestRequest, MemoryWriteRequest
-from amadeus.memory.vector import build_entry_source_ref
+from amadeus.memory.engine import MemoryEngine, MemoryWriteRequest
+from amadeus.memory.source_refs import (
+    build_entry_source_ref,
+    parse_history_entry_happened_at,
+)
 from amadeus.provider import LLMProvider
 from amadeus.session.store import Session, SessionManager, is_real_memory_message
 
@@ -286,7 +288,7 @@ class MarkdownMemoryMaintenance:
         keep_count: int = 12,
         session_manager: SessionManager | None = None,
         event_bus: EventBus | None = None,
-        vector_memory: MemoryEngine | None = None,
+        long_term_memory: MemoryEngine | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
@@ -294,7 +296,7 @@ class MarkdownMemoryMaintenance:
         self.keep_count = max(1, int(keep_count))
         self.min_new_messages = max(5, self.keep_count // 2)
         self.session_manager = session_manager
-        self.vector_memory = vector_memory
+        self.long_term_memory = long_term_memory
         if event_bus is not None:
             event_bus.on(TurnCommitted, self.on_turn_committed)
 
@@ -330,13 +332,13 @@ class MarkdownMemoryMaintenance:
         if draft is None:
             return ConsolidateResult(trace={"mode": "skipped"})
         committed_entries = self._commit_draft(request.session, draft)
-        vector_trace = await self._ingest_vector_memory(draft, committed_entries)
+        memory_trace = await self._ingest_long_term_memory(draft, committed_entries)
         return ConsolidateResult(
             consolidated_count=len(draft.window.old_messages),
             trace={
                 "mode": "markdown",
                 "source_ref": draft.source_ref,
-                "vector_ingest": vector_trace,
+                "long_term_memory_ingest": memory_trace,
             },
         )
 
@@ -454,7 +456,7 @@ class MarkdownMemoryMaintenance:
         session.last_consolidated = 0 if draft.archive_all else draft.window.consolidate_up_to
         return committed_entries
 
-    async def _ingest_vector_memory(
+    async def _ingest_long_term_memory(
         self,
         draft: _ConsolidationDraft,
         entries: list[str],
@@ -465,13 +467,14 @@ class MarkdownMemoryMaintenance:
             "failed": 0,
             "errors": [],
         }
-        if self.vector_memory is None:
+        if self.long_term_memory is None:
             return trace
-        requests: list[MemoryIngestRequest] = [
-            MemoryIngestRequest(
+        requests: list[MemoryWriteRequest] = [
+            MemoryWriteRequest(
                 summary=entry,
-                kind="event",
+                memory_type="event",
                 source_ref=build_entry_source_ref(draft.source_ref, entry),
+                happened_at=parse_history_entry_happened_at(entry),
             )
             for entry in entries
         ]
@@ -484,21 +487,15 @@ class MarkdownMemoryMaintenance:
         for request in requests:
             trace["attempted"] += 1
             try:
-                result = await self.vector_memory.memorize(
-                    MemoryWriteRequest(
-                        summary=request.summary,
-                        memory_type=request.kind,
-                        source_ref=request.source_ref,
-                        happened_at=request.happened_at,
-                        extra=dict(request.extra),
-                    )
+                result = await self.long_term_memory.memorize(
+                    request
                 )
             except Exception as error:
                 trace["failed"] += 1
                 trace["errors"].append(
                     {
                         "source_ref": request.source_ref,
-                        "kind": request.kind,
+                        "kind": request.memory_type,
                         "error": str(error),
                     }
                 )
@@ -510,7 +507,7 @@ class MarkdownMemoryMaintenance:
                 trace["errors"].append(
                     {
                         "source_ref": request.source_ref,
-                        "kind": request.kind,
+                        "kind": request.memory_type,
                         "status": result.status,
                     }
                 )
@@ -594,7 +591,7 @@ def build_markdown_memory_runtime(
     session_manager: SessionManager | None = None,
     event_bus: EventBus | None = None,
     keep_count: int = 12,
-    vector_memory: MemoryEngine | None = None,
+    long_term_memory: MemoryEngine | None = None,
 ) -> MarkdownMemoryRuntime:
     store = MarkdownMemoryStore(workspace_root)
     maintenance = MarkdownMemoryMaintenance(
@@ -604,7 +601,7 @@ def build_markdown_memory_runtime(
         keep_count=keep_count,
         session_manager=session_manager,
         event_bus=event_bus,
-        vector_memory=vector_memory,
+        long_term_memory=long_term_memory,
     )
     optimizer = MemoryOptimizer(store=store, provider=provider, model=model)
     return MarkdownMemoryRuntime(store=store, maintenance=maintenance, optimizer=optimizer)
@@ -703,14 +700,13 @@ def _source_ref(messages: list[dict[str, Any]]) -> str:
 
 
 def _entry_source_ref(source_ref: str, entry: str) -> str:
-    digest = hashlib.sha1(entry.encode("utf-8")).hexdigest()[:12]
-    return f"{source_ref}#h:{digest}"
+    return build_entry_source_ref(source_ref, entry)
 
 
 def _pending_line_to_ingest_request(
     source_ref: str,
     line: str,
-) -> MemoryIngestRequest | None:
+) -> MemoryWriteRequest | None:
     match = re.match(r"^- \[(?P<tag>[a-z_]+)\] (?P<content>.+)$", line.strip())
     if not match:
         return None
@@ -733,9 +729,9 @@ def _pending_line_to_ingest_request(
     extra = {"memory_tag": tag}
     if tag == "correction":
         extra["lifecycle"] = "correction"
-    return MemoryIngestRequest(
+    return MemoryWriteRequest(
         summary=content,
-        kind=kind,
+        memory_type=kind,
         source_ref=build_entry_source_ref(source_ref, line),
         extra=extra,
     )

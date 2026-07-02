@@ -6,14 +6,18 @@ from typing import Any
 
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.memory import (
+    AkashicMemoryEngine,
     ConsolidateRequest,
     MarkdownMemoryMaintenance,
     MarkdownMemoryStore,
+    MemoryMemorizer,
     MemoryOptimizer,
+    MemoryRetriever,
+    MemoryStore,
+    PostResponseMemoryWorker,
     RefreshRecentTurnsRequest,
 )
-from amadeus.memory.engine import MemoryQuery
-from amadeus.memory.vector import VectorMemoryEngine, VectorMemoryStore
+from amadeus.memory.engine import MemoryRecallRequest
 from amadeus.session.store import SessionManager, fetch_messages, search_messages
 
 
@@ -37,6 +41,16 @@ class StableEmbeddingProvider:
         if "phase 2" in lowered or "phase 2" in text:
             return [0.0, 0.0, 1.0]
         return [0.5, 0.5, 0.5]
+
+
+class FakeExtractor:
+    async def extract(
+        self,
+        *,
+        session_key: str,
+        messages: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        return []
 
 
 def test_session_store_persists_stable_message_ids_and_fetches_source_ref(tmp_path):
@@ -135,7 +149,7 @@ def test_consolidation_writes_history_pending_recent_context_and_updates_cursor(
     assert session.last_consolidated > 0
 
 
-def test_consolidation_ingests_pending_profile_preference_and_correction_into_vector_memory(
+def test_consolidation_ingests_pending_profile_preference_and_correction_into_memory_engine(
     tmp_path,
 ):
     manager = SessionManager(tmp_path)
@@ -166,9 +180,13 @@ def test_consolidation_ingests_pending_profile_preference_and_correction_into_ve
         }
         """,
     )
-    vector = VectorMemoryEngine(
-        store=VectorMemoryStore(tmp_path / "vector_memory.db"),
-        embedding_provider=StableEmbeddingProvider(),
+    store_db = MemoryStore(tmp_path / "long_term_memory.db")
+    memorizer = MemoryMemorizer(store=store_db, embedding_provider=StableEmbeddingProvider())
+    memory_engine = AkashicMemoryEngine(
+        store=store_db,
+        retriever=MemoryRetriever(store=store_db, embedding_provider=StableEmbeddingProvider()),
+        memorizer=memorizer,
+        worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
     )
     store = MarkdownMemoryStore(tmp_path)
     maintenance = MarkdownMemoryMaintenance(
@@ -177,19 +195,23 @@ def test_consolidation_ingests_pending_profile_preference_and_correction_into_ve
         model="fake",
         keep_count=4,
         session_manager=manager,
-        vector_memory=vector,
+        long_term_memory=memory_engine,
     )
 
     result = asyncio.run(maintenance.consolidate(ConsolidateRequest(session=session)))
-    profile = asyncio.run(vector.query(MemoryQuery(text="面试项目", kinds=("profile",))))
+    profile = asyncio.run(
+        memory_engine.recall(MemoryRecallRequest(text="面试项目", memory_types=("profile",)))
+    )
     preference = asyncio.run(
-        vector.query(MemoryQuery(text="中文解释", kinds=("preference",)))
+        memory_engine.recall(
+            MemoryRecallRequest(text="中文解释", memory_types=("preference",))
+        )
     )
     correction = asyncio.run(
-        vector.query(MemoryQuery(text="Memory Phase 2", kinds=("fact",)))
+        memory_engine.recall(MemoryRecallRequest(text="Memory Phase 2", memory_types=("fact",)))
     )
 
-    assert result.trace["vector_ingest"]["attempted"] == 4
+    assert result.trace["long_term_memory_ingest"]["attempted"] == 4
     assert profile.records[0].kind == "profile"
     assert profile.records[0].signals["extra"]["memory_tag"] == "identity"
     assert preference.records[0].kind == "preference"

@@ -4,6 +4,7 @@ import asyncio
 import inspect
 from typing import cast
 
+import amadeus.runtime.before_turn as before_turn_module
 from amadeus.events import EventBus
 from amadeus.memory.engine import (
     MemoryContextResult,
@@ -243,5 +244,5 @@ def test_before_turn_phase_inspection_exposes_real_graph(tmp_path) -> None:
     assert "session:ctx" in report
 
 
-def test_before_turn_modules_no_longer_reference_render_context_block() -> None:
-    assert "render_context_block" not in inspect.getsource(default_before_turn_modules)
+def test_before_turn_modules_use_build_context_contract() -> None:
+    assert ".build_context(" in inspect.getsource(before_turn_module)

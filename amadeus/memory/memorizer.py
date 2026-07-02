@@ -7,8 +7,8 @@ from amadeus.memory.engine import (
     MemoryMutationResult,
     MemoryWriteRequest,
 )
+from amadeus.memory.providers import EmbeddingProvider
 from amadeus.memory.store import MemoryStore
-from amadeus.memory.vector import EmbeddingProvider
 
 
 @dataclass
