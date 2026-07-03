@@ -138,3 +138,36 @@ Implemented Akashic-style explicit memory retrieval with event/general hypothesi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: FastAPI web turn runtime
+
+**Date**: 2026-07-04
+**Task**: FastAPI web turn runtime
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+Implemented FastAPI web chat entrypoint with turn queue, SSE status tracking, independent worker, APIRouter structure, focused tests, and task documentation for the delivery runtime branch.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8fd146c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

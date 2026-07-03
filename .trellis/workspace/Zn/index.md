@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-07-03
+- **Total Sessions**: 5
+- **Last Active**: 2026-07-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~140 | Active |
+| `journal-1.md` | ~173 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-07-04 | FastAPI web turn runtime | `8fd146c` | `codex/delivery-runtime` |
 | 4 | 2026-07-03 | Akashic-style hypothesis retrieval | `d977565` | `main` |
 | 3 | 2026-07-03 | Memory hotness ranking | `6bc42c9` | `main` |
 | 2 | 2026-07-03 | Memory quality eval and Trellis bootstrap | `f5052c3`, `c111318` | `main` |
