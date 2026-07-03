@@ -213,3 +213,10 @@ def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
     assert recalled.output["trace"]["records"][0]["id"] == recalled.output["items"][0]["id"]
     assert recalled.output["trace"]["records"][0]["signals"]["lanes"] == ["vector", "lexical"]
     assert recalled.output["trace"]["records"][0]["signals"]["vector_score"] > 0
+    signals = recalled.output["trace"]["records"][0]["signals"]
+    assert signals["final_vector_score"] >= signals["vector_score"] * 0.8
+    assert signals["hotness_alpha"] == 0.2
+    assert signals["hotness_score"] > 0
+    assert signals["hotness_recency"] > 0
+    assert signals["emotional_weight"] == 0
+    assert signals["hotness_updated_at"]

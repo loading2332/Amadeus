@@ -142,3 +142,66 @@ if result.item_id:
         replacement_source_ref=new_request.source_ref,
     )
 ```
+
+## Scenario: Memory Hotness Ranking
+
+### 1. Scope / Trigger
+
+- Trigger: retrieval ranking code that changes how long-term memory rows are scored, ordered, or exposed through recall/runtime traces.
+- This requires code-spec depth because ranking spans SQLite row fields, ranking utilities, retriever trace records, public `recall_memory` output, and interview documentation.
+
+### 2. Signatures
+
+- `rank_rows(rows: list[dict[str, Any]], query_vector: list[float], query_text: str, *, limit: int, threshold: float) -> list[MemoryRecord]`
+- `hotness_signal_for_row(row: dict[str, Any], *, now: datetime | None = None, half_life_days: float = 14.0) -> dict[str, float | int | str]`
+- `hotness_fused_score(semantic_score: float, hotness_score: float) -> float`
+- `MemoryStore._row_to_item(row: sqlite3.Row) -> dict[str, Any]`
+
+### 3. Contracts
+
+- Vector candidates must pass the semantic threshold before hotness is applied.
+- Vector-lane ordering uses Akashic-style fusion: `0.8 * semantic_score + 0.2 * hotness_score`.
+- `hotness_score` is frequency times recency:
+  - frequency is bounded from `reinforcement`;
+  - recency decays from `updated_at`;
+  - `emotional_weight` extends the effective half-life instead of directly adding score.
+- `MemoryRecord.signals` must expose `vector_score`, `final_vector_score`, `hotness_score`, `hotness_recency`, `hotness_frequency`, `hotness_age_days`, `hotness_effective_half_life_days`, `hotness_alpha`, `reinforcement`, and `emotional_weight`.
+- `vector_score` means raw semantic score; do not repurpose it as the fused score.
+
+### 4. Validation & Error Matrix
+
+- Missing or invalid `updated_at` -> hotness recency is `0.0`; retrieval still works.
+- Missing `reinforcement` -> use `1`.
+- Invalid `emotional_weight` -> clamp/default into the `0..10` range.
+- Semantic score below threshold -> candidate does not enter the vector lane, even when hotness would be high.
+
+### 5. Good/Base/Bad Cases
+
+- Good: two semantically comparable memories are ordered by fused score, with trace showing semantic, hotness, and final vector score.
+- Base: a strong semantic/lexical dual-lane match still outranks a merely hot memory.
+- Bad: a hot but semantically unrelated memory enters retrieval because hotness was applied before threshold filtering.
+
+### 6. Tests Required
+
+- Unit test that hotness changes ordering for comparable memories.
+- Unit test that `emotional_weight` slows decay or increases hotness under otherwise comparable conditions.
+- Unit test that a hot unrelated memory does not cross the semantic threshold.
+- Public recall/tool test that trace records include hotness component fields.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+final = 0.8 * semantic_score + 0.2 * hotness_score
+if final >= threshold:
+    vector_scored.append((item_id, final))
+```
+
+#### Correct
+
+```python
+if semantic_score >= threshold:
+    final = hotness_fused_score(semantic_score, hotness_score)
+    vector_scored.append((item_id, final))
+```

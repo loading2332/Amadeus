@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
-import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -180,10 +180,11 @@ class MemoryStore:
                     UPDATE memory_items
                     SET reinforcement = reinforcement + 1,
                         updated_at = ?,
-                        happened_at = COALESCE(NULLIF(happened_at, ''), ?)
+                        happened_at = COALESCE(NULLIF(happened_at, ''), ?),
+                        emotional_weight = MAX(emotional_weight, ?)
                     WHERE id = ?
                     """,
-                    (now, happened_at, reinforced_id),
+                    (now, happened_at, float(emotional_weight), reinforced_id),
                 )
                 self._conn.commit()
                 return reinforced_id, "reinforced"
@@ -400,6 +401,8 @@ class MemoryStore:
             "status": str(row["status"]),
             "reinforcement": int(row["reinforcement"] or 1),
             "emotional_weight": float(row["emotional_weight"] or 0.0),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
             "extra": json.loads(row["extra_json"] or "{}"),
         }
 

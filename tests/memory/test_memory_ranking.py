@@ -114,6 +114,117 @@ def test_rank_rows_reinforcement_does_not_outrank_stronger_dual_lane_match():
     assert result[1].signals["reinforcement"] == 1_000_000_000
 
 
+def test_rank_rows_hotness_fusion_prefers_recent_reinforced_memory():
+    rows = [
+        {
+            "id": "stale",
+            "kind": "event",
+            "summary": "用户讨论过发布流程",
+            "embedding": [0.8, 0.0, 0.0],
+            "source_ref": "",
+            "happened_at": None,
+            "created_at": "2020-01-01T00:00:00+00:00",
+            "updated_at": "2020-01-01T00:00:00+00:00",
+            "extra": {},
+            "reinforcement": 1,
+            "emotional_weight": 0,
+        },
+        {
+            "id": "recent",
+            "kind": "event",
+            "summary": "用户讨论过发布流程",
+            "embedding": [0.8, 0.0, 0.0],
+            "source_ref": "",
+            "happened_at": None,
+            "created_at": "2999-01-01T00:00:00+00:00",
+            "updated_at": "2999-01-01T00:00:00+00:00",
+            "extra": {},
+            "reinforcement": 10,
+            "emotional_weight": 0,
+        },
+    ]
+
+    result = rank_rows(rows, [1.0, 0.0, 0.0], "release", limit=2, threshold=0.3)
+
+    assert result[0].id == "recent"
+    assert result[0].signals["final_vector_score"] > result[1].signals["final_vector_score"]
+    assert result[0].signals["hotness_score"] > result[1].signals["hotness_score"]
+
+
+def test_rank_rows_emotional_weight_slows_hotness_decay():
+    rows = [
+        {
+            "id": "neutral",
+            "kind": "event",
+            "summary": "用户讨论过长期计划",
+            "embedding": [0.8, 0.0, 0.0],
+            "source_ref": "",
+            "happened_at": None,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "extra": {},
+            "reinforcement": 3,
+            "emotional_weight": 0,
+        },
+        {
+            "id": "weighted",
+            "kind": "event",
+            "summary": "用户讨论过长期计划",
+            "embedding": [0.8, 0.0, 0.0],
+            "source_ref": "",
+            "happened_at": None,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "extra": {},
+            "reinforcement": 3,
+            "emotional_weight": 10,
+        },
+    ]
+
+    result = rank_rows(rows, [1.0, 0.0, 0.0], "plan", limit=2, threshold=0.3)
+
+    assert result[0].id == "weighted"
+    assert result[0].signals["hotness_effective_half_life_days"] > result[1].signals[
+        "hotness_effective_half_life_days"
+    ]
+    assert result[0].signals["hotness_score"] > result[1].signals["hotness_score"]
+
+
+def test_rank_rows_hot_unrelated_memory_does_not_cross_semantic_threshold():
+    rows = [
+        {
+            "id": "relevant",
+            "kind": "event",
+            "summary": "相关候选",
+            "embedding": [0.7, 0.0, 0.0],
+            "source_ref": "",
+            "happened_at": None,
+            "created_at": "2020-01-01T00:00:00+00:00",
+            "updated_at": "2020-01-01T00:00:00+00:00",
+            "extra": {},
+            "reinforcement": 1,
+            "emotional_weight": 0,
+        },
+        {
+            "id": "hot-unrelated",
+            "kind": "event",
+            "summary": "无关候选",
+            "embedding": [0.0, 1.0, 0.0],
+            "source_ref": "",
+            "happened_at": None,
+            "created_at": "2999-01-01T00:00:00+00:00",
+            "updated_at": "2999-01-01T00:00:00+00:00",
+            "extra": {},
+            "reinforcement": 1_000_000,
+            "emotional_weight": 10,
+        },
+    ]
+
+    result = rank_rows(rows, [1.0, 0.0, 0.0], "nomatch", limit=2, threshold=0.3)
+
+    assert [record.id for record in result] == ["relevant"]
+
+
 def test_extract_terms_adds_cjk_bigrams_and_removes_stop_words():
     terms = extract_terms("我 之前 讨论仁王机制")
 

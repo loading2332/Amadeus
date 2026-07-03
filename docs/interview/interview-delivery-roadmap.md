@@ -57,7 +57,7 @@ Phase 2 verification command：
 - Markdown memory：保留可读的 SELF/MEMORY/HISTORY/PENDING/RECENT_CONTEXT 文件语义，明确 profile、history、pending、correction 等条目的生命周期。
 - Long-term memory store：SQLite-backed retrieval store 支持 embedding 写入、source_ref 去重、kind 过滤、happened_at、status、reinforcement 和可解释 scoring signals。
 - Retrieval：支持 vector、lexical、RRF 融合、query planning、hypothesis fallback、timeline/procedure/context/answer 等公开查询意图。
-- Ranking：reinforcement 必须真实影响排序或 context 注入选择；time decay 只有在能给出确定性测试和清晰面试解释时才加入。
+- Ranking：retrieval 使用 Akashic-style hotness fusion：通过语义阈值后的向量候选按 `0.8 * semantic + 0.2 * hotness` 排序，其中 hotness 由 reinforcement、updated_at time decay 和 emotional_weight 半衰期修正组成；trace 暴露 semantic、hotness、final score 和各组成信号。
 - Source references：`recall_memory` 返回的候选记忆必须带 `source_ref`/evidence，并能通过 `fetch_messages` 回源到原始 session messages。
 - Correction：用户纠正记忆时，必须先定位 memory id，再回源核对，最后 soft-delete 或写入更正记忆；不能把 message id 当作 memory id。
 - Forgetting：`forget_memory`/mutation 必须把错误记忆标记为 superseded，查询和 context 注入默认不再使用，同时原始消息仍可回源。
@@ -70,7 +70,7 @@ Phase 2 verification command：
 - 能演示一条完整记忆链路：session 消息 -> Markdown consolidation -> long-term memory ingest -> recall -> fetch_messages 回源 -> forget -> 后续 query 不再使用旧记忆。
 - memory-specific eval 或 smoke 覆盖 recall、source_ref fetch、correction、forgetting、fallback、context-frame injection、reinforcement ranking、retrieval trace。
 - 所有记忆相关能力都有代码证据和验证命令，面试时能指向公开工具、runtime 行为或 trace，而不只解释内部 helper。
-- 简历措辞不能写尚未实现的 sqlite-vec、emotional_weight 等具体能力。
+- 简历措辞不能写尚未实现的 sqlite-vec；hotness ranking 可以描述为已迁移 Akashic 的 scoring 思路，但不能说完整迁移了 Akashic memory2。
 
 ## 阶段 3：产品化 Evaluation
 

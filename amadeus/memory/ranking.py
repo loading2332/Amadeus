@@ -12,6 +12,8 @@ from amadeus.memory.engine import EvidenceRef, MemoryRecord
 
 _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 0.5
+_HOTNESS_ALPHA = 0.20
+_HOTNESS_HALF_LIFE_DAYS = 14.0
 
 
 @dataclass(frozen=True)
@@ -57,16 +59,27 @@ def rank_rows(
     terms = extract_terms(query_text)
     vector_scored: list[tuple[str, float]] = []
     keyword_scored: list[tuple[str, float]] = []
+    semantic_scores: dict[str, float] = {}
+    final_vector_scores: dict[str, float] = {}
+    hotness_signals: dict[str, dict[str, float | int | str]] = {}
     row_map: dict[str, dict[str, Any]] = {}
 
     for row in rows:
         row_id = str(row["id"])
         row_map[row_id] = row
-        vector_score = cosine(query_vector, row["embedding"]) if query_vector else 0.0
+        semantic_score = cosine(query_vector, row["embedding"]) if query_vector else 0.0
         keyword_score = keyword_score_for_summary(row["summary"], terms)
+        hotness_signal = hotness_signal_for_row(row)
+        hotness_signals[row_id] = hotness_signal
 
-        if vector_score >= threshold:
-            vector_scored.append((row_id, vector_score))
+        if semantic_score >= threshold:
+            final_vector_score = hotness_fused_score(
+                semantic_score,
+                float(hotness_signal["hotness_score"]),
+            )
+            semantic_scores[row_id] = semantic_score
+            final_vector_scores[row_id] = final_vector_score
+            vector_scored.append((row_id, final_vector_score))
         if keyword_score > 0:
             keyword_scored.append((row_id, keyword_score))
 
@@ -76,7 +89,6 @@ def rank_rows(
         row_map=row_map,
         top_n=max(1, int(limit)),
     )
-    vec_scores = dict(vector_scored)
     kw_scores = dict(keyword_scored)
 
     return [
@@ -91,15 +103,30 @@ def rank_rows(
                 "lanes": [
                     lane
                     for lane, score in (
-                        ("vector", vec_scores.get(item_id, 0.0)),
+                        ("vector", final_vector_scores.get(item_id, 0.0)),
                         ("lexical", kw_scores.get(item_id, 0.0)),
                     )
                     if score > 0
                 ],
-                "vector_score": vec_scores.get(item_id, 0.0),
+                "vector_score": semantic_scores.get(item_id, 0.0),
+                "final_vector_score": final_vector_scores.get(item_id, 0.0),
                 "lexical_score": kw_scores.get(item_id, 0.0),
                 "rrf_score": rrf_score,
                 "reinforcement": int(row_map[item_id].get("reinforcement") or 1),
+                "emotional_weight": coerce_emotional_weight(
+                    row_map[item_id].get("emotional_weight")
+                ),
+                "hotness_score": hotness_signals.get(item_id, {}).get("hotness_score", 0.0),
+                "hotness_alpha": _HOTNESS_ALPHA,
+                "hotness_half_life_days": _HOTNESS_HALF_LIFE_DAYS,
+                "hotness_recency": hotness_signals.get(item_id, {}).get("recency", 0.0),
+                "hotness_frequency": hotness_signals.get(item_id, {}).get("frequency", 0.0),
+                "hotness_effective_half_life_days": hotness_signals.get(item_id, {}).get(
+                    "effective_half_life_days",
+                    _HOTNESS_HALF_LIFE_DAYS,
+                ),
+                "hotness_age_days": hotness_signals.get(item_id, {}).get("age_days", 0.0),
+                "hotness_updated_at": hotness_signals.get(item_id, {}).get("updated_at", ""),
                 "reinforcement_boost": reinforcement_boost(row_map[item_id]),
                 "extra": dict(row_map[item_id].get("extra") or {}),
             },
@@ -249,6 +276,90 @@ def rrf_merge(
 def reinforcement_boost(row: dict[str, Any]) -> float:
     reinforcement = max(1, int(row.get("reinforcement") or 1))
     return math.log1p(reinforcement - 1) * 0.001
+
+
+def hotness_fused_score(semantic_score: float, hotness_score: float) -> float:
+    return (1.0 - _HOTNESS_ALPHA) * semantic_score + _HOTNESS_ALPHA * hotness_score
+
+
+def hotness_signal_for_row(
+    row: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    half_life_days: float = _HOTNESS_HALF_LIFE_DAYS,
+) -> dict[str, float | int | str]:
+    if now is None:
+        now = datetime.now().astimezone()
+    updated_at_text = str(row.get("updated_at") or row.get("created_at") or "").strip()
+    updated_at = parse_datetime(updated_at_text)
+    reinforcement = max(0, coerce_int(row.get("reinforcement"), default=1))
+    emotional_weight = coerce_emotional_weight(row.get("emotional_weight"))
+    # Akashic hotness: bounded frequency times exponential recency decay.
+    effective_half_life = max(
+        half_life_days * (1.0 + 0.5 * emotional_weight / 10.0),
+        0.1,
+    )
+    freq = 1.0 / (1.0 + math.exp(-math.log1p(reinforcement)))
+    if updated_at is None:
+        age_d = 0.0
+        recency = 0.0
+    else:
+        comparable_now = now
+        if updated_at.tzinfo is None and comparable_now.tzinfo is not None:
+            comparable_now = comparable_now.replace(tzinfo=None)
+        elif updated_at.tzinfo is not None and comparable_now.tzinfo is None:
+            comparable_now = comparable_now.replace(tzinfo=updated_at.tzinfo)
+        elif updated_at.tzinfo is not None and comparable_now.tzinfo is not None:
+            comparable_now = comparable_now.astimezone(updated_at.tzinfo)
+        age_d = max((comparable_now - updated_at).total_seconds() / 86400.0, 0.0)
+        recency = math.exp(-math.log(2) / effective_half_life * age_d)
+    hotness = freq * recency
+    return {
+        "reinforcement": reinforcement,
+        "emotional_weight": emotional_weight,
+        "updated_at": updated_at_text,
+        "age_days": age_d,
+        "frequency": freq,
+        "recency": recency,
+        "effective_half_life_days": effective_half_life,
+        "hotness_score": hotness,
+    }
+
+
+def parse_datetime(value: str) -> datetime | None:
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def coerce_int(value: Any, *, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (float, str)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    return default
+
+
+def coerce_emotional_weight(value: Any) -> int:
+    if isinstance(value, bool) or value is None or value == "":
+        return 0
+    if not isinstance(value, (int, float, str)):
+        return 0
+    try:
+        return max(0, min(10, int(value)))
+    except (TypeError, ValueError):
+        return 0
 
 
 def record_sort_key(record: MemoryRecord) -> tuple[float, float, str]:
