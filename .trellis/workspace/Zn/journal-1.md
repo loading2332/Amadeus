@@ -105,3 +105,36 @@ Implemented Akashic-style hotness fusion for memory ranking, exposed scoring sig
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Akashic-style hypothesis retrieval
+
+**Date**: 2026-07-03
+**Task**: Akashic-style hypothesis retrieval
+**Branch**: `main`
+
+### Summary
+
+Implemented Akashic-style explicit memory retrieval with event/general hypothesis queries, raw-only lexical retrieval, best-vector-hit pooling, structured trace, config wiring, tests, and interview documentation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d977565` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
