@@ -1,0 +1,499 @@
+{
+  "dataset_name": "amadeus-memory-quality-v1",
+  "experiment_name": "amadeus-memory-quality-352297b4",
+  "experiment_url": "https://smith.langchain.com/o/de366803-2911-4f09-9fc4-1c5724ca9f57/datasets/78ee1c16-7b61-4550-86cd-b85d13f63e42/compare?selectedSessions=ede706ac-ab40-4860-8f9d-2b6f4bda8cc2",
+  "total_cases": 9,
+  "passed_cases": 4,
+  "failed_case_ids": [
+    "assistant_restatement_not_memory_evidence",
+    "duplicate_preference_reinforcement_skips_write",
+    "procedure_correction_supersedes_old_rule",
+    "entity_attribute_conflict",
+    "reject_short_term_status"
+  ],
+  "records": [
+    {
+      "case_id": "assistant_restatement_not_memory_evidence",
+      "title": "assistant restatement without user evidence should not create memory",
+      "mode": "post_response_write",
+      "passed": false,
+      "assistant_response": "",
+      "elapsed_ms": 3387,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": false,
+          "value": null,
+          "comment": "no judge comment"
+        }
+      ]
+    },
+    {
+      "case_id": "duplicate_preference_reinforcement_skips_write",
+      "title": "repeated equivalent preference should not create duplicate active memory",
+      "mode": "post_response_write",
+      "passed": false,
+      "assistant_response": "",
+      "elapsed_ms": 11360,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": false,
+          "value": null,
+          "comment": "No answer provided."
+        }
+      ]
+    },
+    {
+      "case_id": "procedure_correction_supersedes_old_rule",
+      "title": "explicit procedure correction should supersede old conflicting rule",
+      "mode": "write_then_recall",
+      "passed": false,
+      "assistant_response": null,
+      "elapsed_ms": null,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": false,
+          "value": null,
+          "comment": "write_count expected >= 1, got 0; written_memories missing substring '先写测试'; active_memories missing substring '先写测试'"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": null,
+          "value": null,
+          "comment": "TypeError(\"'NoneType' object is not iterable\")"
+        },
+        {
+          "key": "memory_types",
+          "score": null,
+          "value": null,
+          "comment": "TypeError(\"'NoneType' object is not iterable\")"
+        },
+        {
+          "key": "conflict",
+          "score": false,
+          "value": null,
+          "comment": "superseded_memories missing substring '先实现再补测试'"
+        },
+        {
+          "key": "source_ref",
+          "score": false,
+          "value": null,
+          "comment": "recall_items and written_memories are empty; fetched_messages missing substring '以后修改代码前先写测试'"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": false,
+          "value": null,
+          "comment": "The answer is empty; it does not address the rubric at all."
+        }
+      ]
+    },
+    {
+      "case_id": "write_procedure_type",
+      "title": "explicit future execution rule should be written as procedure memory",
+      "mode": "write_then_recall",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 10469,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "memory type expectations satisfied"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer correctly captures the rule that tests should be written before code changes."
+        }
+      ]
+    },
+    {
+      "case_id": "noisy_text_extracts_key_fact",
+      "title": "noisy transcript should still extract the durable key fact",
+      "mode": "write_then_recall",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 61027,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer clearly captures the durable key fact that Amadeus is being built as an interview project, without any surrounding noisy activity."
+        }
+      ]
+    },
+    {
+      "case_id": "entity_attribute_conflict",
+      "title": "new entity attribute should replace conflicting old attribute",
+      "mode": "write_then_recall",
+      "passed": false,
+      "assistant_response": "",
+      "elapsed_ms": 9233,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": false,
+          "value": null,
+          "comment": "no judge comment"
+        }
+      ]
+    },
+    {
+      "case_id": "reject_short_term_status",
+      "title": "temporary online status should not become long term memory",
+      "mode": "post_response_write",
+      "passed": false,
+      "assistant_response": "",
+      "elapsed_ms": 2219,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": false,
+          "value": null,
+          "comment": "no judge comment"
+        }
+      ]
+    },
+    {
+      "case_id": "preference_conflict_current_over_history",
+      "title": "current preference should override historical conflicting preference",
+      "mode": "write_then_recall",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 42925,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer correctly states that the user's default reply language has been changed to Chinese, satisfying the requirement to favor Chinese over English."
+        }
+      ]
+    },
+    {
+      "case_id": "write_preference_type",
+      "title": "explicit language preference should be written as preference memory",
+      "mode": "post_response_write",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 13650,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "memory type expectations satisfied"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer explicitly states that the user's default reply language preference is Chinese."
+        }
+      ]
+    }
+  ]
+}

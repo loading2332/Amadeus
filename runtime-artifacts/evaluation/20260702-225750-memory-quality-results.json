@@ -1,0 +1,487 @@
+{
+  "dataset_name": "amadeus-memory-quality-v1",
+  "experiment_name": "amadeus-memory-quality-1a30954f",
+  "experiment_url": "https://smith.langchain.com/o/de366803-2911-4f09-9fc4-1c5724ca9f57/datasets/78ee1c16-7b61-4550-86cd-b85d13f63e42/compare?selectedSessions=d16b687a-0e51-4ec1-b440-803ad094997b",
+  "total_cases": 9,
+  "passed_cases": 9,
+  "failed_case_ids": [],
+  "records": [
+    {
+      "case_id": "assistant_restatement_not_memory_evidence",
+      "title": "assistant restatement without user evidence should not create memory",
+      "mode": "post_response_write",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 3007,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": null,
+          "value": "skipped",
+          "comment": "skipped because no answer or memory text is available"
+        }
+      ]
+    },
+    {
+      "case_id": "duplicate_preference_reinforcement_skips_write",
+      "title": "repeated equivalent preference should not create duplicate active memory",
+      "mode": "post_response_write",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 4626,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": null,
+          "value": "skipped",
+          "comment": "skipped because judge returned unparsable output"
+        }
+      ]
+    },
+    {
+      "case_id": "procedure_correction_supersedes_old_rule",
+      "title": "explicit procedure correction should supersede old conflicting rule",
+      "mode": "write_then_recall",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 8578,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "memory type expectations satisfied"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer correctly shows that the old procedure (implement then test) is superseded, and the active memory requires writing tests before implementation, satisfying the rubric."
+        }
+      ]
+    },
+    {
+      "case_id": "write_procedure_type",
+      "title": "explicit future execution rule should be written as procedure memory",
+      "mode": "write_then_recall",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 7304,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "memory type expectations satisfied"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "Active memory correctly captures the future execution rule."
+        }
+      ]
+    },
+    {
+      "case_id": "noisy_text_extracts_key_fact",
+      "title": "noisy transcript should still extract the durable key fact",
+      "mode": "write_then_recall",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 9303,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The memory correctly preserves the key fact that Amadeus is being built as an interview project, without extraneous details."
+        }
+      ]
+    },
+    {
+      "case_id": "entity_attribute_conflict",
+      "title": "new entity attribute should replace conflicting old attribute",
+      "mode": "write_then_recall",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 8886,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer correctly sets the new company as active truth and supersedes the old company."
+        }
+      ]
+    },
+    {
+      "case_id": "reject_short_term_status",
+      "title": "temporary online status should not become long term memory",
+      "mode": "post_response_write",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 1648,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": null,
+          "value": "skipped",
+          "comment": "skipped because no answer or memory text is available"
+        }
+      ]
+    },
+    {
+      "case_id": "preference_conflict_current_over_history",
+      "title": "current preference should override historical conflicting preference",
+      "mode": "write_then_recall",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 12652,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "no memory type expectations"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The active memory correctly indicates that Chinese is the current default reply language, overriding the older English preference."
+        }
+      ]
+    },
+    {
+      "case_id": "write_preference_type",
+      "title": "explicit language preference should be written as preference memory",
+      "mode": "post_response_write",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 4393,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "write_presence",
+          "score": true,
+          "value": null,
+          "comment": "write presence expectations satisfied"
+        },
+        {
+          "key": "write_absence",
+          "score": true,
+          "value": null,
+          "comment": "write absence expectations satisfied"
+        },
+        {
+          "key": "memory_types",
+          "score": true,
+          "value": null,
+          "comment": "memory type expectations satisfied"
+        },
+        {
+          "key": "conflict",
+          "score": true,
+          "value": null,
+          "comment": "conflict expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "no answer keyword expectations"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The written memory explicitly states that the user's default reply language is Chinese."
+        }
+      ]
+    }
+  ]
+}

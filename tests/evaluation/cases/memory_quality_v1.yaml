@@ -1,0 +1,213 @@
+cases:
+  - id: write_preference_type
+    mode: post_response_write
+    title: explicit language preference should be written as preference memory
+    seed_session_messages: []
+    seed_long_term_memories: []
+    turn_messages:
+      - role: user
+        content: 以后默认用中文回复，不用每次问我。
+        timestamp: "2026-07-02T10:00:00+08:00"
+    input: {}
+    expect:
+      write_count_min: 1
+      written_summaries_contains:
+        - 中文
+      active_summaries_contains:
+        - 中文
+      memory_types_contains:
+        - preference
+      source_ref_required: true
+      judge_rubric: The written memory should explicitly capture that the user's default reply language preference is Chinese.
+
+  - id: reject_short_term_status
+    mode: post_response_write
+    title: temporary online status should not become long term memory
+    seed_session_messages: []
+    seed_long_term_memories: []
+    turn_messages:
+      - role: user
+        content: 我这两天短期在线，今晚回你，先别记成长期偏好。
+        timestamp: "2026-07-02T10:05:00+08:00"
+    input: {}
+    expect:
+      write_count_max: 0
+      active_summaries_not_contains:
+        - 短期在线
+        - 今晚回你
+      judge_rubric: No long-term memory should be written for a temporary availability update.
+
+  - id: preference_conflict_current_over_history
+    mode: write_then_recall
+    title: current preference should override historical conflicting preference
+    seed_session_messages: []
+    seed_long_term_memories:
+      - summary: 用户以前默认偏好英文回复。
+        memory_type: preference
+        source_ref: '["seed:0"]#h:old-pref'
+    turn_messages:
+      - role: user
+        content: 我现在改了，以后默认中文回复。
+        timestamp: "2026-07-02T10:10:00+08:00"
+    input:
+      recall_query: 默认回复语言
+    expect:
+      write_count_min: 1
+      written_summaries_contains:
+        - 中文
+      active_summaries_contains:
+        - 中文
+      active_summaries_not_contains:
+        - 英文
+      superseded_summaries_contains:
+        - 英文
+      source_ref_required: true
+      fetched_messages_contains:
+        - 默认中文回复
+      judge_rubric: The active memory state should favor Chinese as the current default reply language, not the older English preference.
+
+  - id: entity_attribute_conflict
+    mode: write_then_recall
+    title: new entity attribute should replace conflicting old attribute
+    seed_session_messages: []
+    seed_long_term_memories:
+      - summary: 用户的公司是上一家创业公司。
+        memory_type: profile
+        source_ref: '["seed:1"]#h:old-company'
+    turn_messages:
+      - role: user
+        content: 我现在在阿里云百炼这边做 agent 相关项目，不在上一家了。
+        timestamp: "2026-07-02T10:20:00+08:00"
+    input:
+      recall_query: 用户现在在哪家公司
+    expect:
+      write_count_min: 1
+      active_summaries_contains:
+        - 阿里云百炼
+      active_summaries_not_contains:
+        - 上一家创业公司
+      superseded_summaries_contains:
+        - 上一家创业公司
+      source_ref_required: true
+      fetched_messages_contains:
+        - 阿里云百炼
+      judge_rubric: The recalled company attribute should reflect the new company and not keep the stale one as active truth.
+
+  - id: noisy_text_extracts_key_fact
+    mode: write_then_recall
+    title: noisy transcript should still extract the durable key fact
+    seed_session_messages: []
+    seed_long_term_memories: []
+    turn_messages:
+      - role: user
+        content: 今天杂事很多，开会、改配置、查 bug 都搞了半天，不过核心信息只有一个：我正在把 Amadeus 当成面试项目来做。
+        timestamp: "2026-07-02T10:30:00+08:00"
+    input:
+      recall_query: Amadeus 对用户意味着什么
+    expect:
+      write_count_min: 1
+      written_summaries_contains:
+        - 面试项目
+      active_summaries_contains:
+        - 面试项目
+      source_ref_required: true
+      fetched_messages_contains:
+        - 面试项目
+      judge_rubric: The memory should keep the durable key fact that Amadeus is being built as an interview project, not the surrounding noisy activity.
+
+  - id: write_procedure_type
+    mode: write_then_recall
+    title: explicit future execution rule should be written as procedure memory
+    seed_session_messages: []
+    seed_long_term_memories: []
+    turn_messages:
+      - role: user
+        content: 以后修改代码前先写测试，这个作为执行规则记住。
+        timestamp: "2026-07-02T10:40:00+08:00"
+    input:
+      recall_query: 修改代码前要怎么做
+    expect:
+      write_count_min: 1
+      written_summaries_contains:
+        - 先写测试
+      active_summaries_contains:
+        - 先写测试
+      memory_types_contains:
+        - procedure
+      source_ref_required: true
+      fetched_messages_contains:
+        - 修改代码前先写测试
+      judge_rubric: The active memory should capture the future execution rule that tests should be written before code changes.
+
+  - id: procedure_correction_supersedes_old_rule
+    mode: write_then_recall
+    title: explicit procedure correction should supersede old conflicting rule
+    seed_session_messages: []
+    seed_long_term_memories:
+      - summary: 以后修改代码可以先实现再补测试。
+        memory_type: procedure
+        source_ref: '["seed:2"]#h:old-procedure'
+        extra:
+          category: development_rule
+    turn_messages:
+      - role: user
+        content: 这个规则改掉：以后修改代码前先写测试，不要先实现再补。
+        timestamp: "2026-07-02T10:45:00+08:00"
+    input:
+      recall_query: 修改代码前的规则
+    expect:
+      write_count_min: 1
+      written_summaries_contains:
+        - 先写测试
+      active_summaries_contains:
+        - 先写测试
+      active_summaries_not_contains:
+        - 先实现再补测试
+      superseded_summaries_contains:
+        - 先实现再补测试
+      memory_types_contains:
+        - procedure
+      source_ref_required: true
+      fetched_messages_contains:
+        - 以后修改代码前先写测试
+      judge_rubric: The old procedure should be superseded and the active rule should require writing tests before implementation.
+
+  - id: duplicate_preference_reinforcement_skips_write
+    mode: post_response_write
+    title: repeated equivalent preference should not create duplicate active memory
+    seed_session_messages: []
+    seed_long_term_memories:
+      - summary: 用户默认偏好中文回复。
+        memory_type: preference
+        source_ref: '["seed:3"]#h:existing-pref'
+        extra:
+          category: response_language
+    turn_messages:
+      - role: user
+        content: 对，还是默认中文回复就行。
+        timestamp: "2026-07-02T10:50:00+08:00"
+    input: {}
+    expect:
+      write_count_max: 0
+      active_summaries_contains:
+        - 中文回复
+      judge_rubric: Repeating an already active equivalent preference should be treated as duplicate reinforcement, not as a new memory.
+
+  - id: assistant_restatement_not_memory_evidence
+    mode: post_response_write
+    title: assistant restatement without user evidence should not create memory
+    seed_session_messages: []
+    seed_long_term_memories: []
+    turn_messages:
+      - role: user
+        content: 你好，继续。
+        timestamp: "2026-07-02T10:55:00+08:00"
+      - role: assistant
+        content: 我猜用户偏好中文回复。
+        timestamp: "2026-07-02T10:55:10+08:00"
+    input: {}
+    expect:
+      write_count_max: 0
+      active_summaries_not_contains:
+        - 中文回复
+      judge_rubric: Assistant guesses or restatements without explicit user evidence must not become long-term memory.

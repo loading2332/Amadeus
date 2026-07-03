@@ -99,6 +99,66 @@ class MemoryRecallCase:
         }
 
 
+@dataclass(frozen=True)
+class MemoryQualityCaseExpect:
+    write_count_min: int = 0
+    write_count_max: int | None = None
+    written_summaries_contains: tuple[str, ...] = ()
+    active_summaries_contains: tuple[str, ...] = ()
+    active_summaries_not_contains: tuple[str, ...] = ()
+    memory_types_contains: tuple[str, ...] = ()
+    superseded_summaries_contains: tuple[str, ...] = ()
+    source_ref_required: bool = False
+    fetched_messages_contains: tuple[str, ...] = ()
+    answer_keywords_any: tuple[str, ...] = ()
+    judge_rubric: str = ""
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "write_count_min": self.write_count_min,
+            "write_count_max": self.write_count_max,
+            "written_summaries_contains": list(self.written_summaries_contains),
+            "active_summaries_contains": list(self.active_summaries_contains),
+            "active_summaries_not_contains": list(self.active_summaries_not_contains),
+            "memory_types_contains": list(self.memory_types_contains),
+            "superseded_summaries_contains": list(self.superseded_summaries_contains),
+            "source_ref_required": self.source_ref_required,
+            "fetched_messages_contains": list(self.fetched_messages_contains),
+            "answer_keywords_any": list(self.answer_keywords_any),
+            "judge_rubric": self.judge_rubric,
+        }
+
+
+@dataclass(frozen=True)
+class MemoryQualityCase:
+    id: str
+    mode: str
+    title: str
+    seed_session_messages: tuple[SeedSessionMessage, ...]
+    seed_long_term_memories: tuple[SeedLongTermMemory, ...]
+    turn_messages: tuple[SeedSessionMessage, ...]
+    input_payload: dict[str, Any]
+    expect: MemoryQualityCaseExpect
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "mode": self.mode,
+            "title": self.title,
+            "seed_session_messages": [
+                message.to_record() for message in self.seed_session_messages
+            ],
+            "seed_long_term_memories": [
+                memory.to_record() for memory in self.seed_long_term_memories
+            ],
+            "turn_messages": [
+                message.to_record() for message in self.turn_messages
+            ],
+            "input": dict(self.input_payload),
+            "expect": self.expect.to_record(),
+        }
+
+
 def load_memory_recall_cases(case_file: str | Path) -> list[MemoryRecallCase]:
     path = Path(case_file)
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -115,6 +175,24 @@ def load_memory_recall_cases(case_file: str | Path) -> list[MemoryRecallCase]:
 
 def case_from_record(payload: dict[str, Any]) -> MemoryRecallCase:
     return _parse_case(payload, index=0)
+
+
+def load_memory_quality_cases(case_file: str | Path) -> list[MemoryQualityCase]:
+    path = Path(case_file)
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if isinstance(payload, list):
+        raw_cases = payload
+    elif isinstance(payload, dict):
+        raw_cases = payload.get("cases")
+    else:
+        raw_cases = None
+    if not isinstance(raw_cases, list):
+        raise ValueError(f"{path} must contain a top-level 'cases' list")
+    return [_parse_quality_case(item, index=index) for index, item in enumerate(raw_cases)]
+
+
+def quality_case_from_record(payload: dict[str, Any]) -> MemoryQualityCase:
+    return _parse_quality_case(payload, index=0)
 
 
 def _parse_case(payload: Any, *, index: int) -> MemoryRecallCase:
@@ -157,6 +235,57 @@ def _parse_case(payload: Any, *, index: int) -> MemoryRecallCase:
         title=title,
         seed_session_messages=messages,
         seed_long_term_memories=memories,
+        input_payload=dict(input_payload),
+        expect=expect,
+    )
+
+
+def _parse_quality_case(payload: Any, *, index: int) -> MemoryQualityCase:
+    if not isinstance(payload, dict):
+        raise ValueError(f"case[{index}] must be an object")
+    case_id = _required_string(payload, "id", index=index)
+    mode = _required_string(payload, "mode", case_id=case_id)
+    if mode not in {"post_response_write", "write_then_recall"}:
+        raise ValueError(f"{case_id}: unsupported mode {mode!r}")
+    title = _required_string(payload, "title", case_id=case_id)
+
+    raw_messages = payload.get("seed_session_messages")
+    if not isinstance(raw_messages, list):
+        raise ValueError(f"{case_id}: seed_session_messages must be a list")
+    messages = tuple(_parse_seed_message(item, case_id=case_id) for item in raw_messages)
+
+    raw_memories = payload.get("seed_long_term_memories")
+    if not isinstance(raw_memories, list):
+        raise ValueError(f"{case_id}: seed_long_term_memories must be a list")
+    memories = tuple(
+        _parse_seed_memory(item, case_id=case_id) for item in raw_memories
+    )
+
+    raw_turn_messages = payload.get("turn_messages")
+    if not isinstance(raw_turn_messages, list) or not raw_turn_messages:
+        raise ValueError(f"{case_id}: turn_messages must be a non-empty list")
+    turn_messages = tuple(
+        _parse_seed_message(item, case_id=case_id) for item in raw_turn_messages
+    )
+
+    input_payload = payload.get("input")
+    if not isinstance(input_payload, dict):
+        raise ValueError(f"{case_id}: input must be an object")
+    if mode == "write_then_recall" and not _non_empty_string(input_payload.get("recall_query")):
+        raise ValueError(f"{case_id}: write_then_recall input.recall_query is required")
+
+    raw_expect = payload.get("expect")
+    if not isinstance(raw_expect, dict):
+        raise ValueError(f"{case_id}: expect must be an object")
+    expect = _parse_quality_expect(raw_expect, case_id=case_id)
+
+    return MemoryQualityCase(
+        id=case_id,
+        mode=mode,
+        title=title,
+        seed_session_messages=messages,
+        seed_long_term_memories=memories,
+        turn_messages=turn_messages,
         input_payload=dict(input_payload),
         expect=expect,
     )
@@ -211,6 +340,66 @@ def _parse_expect(payload: dict[str, Any], *, case_id: str) -> MemoryRecallCaseE
         source_ref_required=bool(payload.get("source_ref_required", False)),
         fetched_messages_contains=_string_tuple(payload.get("fetched_messages_contains"), case_id=case_id, field="fetched_messages_contains"),
         answer_keywords_any=_string_tuple(payload.get("answer_keywords_any"), case_id=case_id, field="answer_keywords_any"),
+        judge_rubric=rubric,
+    )
+
+
+def _parse_quality_expect(
+    payload: dict[str, Any],
+    *,
+    case_id: str,
+) -> MemoryQualityCaseExpect:
+    rubric = _required_string(payload, "judge_rubric", case_id=case_id)
+    write_count_max = payload.get("write_count_max")
+    if write_count_max is not None:
+        write_count_max = _int_value(
+            write_count_max,
+            case_id=case_id,
+            field="write_count_max",
+        )
+    return MemoryQualityCaseExpect(
+        write_count_min=_int_value(
+            payload.get("write_count_min", 0),
+            case_id=case_id,
+            field="write_count_min",
+        ),
+        write_count_max=cast(int | None, write_count_max),
+        written_summaries_contains=_string_tuple(
+            payload.get("written_summaries_contains"),
+            case_id=case_id,
+            field="written_summaries_contains",
+        ),
+        active_summaries_contains=_string_tuple(
+            payload.get("active_summaries_contains"),
+            case_id=case_id,
+            field="active_summaries_contains",
+        ),
+        active_summaries_not_contains=_string_tuple(
+            payload.get("active_summaries_not_contains"),
+            case_id=case_id,
+            field="active_summaries_not_contains",
+        ),
+        memory_types_contains=_string_tuple(
+            payload.get("memory_types_contains"),
+            case_id=case_id,
+            field="memory_types_contains",
+        ),
+        superseded_summaries_contains=_string_tuple(
+            payload.get("superseded_summaries_contains"),
+            case_id=case_id,
+            field="superseded_summaries_contains",
+        ),
+        source_ref_required=bool(payload.get("source_ref_required", False)),
+        fetched_messages_contains=_string_tuple(
+            payload.get("fetched_messages_contains"),
+            case_id=case_id,
+            field="fetched_messages_contains",
+        ),
+        answer_keywords_any=_string_tuple(
+            payload.get("answer_keywords_any"),
+            case_id=case_id,
+            field="answer_keywords_any",
+        ),
         judge_rubric=rubric,
     )
 

@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from amadeus.evaluation.cases import load_memory_recall_cases
+from amadeus.evaluation.cases import (
+    load_memory_quality_cases,
+    load_memory_recall_cases,
+)
 
 
 def test_load_memory_recall_cases_parses_repo_shape(tmp_path: Path):
@@ -62,3 +65,68 @@ cases:
 
     with pytest.raises(ValueError, match="bad-case"):
         load_memory_recall_cases(case_file)
+
+
+def test_load_memory_quality_cases_parses_repo_shape(tmp_path: Path):
+    case_file = tmp_path / "memory_quality.yaml"
+    case_file.write_text(
+        """
+cases:
+  - id: quality-1
+    mode: write_then_recall
+    title: write and recall
+    seed_session_messages:
+      - role: user
+        content: 旧消息
+    seed_long_term_memories:
+      - summary: 用户以前偏好英文
+        memory_type: preference
+        source_ref: '["seed:0"]#h:old'
+    turn_messages:
+      - role: user
+        content: 以后默认用中文回复
+        timestamp: "2026-07-02T10:00:00+08:00"
+    input:
+      recall_query: 中文回复
+    expect:
+      write_count_min: 1
+      written_summaries_contains: [中文]
+      active_summaries_contains: [中文]
+      memory_types_contains: [preference]
+      source_ref_required: true
+      judge_rubric: memory should capture the Chinese preference
+""".strip(),
+        encoding="utf-8",
+    )
+
+    cases = load_memory_quality_cases(case_file)
+
+    assert len(cases) == 1
+    assert cases[0].id == "quality-1"
+    assert cases[0].mode == "write_then_recall"
+    assert cases[0].turn_messages[0].content == "以后默认用中文回复"
+    assert cases[0].input_payload["recall_query"] == "中文回复"
+    assert cases[0].expect.write_count_min == 1
+    assert cases[0].expect.memory_types_contains == ("preference",)
+
+
+def test_load_memory_quality_cases_rejects_missing_turn_messages(tmp_path: Path):
+    case_file = tmp_path / "memory_quality.yaml"
+    case_file.write_text(
+        """
+cases:
+  - id: bad-quality
+    mode: post_response_write
+    title: missing turn messages
+    seed_session_messages: []
+    seed_long_term_memories: []
+    input: {}
+    expect:
+      write_count_max: 0
+      judge_rubric: should not write anything
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="bad-quality"):
+        load_memory_quality_cases(case_file)

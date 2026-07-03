@@ -4,10 +4,14 @@ from types import SimpleNamespace
 
 from amadeus.evaluation.evaluators import (
     answer_rules_evaluator,
+    conflict_evaluator,
     llm_judge_evaluator,
+    memory_type_evaluator,
     summarize_result_rows,
     source_ref_evaluator,
     trace_evaluator,
+    write_absence_evaluator,
+    write_presence_evaluator,
 )
 
 
@@ -131,3 +135,123 @@ def test_summarize_result_rows_handles_mapping_rows():
     assert summary["passed_cases"] == 0
     assert summary["failed_case_ids"] == ["case-1"]
     assert summary["records"][0]["error"]
+
+
+def test_summarize_result_rows_treats_skipped_evaluation_as_failure():
+    row = {
+        "example": {
+            "id": "example-1",
+            "inputs": {
+                "case": {
+                    "id": "case-1",
+                    "title": "skipped judge",
+                    "mode": "post_response_write",
+                }
+            },
+        },
+        "run": {
+            "outputs": {
+                "assistant_response": "",
+                "elapsed_ms": 7,
+            }
+        },
+        "evaluation_results": {
+            "results": [
+                SimpleNamespace(
+                    key="llm_judge",
+                    score=None,
+                    value="skipped",
+                    comment="skipped because judge returned unparsable output",
+                )
+            ]
+        },
+    }
+
+    summary = summarize_result_rows([row])
+
+    assert summary["total_cases"] == 1
+    assert summary["passed_cases"] == 0
+    assert summary["failed_case_ids"] == ["case-1"]
+
+
+def test_write_presence_evaluator_reports_missing_written_summary_and_count():
+    run = SimpleNamespace(
+        outputs={
+            "write_trace": {"candidate_count": 1, "written_count": 0},
+            "written_memories": [],
+            "active_memories": [],
+        }
+    )
+    example = SimpleNamespace(
+        outputs={
+            "expect": {
+                "write_count_min": 1,
+                "written_summaries_contains": ["中文"],
+                "active_summaries_contains": ["中文"],
+            }
+        }
+    )
+
+    result = write_presence_evaluator(run, example)
+
+    assert result.score is False
+    assert "write_count" in str(result.comment)
+    assert "written_memories" in str(result.comment)
+    assert "active_memories" in str(result.comment)
+
+
+def test_write_absence_evaluator_rejects_unexpected_memory_write():
+    run = SimpleNamespace(
+        outputs={
+            "write_trace": {"written_count": 1},
+            "written_memories": [{"summary": "用户当前短期在线"}],
+            "active_memories": [{"summary": "用户当前短期在线"}],
+        }
+    )
+    example = SimpleNamespace(
+        outputs={
+            "expect": {
+                "write_count_max": 0,
+                "active_summaries_not_contains": ["短期在线"],
+            }
+        }
+    )
+
+    result = write_absence_evaluator(run, example)
+
+    assert result.score is False
+    assert "write_count" in str(result.comment)
+    assert "短期在线" in str(result.comment)
+
+
+def test_memory_type_and_conflict_evaluators_report_field_level_gaps():
+    run = SimpleNamespace(
+        outputs={
+            "written_memories": [
+                {"summary": "用户默认偏好中文回复", "memory_type": "event"}
+            ],
+            "active_memories": [
+                {"summary": "用户默认偏好中文回复", "memory_type": "event"},
+                {"summary": "用户以前偏好英文回复", "memory_type": "preference"},
+            ],
+            "superseded_memories": [],
+        }
+    )
+    example = SimpleNamespace(
+        outputs={
+            "expect": {
+                "memory_types_contains": ["preference"],
+                "superseded_summaries_contains": ["英文"],
+                "active_summaries_not_contains": ["英文"],
+            }
+        }
+    )
+
+    type_result = memory_type_evaluator(run, example)
+    conflict_result = conflict_evaluator(run, example)
+
+    assert type_result.score is False
+    assert "preference" in str(type_result.comment)
+    assert conflict_result.score is False
+    assert "superseded_memories" in str(conflict_result.comment)
+    assert "active_memories" in str(conflict_result.comment)

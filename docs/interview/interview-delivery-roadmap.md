@@ -74,10 +74,21 @@ Phase 2 verification command：
 
 ## 阶段 3：产品化 Evaluation
 
-- 增加 eval case schema 和 runner。
-- 输出人类可读报告和机器可读 JSON 结果。
-- 覆盖 memory、retrieval、context isolation、tool loop、proactive decisions。
-- 回归测试使用确定性 fake；集成验证可以额外使用真实 LLM smoke。
+Phase 3 已落地 memory recall 和 memory quality 两条最小垂直切片。memory quality 的重点不是“能不能召回”，而是“写入是否正确”：类型识别、短期状态拒写、当前信息覆盖历史、实体属性冲突、噪音中提取关键事实、procedure 写入、重复表达 skip、assistant 复述不污染长期记忆。
+
+已交付：
+
+- Eval case schema 和 LangSmith runner。
+- 本地 canonical case 文件作为 source of truth。
+- 人类可读 summary 和机器可读 JSON 结果。
+- `write_trace.candidate_decisions`、active/superseded memories、source_ref/fetched_messages 作为可观察证据。
+- 回归测试使用 deterministic fake；真实 LLM smoke 通过 `amadeus eval memory-quality --env .env` 运行。
+
+后续扩展：
+
+- context isolation eval。
+- tool loop eval。
+- proactive send/skip eval。
 
 验收标准：
 

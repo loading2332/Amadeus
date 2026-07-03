@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -73,6 +74,14 @@ class LLMProvider:
             base_url=config.base_url,
             timeout=config.timeout_seconds,
         )
+
+    async def aclose(self) -> None:
+        close = getattr(self._client, "close", None)
+        if not callable(close):
+            return
+        result = close()
+        if inspect.isawaitable(result):
+            await result
 
     async def chat(
         self,

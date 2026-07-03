@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -68,3 +69,11 @@ class OpenAIEmbeddingProvider:
             input=text,
         )
         return list(response.data[0].embedding)
+
+    async def aclose(self) -> None:
+        close = getattr(self._client, "close", None)
+        if not callable(close):
+            return
+        result = close()
+        if inspect.isawaitable(result):
+            await result

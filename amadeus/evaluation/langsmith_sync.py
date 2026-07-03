@@ -2,12 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, Sequence
 
 from langsmith import Client
 
 from amadeus.app.bootstrap import _read_dotenv
 from amadeus.evaluation.cases import MemoryRecallCase
+
+
+class _LangSmithSyncCase(Protocol):
+    id: str
+    title: str
+    mode: str
+    expect: Any
+
+    def to_record(self) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -53,6 +62,45 @@ def sync_memory_recall_dataset(
     env_path: str | Path = ".env",
     client: Client | Any | None = None,
 ) -> DatasetSyncResult:
+    return _sync_dataset(
+        cases,
+        dataset_name=dataset_name,
+        env_path=env_path,
+        client=client,
+        description="Repo-canonical Memory Recall evaluation cases for Amadeus.",
+        suite_name="memory_recall_v1",
+        prune_stale=False,
+    )
+
+
+def sync_memory_quality_dataset(
+    cases: list[_LangSmithSyncCase],
+    *,
+    dataset_name: str,
+    env_path: str | Path = ".env",
+    client: Client | Any | None = None,
+) -> DatasetSyncResult:
+    return _sync_dataset(
+        cases,
+        dataset_name=dataset_name,
+        env_path=env_path,
+        client=client,
+        description="Repo-canonical Memory Quality evaluation cases for Amadeus.",
+        suite_name="memory_quality_v1",
+        prune_stale=True,
+    )
+
+
+def _sync_dataset(
+    cases: Sequence[_LangSmithSyncCase],
+    *,
+    dataset_name: str,
+    env_path: str | Path,
+    client: Client | Any | None,
+    description: str,
+    suite_name: str,
+    prune_stale: bool,
+) -> DatasetSyncResult:
     langsmith_client = client or build_langsmith_client(env_path=env_path)
     dataset = next(
         langsmith_client.list_datasets(dataset_name=dataset_name),
@@ -61,8 +109,8 @@ def sync_memory_recall_dataset(
     if dataset is None:
         dataset = langsmith_client.create_dataset(
             dataset_name,
-            description="Repo-canonical Memory Recall evaluation cases for Amadeus.",
-            metadata={"suite": "memory_recall_v1"},
+            description=description,
+            metadata={"suite": suite_name},
         )
     dataset_id = str(dataset.id)
 
@@ -75,6 +123,7 @@ def sync_memory_recall_dataset(
 
     created = 0
     updated = 0
+    incoming_case_ids = {case.id for case in cases}
     for case in cases:
         inputs = {"case": case.to_record()}
         outputs = {"expect": case.expect.to_record()}
@@ -101,6 +150,12 @@ def sync_memory_recall_dataset(
             dataset_id=dataset_id,
         )
         updated += 1
+
+    if prune_stale:
+        for case_id, example in existing_by_case_id.items():
+            if case_id in incoming_case_ids:
+                continue
+            langsmith_client.delete_example(str(example.id))
 
     return DatasetSyncResult(
         dataset_id=dataset_id,

@@ -1,0 +1,117 @@
+{
+  "dataset_name": "amadeus-memory-recall-smoke-1case",
+  "experiment_name": "amadeus-memory-recall-smoke-b0c0b9bb",
+  "experiment_url": "https://smith.langchain.com/o/de366803-2911-4f09-9fc4-1c5724ca9f57/datasets/d9de21ee-fd22-4250-b8de-4ac012b4b8e0/compare?selectedSessions=e7826264-ecdc-4ffe-9120-0db98cead3a4",
+  "total_cases": 3,
+  "passed_cases": 2,
+  "failed_case_ids": [
+    "runtime_turn_preference_context"
+  ],
+  "records": [
+    {
+      "case_id": "runtime_turn_global_scope_fallback",
+      "title": "runtime turn can fall back to global memory when session-scoped memory is absent",
+      "mode": "runtime_turn",
+      "passed": true,
+      "assistant_response": "嗯，Memory Phase 3 Evaluation 对吧。\n\n我目前手上的信息比较有限——只记得当前优先做这件事，但具体步骤、范围或者评估标准，我这边没有更详细的记录了。\n\n你是不是已经有具体的任务列表或者评估条目了？给我个方向，我来处理。",
+      "elapsed_ms": 27940,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "trace",
+          "score": true,
+          "value": null,
+          "comment": "trace expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "matched expected answer keywords"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer explicitly mentions 'Evaluation' as the current Phase 3 priority, satisfying the rubric."
+        }
+      ]
+    },
+    {
+      "case_id": "recall_tool_returns_source_refs",
+      "title": "recall_memory returns source refs and fetch_messages can resolve them",
+      "mode": "recall_tool",
+      "passed": true,
+      "assistant_response": "",
+      "elapsed_ms": 14124,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "trace",
+          "score": true,
+          "value": null,
+          "comment": "trace expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "matched expected answer keywords"
+        },
+        {
+          "key": "llm_judge",
+          "score": true,
+          "value": null,
+          "comment": "The answer explicitly states that the user is building Amadeus as an interview project."
+        }
+      ]
+    },
+    {
+      "case_id": "runtime_turn_preference_context",
+      "title": "runtime turn injects preference memory into context",
+      "mode": "runtime_turn",
+      "passed": false,
+      "assistant_response": "嗯，从我这边的记录来看，你之前偏好中文回答……不过那条记录的置信度不太高。\n\n所以保险起见，直接问你比较快——\n\n**你希望我之后用什么语言跟你聊？** 中文、日文、英文都行，我这边切换起来没什么问题。",
+      "elapsed_ms": 7490,
+      "error": null,
+      "evaluations": [
+        {
+          "key": "trace",
+          "score": true,
+          "value": null,
+          "comment": "trace expectations satisfied"
+        },
+        {
+          "key": "source_ref",
+          "score": true,
+          "value": null,
+          "comment": "source_ref expectations satisfied"
+        },
+        {
+          "key": "answer_rules",
+          "score": true,
+          "value": null,
+          "comment": "matched expected answer keywords"
+        },
+        {
+          "key": "llm_judge",
+          "score": false,
+          "value": null,
+          "comment": "The answer does not state that the default reply language is Chinese. It mentions a previous preference for Chinese but questions its reliability and asks the user to choose, failing to assert Chinese as the default."
+        }
+      ]
+    }
+  ]
+}

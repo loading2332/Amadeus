@@ -5,6 +5,7 @@ import asyncio
 from pathlib import Path
 
 from amadeus.app.bootstrap import build_passive_app
+from amadeus.evaluation.memory_quality_runner import run_memory_quality_evaluation
 from amadeus.evaluation.memory_recall_runner import run_memory_recall_evaluation
 from amadeus.runtime.passive import PassiveTurnResult
 
@@ -17,6 +18,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "eval" and args.eval_command == "memory-recall":
         _run_eval_memory_recall(args)
+        return
+    if args.command == "eval" and args.eval_command == "memory-quality":
+        _run_eval_memory_quality(args)
         return
     parser.print_help()
 
@@ -85,6 +89,43 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional judge model override. Defaults to AMADEUS_EVAL_JUDGE_MODEL or OPENAI_MODEL.",
     )
     memory_recall.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        default=Path("runtime-artifacts") / "evaluation",
+        help="Directory for local evaluation artifacts.",
+    )
+    memory_quality = eval_commands.add_parser(
+        "memory-quality",
+        help="Run the Memory Quality evaluation suite with LangSmith.",
+    )
+    memory_quality.add_argument(
+        "--env",
+        type=Path,
+        default=Path(".env"),
+        help="Path to the runtime .env file.",
+    )
+    memory_quality.add_argument(
+        "--case-file",
+        type=Path,
+        default=Path("tests/evaluation/cases/memory_quality_v1.yaml"),
+        help="Repo-canonical memory quality case file.",
+    )
+    memory_quality.add_argument(
+        "--dataset-name",
+        default="amadeus-memory-quality-v1",
+        help="LangSmith dataset name.",
+    )
+    memory_quality.add_argument(
+        "--experiment-prefix",
+        default="amadeus-memory-quality",
+        help="LangSmith experiment prefix.",
+    )
+    memory_quality.add_argument(
+        "--judge-model",
+        default=None,
+        help="Optional judge model override. Defaults to AMADEUS_EVAL_JUDGE_MODEL or OPENAI_MODEL.",
+    )
+    memory_quality.add_argument(
         "--artifacts-dir",
         type=Path,
         default=Path("runtime-artifacts") / "evaluation",
@@ -207,6 +248,22 @@ def _run_eval_memory_recall(args: argparse.Namespace) -> None:
         judge_model=args.judge_model,
         artifacts_dir=args.artifacts_dir,
     )
+    _print_eval_report(report)
+
+
+def _run_eval_memory_quality(args: argparse.Namespace) -> None:
+    report = run_memory_quality_evaluation(
+        env_path=args.env,
+        case_file=args.case_file,
+        dataset_name=args.dataset_name,
+        experiment_prefix=args.experiment_prefix,
+        judge_model=args.judge_model,
+        artifacts_dir=args.artifacts_dir,
+    )
+    _print_eval_report(report)
+
+
+def _print_eval_report(report: object) -> None:
     failed = ", ".join(report.failed_case_ids) if report.failed_case_ids else "-"
     print(f"Total cases: {report.total_cases}")
     print(f"Passed cases: {report.passed_cases}")
