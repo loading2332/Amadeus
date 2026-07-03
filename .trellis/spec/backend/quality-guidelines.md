@@ -6,49 +6,73 @@
 
 ## Overview
 
-<!--
-Document your project's quality standards here.
+Amadeus quality is judged by interview-ready behavior: code should preserve
+clear runtime boundaries, produce observable traces, and come with focused
+tests or eval cases. Internal helper tests are useful, but they do not replace
+public behavior proof.
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
+Project tooling from `pyproject.toml`:
 
-(To be filled by the team)
+- Python `>=3.11`.
+- Ruff target `py311`, line length `88`, lint families `E`, `F`, `I`, `B`, `UP`, with `E501` ignored.
+- Mypy is configured in strict mode for `amadeus`, `tests`, and `dev_utils`, with relaxed overrides for tests and fixture-style modules.
+- Pytest uses `tests/` as the test root and `.` on `pythonpath`.
+
+Primary examples:
+
+- Runtime behavior tests: `tests/runtime/test_runtime.py`, `tests/runtime/test_reasoner_tool_loop.py`.
+- Memory behavior tests: `tests/memory/test_memory_retrieval_acceptance.py`, `tests/memory/test_memory_post_response_worker.py`.
+- Evaluation behavior tests and cases: `tests/evaluation/test_memory_quality_runner.py`, `tests/evaluation/cases/memory_quality_v1.yaml`.
+- CLI trace tests: `tests/app/test_cli.py`.
 
 ---
 
 ## Forbidden Patterns
 
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
+- Do not bypass the architecture order: Passive runtime -> Memory system -> Evaluation harness -> OutboundPort / Telegram -> Scheduler -> ProactiveLoop -> DriftRunner.
+- Do not make proactive code import or call Telegram directly; use an outbound boundary.
+- Do not let proactive or runtime code read memory storage directly when a `MemoryEngine` or explicit context contract exists.
+- Do not back resume claims with prose only. Important claims need code evidence plus runnable tests, smoke checks, or eval cases.
+- Do not replace Akashic-inspired mechanisms with fake production behavior. Fakes belong in tests and deterministic eval fixtures.
+- Do not let skipped evaluation infrastructure count as a passing behavioral proof.
+- Do not add broad refactors while delivering a narrow vertical slice.
 
 ---
 
 ## Required Patterns
 
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
+- Start from the real repository state and inspect code, tests, config, and relevant Akashic reference files before changing architecture.
+- Keep behavior behind explicit boundaries: runtime phases, `Reasoner`, `ToolExecutor`, `MemoryEngine`, plugin manager, and evaluation runners.
+- Preserve typed dataclasses and protocol-style contracts at module edges, such as `PassiveTurnResult`, `MemoryWriteRequest`, `MemoryMutationResult`, and `ToolTrace`.
+- Prefer structured traces and artifacts over hidden side effects.
+- Keep canonical eval cases under `tests/evaluation/cases/` and expose local JSON/Markdown artifacts for runs.
+- Use deterministic fakes in tests for LLM, embedding, and LangSmith clients.
+- Keep docs under `docs/interview/` aligned with code evidence and known gaps.
 
 ---
 
 ## Testing Requirements
 
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
+- Run the narrowest meaningful tests first for touched modules.
+- Broaden to integration tests when behavior crosses runtime, memory, tools, plugins, outbound, or evaluation layers.
+- Add eval cases when behavior depends on LLM judgment, retrieval quality, send/skip decisions, or memory correctness.
+- For memory changes, verify public behavior through recall/fetch/source_ref, active/superseded state, trace fields, and context injection.
+- For CLI changes, test printed summaries and trace formatting.
+- Real LLM or Telegram smoke tests are only required when configuration is available and the user expects integration verification.
 
 ---
 
 ## Code Review Checklist
 
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- Which resume claim does this support?
+- Which public behavior proves it?
+- Which Akashic design contract or lifecycle does it reference?
+- Which command, test, smoke, or eval case demonstrates it?
+- Are lower-layer dependencies stable before higher-layer behavior is added?
+- Are memory, outbound, scheduler, proactive, and eval boundaries respected?
+- Are traces and reports observable enough to debug a regression?
+- Are skipped, denied, or errored outcomes represented honestly instead of counted as success?
+- Are unrelated dirty files left untouched?
 
 ---
 
