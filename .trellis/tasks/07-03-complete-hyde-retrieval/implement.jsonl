@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend memory behavior and trace quality contracts for retrieval changes."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Dual-hypothesis retrieval crosses retriever, runtime trace, tool output, config, and docs."}
+{"file": "../akashic-agent/plugins/default_memory/engine.py", "reason": "Primary Akashic production reference: _query_answer generates event/general hypotheses and passes aux_queries."}
+{"file": "../akashic-agent/memory2/retriever.py", "reason": "Primary Akashic production reference: raw query plus aux_queries enter vector lanes; raw query drives keyword lane; RRF merges."}
+{"file": "../akashic-agent/memory2/hyde_enhancer.py", "reason": "Non-target reference: raw-first helper exists but is not the default memory production path."}

@@ -205,3 +205,79 @@ if semantic_score >= threshold:
     final = hotness_fused_score(semantic_score, hotness_score)
     vector_scored.append((item_id, final))
 ```
+
+## Scenario: Dual-Hypothesis Memory Retrieval
+
+### 1. Scope / Trigger
+
+- Trigger: changes to long-term memory retrieval, hypothesis generation, `recall_memory`, passive context injection, or memory retrieval trace fields.
+- This requires code-spec depth because the behavior spans `MemoryRetriever`, `rank_rows`, LLM hypothesis providers, runtime/bootstrap config, tool-facing traces, and interview documentation.
+
+### 2. Signatures
+
+- `MemoryRetriever.recall(request: MemoryRecallRequest) -> MemoryQueryResult`
+- `HypothesisProvider.generate(query: str, *, style: str) -> str`
+- `rank_rows(rows: list[dict[str, Any]], query_vector: list[float], query_text: str, *, limit: int, threshold: float, lexical_enabled: bool = True) -> list[MemoryRecord]`
+- `rank_multi_query_rows(rows: list[dict[str, Any]], query_vectors: list[list[float]], query_texts: list[str], *, limit: int, threshold: float) -> tuple[list[MemoryRecord], dict[str, dict[str, int]]]`
+- `load_runtime_config(...) -> RuntimeConfig`
+
+### 3. Contracts
+
+- Explicit `intent="answer"` / `recall_memory` retrieval may generate exactly two memory-shaped auxiliary query styles: `event` and `general`.
+- Passive `intent="context"` retrieval must remain raw-query-only and must not spend an LLM call on hypothesis generation.
+- Raw query always participates.
+- Generated hypothesis queries participate in vector retrieval only; lexical matching must remain raw-query-only.
+- Multiple vector queries that hit the same memory id must keep the best vector hit for that id, not accumulate one RRF contribution per query.
+- Final RRF fusion is between the deduplicated vector pool and the raw-query lexical pool.
+- Hypothesis generation is default-on when long-term memory has a provider, with `AMADEUS_MEMORY_HYPOTHESIS_RETRIEVAL_ENABLED=0` as the kill switch.
+- Hypothesis text belongs in structured trace, not in rendered retrieved-memory/context-frame text.
+
+### 4. Validation & Error Matrix
+
+- One hypothesis style fails -> keep the successful style and record a style-specific fallback/error.
+- Both hypothesis styles fail or time out -> fall back to raw-only retrieval.
+- Empty hypothesis output -> omit that generated query and record an empty-output fallback.
+- Missing hypothesis provider or disabled config -> raw-only retrieval with a disabled reason in trace.
+
+### 5. Good/Base/Bad Cases
+
+- Good: raw query misses a relevant memory, event/general vector lanes recall it, and trace records matched query indexes.
+- Base: passive context retrieval runs once with raw query and no hypothesis provider calls.
+- Bad: a generated hypothesis creates a lexical-only hit because its literal words overlap a memory summary.
+- Bad: the same memory receives separate RRF contributions for raw, event, and general vector matches.
+
+### 6. Tests Required
+
+- Retriever test proving event/general hypotheses can recall a candidate raw wording misses.
+- Retriever test proving passive context does not call the hypothesis provider.
+- Retriever test proving generated hypotheses do not create lexical hits.
+- Ranking test proving repeated vector-query hits keep the best vector hit instead of accumulating per-query RRF.
+- Retriever tests proving exception and timeout paths fall back to raw retrieval and record trace fallbacks/errors.
+- Bootstrap/config test proving default-on behavior, timeout, optional light model, and kill switch.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+queries = [raw_query, event_hypothesis, general_hypothesis]
+result_sets = [
+    rank_rows(rows, query_vector, query, limit=top_k, threshold=threshold)
+    for query in queries
+]
+ranked = rrf_fuse_records(result_sets, limit=top_k)
+```
+
+#### Correct
+
+```python
+queries = [raw_query, event_hypothesis, general_hypothesis]
+query_vectors = await asyncio.gather(*(embed(query) for query in queries))
+ranked, lane_counts = rank_multi_query_rows(
+    rows,
+    query_vectors,
+    queries,
+    limit=top_k,
+    threshold=threshold,
+)
+```

@@ -3,6 +3,7 @@ from __future__ import annotations
 from amadeus.memory.ranking import (
     build_query_plan,
     extract_terms,
+    rank_multi_query_rows,
     rank_rows,
     rrf_merge,
 )
@@ -70,6 +71,48 @@ def test_rank_rows_rrf_double_lane_wins():
     assert result[1].id == "1"
     assert result[2].id == "2"
     assert result[0].signals["lanes"] == ["vector", "lexical"]
+
+
+def test_multi_query_vector_hits_keep_best_id_instead_of_accumulating():
+    rows = [
+        {
+            "id": "single",
+            "kind": "event",
+            "summary": "single high vector match",
+            "embedding": [1.0, 0.0, 0.0],
+            "source_ref": "",
+            "happened_at": None,
+            "extra": {},
+            "reinforcement": 1,
+        },
+        {
+            "id": "repeated",
+            "kind": "event",
+            "summary": "repeated vector match",
+            "embedding": [0.8, 0.6, 0.0],
+            "source_ref": "",
+            "happened_at": None,
+            "extra": {},
+            "reinforcement": 1,
+        },
+    ]
+
+    result, lane_counts = rank_multi_query_rows(
+        rows,
+        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        ["raw", "hypothesis"],
+        limit=2,
+        threshold=0.5,
+    )
+
+    assert [record.id for record in result] == ["single", "repeated"]
+    assert result[1].signals["matched_query_indexes"] == ["0", "1"]
+    assert result[1].signals["final_vector_score"] > 0
+    assert result[1].signals["rrf_score"] == 1.0 / 62
+    assert lane_counts == {
+        "raw": {"vector": 2, "lexical": 0},
+        "hypothesis": {"vector": 1, "lexical": 0},
+    }
 
 
 def test_rank_rows_reinforcement_does_not_outrank_stronger_dual_lane_match():

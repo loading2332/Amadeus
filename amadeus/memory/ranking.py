@@ -55,8 +55,9 @@ def rank_rows(
     *,
     limit: int,
     threshold: float,
+    lexical_enabled: bool = True,
 ) -> list[MemoryRecord]:
-    terms = extract_terms(query_text)
+    terms = extract_terms(query_text) if lexical_enabled else []
     vector_scored: list[tuple[str, float]] = []
     keyword_scored: list[tuple[str, float]] = []
     semantic_scores: dict[str, float] = {}
@@ -80,7 +81,7 @@ def rank_rows(
             semantic_scores[row_id] = semantic_score
             final_vector_scores[row_id] = final_vector_score
             vector_scored.append((row_id, final_vector_score))
-        if keyword_score > 0:
+        if lexical_enabled and keyword_score > 0:
             keyword_scored.append((row_id, keyword_score))
 
     top_ids = rrf_merge(
@@ -116,17 +117,27 @@ def rank_rows(
                 "emotional_weight": coerce_emotional_weight(
                     row_map[item_id].get("emotional_weight")
                 ),
-                "hotness_score": hotness_signals.get(item_id, {}).get("hotness_score", 0.0),
+                "hotness_score": hotness_signals.get(item_id, {}).get(
+                    "hotness_score", 0.0
+                ),
                 "hotness_alpha": _HOTNESS_ALPHA,
                 "hotness_half_life_days": _HOTNESS_HALF_LIFE_DAYS,
                 "hotness_recency": hotness_signals.get(item_id, {}).get("recency", 0.0),
-                "hotness_frequency": hotness_signals.get(item_id, {}).get("frequency", 0.0),
-                "hotness_effective_half_life_days": hotness_signals.get(item_id, {}).get(
+                "hotness_frequency": hotness_signals.get(item_id, {}).get(
+                    "frequency", 0.0
+                ),
+                "hotness_effective_half_life_days": hotness_signals.get(
+                    item_id, {}
+                ).get(
                     "effective_half_life_days",
                     _HOTNESS_HALF_LIFE_DAYS,
                 ),
-                "hotness_age_days": hotness_signals.get(item_id, {}).get("age_days", 0.0),
-                "hotness_updated_at": hotness_signals.get(item_id, {}).get("updated_at", ""),
+                "hotness_age_days": hotness_signals.get(item_id, {}).get(
+                    "age_days", 0.0
+                ),
+                "hotness_updated_at": hotness_signals.get(item_id, {}).get(
+                    "updated_at", ""
+                ),
                 "reinforcement_boost": reinforcement_boost(row_map[item_id]),
                 "extra": dict(row_map[item_id].get("extra") or {}),
             },
@@ -136,35 +147,118 @@ def rank_rows(
     ]
 
 
-def max_pool_records(
-    result_sets: list[list[MemoryRecord]],
+def rank_multi_query_rows(
+    rows: list[dict[str, Any]],
+    query_vectors: list[list[float]],
+    query_texts: list[str],
     *,
     limit: int,
-) -> list[MemoryRecord]:
-    pooled: dict[str, MemoryRecord] = {}
-    matched_queries: dict[str, list[str]] = {}
-    for query_index, records in enumerate(result_sets):
-        for record in records:
-            matched_queries.setdefault(record.id, []).append(str(query_index))
-            current = pooled.get(record.id)
-            if current is None or record_sort_key(record) < record_sort_key(current):
-                pooled[record.id] = record
-    merged: list[MemoryRecord] = []
-    for item_id, record in pooled.items():
-        signals = dict(record.signals)
-        signals["matched_query_indexes"] = matched_queries[item_id]
-        merged.append(
-            MemoryRecord(
-                id=record.id,
-                kind=record.kind,
-                summary=record.summary,
-                score=record.score,
-                source_ref=record.source_ref,
-                evidence=record.evidence,
-                signals=signals,
+    threshold: float,
+) -> tuple[list[MemoryRecord], dict[str, dict[str, int]]]:
+    if limit <= 0 or not query_texts:
+        return [], {}
+
+    raw_terms = extract_terms(query_texts[0])
+    row_map: dict[str, dict[str, Any]] = {}
+    hotness_signals: dict[str, dict[str, float | int | str]] = {}
+    vector_best_scores: dict[str, float] = {}
+    vector_semantic_scores: dict[str, float] = {}
+    vector_query_indexes: dict[str, list[str]] = {}
+    keyword_scores: dict[str, float] = {}
+    lane_counts: dict[str, dict[str, int]] = {
+        query_text: {"vector": 0, "lexical": 0} for query_text in query_texts
+    }
+
+    for row in rows:
+        row_id = str(row["id"])
+        row_map[row_id] = row
+        hotness_signal = hotness_signal_for_row(row)
+        hotness_signals[row_id] = hotness_signal
+
+        keyword_score = keyword_score_for_summary(row["summary"], raw_terms)
+        if keyword_score > 0:
+            keyword_scores[row_id] = keyword_score
+            lane_counts[query_texts[0]]["lexical"] += 1
+
+        for query_index, query_vector in enumerate(query_vectors):
+            if not query_vector:
+                continue
+            semantic_score = cosine(query_vector, row["embedding"])
+            if semantic_score < threshold:
+                continue
+            final_vector_score = hotness_fused_score(
+                semantic_score,
+                float(hotness_signal["hotness_score"]),
             )
+            lane_counts[query_texts[query_index]]["vector"] += 1
+            vector_query_indexes.setdefault(row_id, []).append(str(query_index))
+            current_score = vector_best_scores.get(row_id)
+            if current_score is None or final_vector_score > current_score:
+                vector_best_scores[row_id] = final_vector_score
+                vector_semantic_scores[row_id] = semantic_score
+
+    top_ids = rrf_merge(
+        list(vector_best_scores.items()),
+        list(keyword_scores.items()),
+        row_map=row_map,
+        top_n=max(1, int(limit)),
+    )
+
+    records = [
+        MemoryRecord(
+            id=item_id,
+            kind=str(row_map[item_id]["kind"]),
+            summary=str(row_map[item_id]["summary"]),
+            score=rrf_score,
+            source_ref=str(row_map[item_id]["source_ref"]),
+            evidence=evidence_from_source_ref(str(row_map[item_id]["source_ref"])),
+            signals={
+                "lanes": [
+                    lane
+                    for lane, score in (
+                        ("vector", vector_best_scores.get(item_id, 0.0)),
+                        ("lexical", keyword_scores.get(item_id, 0.0)),
+                    )
+                    if score > 0
+                ],
+                "matched_query_indexes": vector_query_indexes.get(item_id, []),
+                "vector_score": vector_semantic_scores.get(item_id, 0.0),
+                "final_vector_score": vector_best_scores.get(item_id, 0.0),
+                "lexical_score": keyword_scores.get(item_id, 0.0),
+                "rrf_score": rrf_score,
+                "reinforcement": int(row_map[item_id].get("reinforcement") or 1),
+                "emotional_weight": coerce_emotional_weight(
+                    row_map[item_id].get("emotional_weight")
+                ),
+                "hotness_score": hotness_signals.get(item_id, {}).get(
+                    "hotness_score", 0.0
+                ),
+                "hotness_alpha": _HOTNESS_ALPHA,
+                "hotness_half_life_days": _HOTNESS_HALF_LIFE_DAYS,
+                "hotness_recency": hotness_signals.get(item_id, {}).get("recency", 0.0),
+                "hotness_frequency": hotness_signals.get(item_id, {}).get(
+                    "frequency", 0.0
+                ),
+                "hotness_effective_half_life_days": hotness_signals.get(
+                    item_id, {}
+                ).get(
+                    "effective_half_life_days",
+                    _HOTNESS_HALF_LIFE_DAYS,
+                ),
+                "hotness_age_days": hotness_signals.get(item_id, {}).get(
+                    "age_days", 0.0
+                ),
+                "hotness_updated_at": hotness_signals.get(item_id, {}).get(
+                    "updated_at", ""
+                ),
+                "reinforcement_boost": reinforcement_boost(row_map[item_id]),
+                "extra": dict(row_map[item_id].get("extra") or {}),
+            },
         )
-    return sorted(merged, key=record_sort_key)[: max(0, limit)]
+        for item_id, rrf_score, _boost in top_ids
+        if item_id in row_map
+    ]
+    return records, lane_counts
 
 
 def trace_record(record: MemoryRecord, *, rank: int) -> dict[str, Any]:
@@ -195,7 +289,19 @@ def normalize_datetime(value: datetime) -> str:
 
 
 def extract_terms(text: str) -> list[str]:
-    stop_words = {"我", "你", "他", "她", "它", "的", "了", "过", "之前", "关于", "什么"}
+    stop_words = {
+        "我",
+        "你",
+        "他",
+        "她",
+        "它",
+        "的",
+        "了",
+        "过",
+        "之前",
+        "关于",
+        "什么",
+    }
     terms: list[str] = []
     for token in re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]+", text.lower()):
         if not token or token in stop_words:
@@ -204,7 +310,9 @@ def extract_terms(text: str) -> list[str]:
             if len(token) <= 2:
                 terms.append(token)
             else:
-                terms.extend(token[index : index + 2] for index in range(len(token) - 1))
+                terms.extend(
+                    token[index : index + 2] for index in range(len(token) - 1)
+                )
         else:
             terms.append(token)
     return dedupe_texts(terms)
@@ -294,7 +402,6 @@ def hotness_signal_for_row(
     updated_at = parse_datetime(updated_at_text)
     reinforcement = max(0, coerce_int(row.get("reinforcement"), default=1))
     emotional_weight = coerce_emotional_weight(row.get("emotional_weight"))
-    # Akashic hotness: bounded frequency times exponential recency decay.
     effective_half_life = max(
         half_life_days * (1.0 + 0.5 * emotional_weight / 10.0),
         0.1,

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import MISSING
-from dataclasses import fields
+from dataclasses import MISSING, fields
 
 import pytest
-
 from amadeus.app.bootstrap import load_runtime_config
 from amadeus.memory.engine import (
     MemoryContextResult,
@@ -46,6 +44,32 @@ def test_long_term_memory_config_can_be_enabled(tmp_path, monkeypatch):
     assert config.long_term_memory_enabled is True
     assert config.embedding_model == "text-embedding-3-small"
     assert config.long_term_memory_top_k == 5
+    assert config.memory_hypothesis_retrieval_enabled is True
+    assert config.memory_hypothesis_timeout_seconds == 2.0
+    assert config.light_model is None
+
+
+def test_memory_hypothesis_retrieval_config_can_be_disabled(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setenv("OPENAI_MODEL", "chat-model")
+    monkeypatch.setenv("AMADEUS_LONG_TERM_MEMORY_ENABLED", "1")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    monkeypatch.setenv("AMADEUS_MEMORY_HYPOTHESIS_RETRIEVAL_ENABLED", "0")
+    monkeypatch.setenv("AMADEUS_MEMORY_HYPOTHESIS_TIMEOUT_SECONDS", "0.75")
+    monkeypatch.setenv("OPENAI_LIGHT_MODEL", "light-model")
+
+    config = load_runtime_config(
+        env_path=tmp_path / ".env",
+        workspace_root=tmp_path,
+    )
+
+    assert config.memory_hypothesis_retrieval_enabled is False
+    assert config.memory_hypothesis_timeout_seconds == 0.75
+    assert config.light_model == "light-model"
 
 
 def test_long_term_memory_config_supports_dedicated_embedding_provider(

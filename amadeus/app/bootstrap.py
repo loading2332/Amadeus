@@ -63,6 +63,9 @@ class RuntimeConfig:
     embedding_api_key: str | None = None
     embedding_base_url: str | None = None
     long_term_memory_top_k: int = 8
+    memory_hypothesis_retrieval_enabled: bool = True
+    memory_hypothesis_timeout_seconds: float = 2.0
+    light_model: str | None = None
 
 
 class AppState(str, Enum):  # noqa: UP042
@@ -257,6 +260,17 @@ def load_runtime_config(
     long_term_memory_top_k = _int_config(
         "AMADEUS_LONG_TERM_MEMORY_TOP_K", file_values, default=8
     )
+    memory_hypothesis_retrieval_enabled = _bool_config(
+        "AMADEUS_MEMORY_HYPOTHESIS_RETRIEVAL_ENABLED",
+        file_values,
+        default=True,
+    )
+    memory_hypothesis_timeout_seconds = _float_config(
+        "AMADEUS_MEMORY_HYPOTHESIS_TIMEOUT_SECONDS",
+        file_values,
+        default=2.0,
+    )
+    light_model = _config_value("OPENAI_LIGHT_MODEL", file_values)
     if long_term_memory_enabled and not embedding_model:
         raise ValueError("Missing Amadeus runtime config: OPENAI_EMBEDDING_MODEL")
     return RuntimeConfig(
@@ -276,6 +290,9 @@ def load_runtime_config(
         embedding_api_key=embedding_api_key,
         embedding_base_url=embedding_base_url,
         long_term_memory_top_k=long_term_memory_top_k,
+        memory_hypothesis_retrieval_enabled=memory_hypothesis_retrieval_enabled,
+        memory_hypothesis_timeout_seconds=memory_hypothesis_timeout_seconds,
+        light_model=light_model,
     )
 
 
@@ -322,7 +339,14 @@ def build_passive_app(
             retriever=MemoryRetriever(
                 store=store,
                 embedding_provider=embedding_provider,
-                hypothesis_provider=LLMHypothesisProvider(provider=provider),
+                hypothesis_provider=LLMHypothesisProvider(
+                    provider=provider,
+                    model=config.light_model or config.provider.model,
+                ),
+                hypothesis_retrieval_enabled=(
+                    config.memory_hypothesis_retrieval_enabled
+                ),
+                hypothesis_timeout_seconds=config.memory_hypothesis_timeout_seconds,
                 top_k=config.long_term_memory_top_k,
             ),
             memorizer=memorizer,
@@ -429,10 +453,15 @@ def _float_config(name: str, file_values: Mapping[str, str], *, default: float) 
     return float(value)
 
 
-def _bool_config(name: str, file_values: Mapping[str, str]) -> bool:
+def _bool_config(
+    name: str,
+    file_values: Mapping[str, str],
+    *,
+    default: bool = False,
+) -> bool:
     value = _config_value(name, file_values)
     if value is None:
-        return False
+        return default
     return value.lower() in {"1", "true", "yes", "on"}
 
 

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gate for memory changes: public behavior proof, trace fields, and focused tests."}
+{"file": "../akashic-agent/plugins/default_memory/engine.py", "reason": "Check Amadeus behavior against Akashic default memory dual-hypothesis query generation."}
+{"file": "../akashic-agent/memory2/retriever.py", "reason": "Check vector/keyword/RRF lane semantics against Akashic retriever behavior."}
+{"file": "docs/interview/resume-claim-gap-audit.md", "reason": "Ensure implemented claim says dual-hypothesis retrieval without overclaiming classic HyDE."}

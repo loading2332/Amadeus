@@ -14,9 +14,8 @@ from amadeus.memory.ranking import (
     build_query_plan,
     dedupe_texts,
     format_context_record,
-    max_pool_records,
     normalize_datetime,
-    rank_rows,
+    rank_multi_query_rows,
     trace_record,
 )
 from amadeus.memory.store import MemoryStore
@@ -27,6 +26,8 @@ class MemoryRetriever:
     store: MemoryStore
     embedding_provider: EmbeddingProvider
     hypothesis_provider: HypothesisProvider | None = None
+    hypothesis_retrieval_enabled: bool = True
+    hypothesis_timeout_seconds: float = 2.0
     score_threshold: float = 0.35
     top_k: int = 8
     context_char_budget: int = 4000
@@ -45,12 +46,24 @@ class MemoryRetriever:
         queries = list(plan.queries)
         fallbacks: list[str] = []
         errors: list[str] = []
-        if plan.use_hypotheses and self.hypothesis_provider is not None:
+        hypothesis_trace: dict[str, Any] = self._disabled_hypothesis_trace(
+            intent=request.intent,
+            use_hypotheses=plan.use_hypotheses,
+        )
+        if plan.use_hypotheses and self._can_generate_hypotheses():
             hypotheses = await self._generate_hypotheses(text)
             queries.extend(hypotheses["queries"])
             fallbacks.extend(hypotheses["fallbacks"])
             errors.extend(hypotheses["errors"])
+            hypothesis_trace = {
+                "enabled": True,
+                "styles": ["event", "general"],
+                "queries": hypotheses["queries_by_style"],
+                "fallbacks": hypotheses["fallbacks"],
+                "errors": hypotheses["errors"],
+            }
         queries = dedupe_texts(queries)
+        hypothesis_trace["query_texts"] = list(queries)
 
         rows, ranked, scope_mode, lane_counts = await self._load_ranked_rows(
             request=request,
@@ -76,8 +89,35 @@ class MemoryRetriever:
             "records": [trace_record(record, rank=index) for index, record in enumerate(ranked)],
             "fallbacks": dedupe_texts(fallbacks),
             "errors": errors,
+            "hypothesis_retrieval": hypothesis_trace,
         }
         return MemoryQueryResult(records=ranked, trace=trace)
+
+    def _can_generate_hypotheses(self) -> bool:
+        return self.hypothesis_retrieval_enabled and self.hypothesis_provider is not None
+
+    def _disabled_hypothesis_trace(
+        self,
+        *,
+        intent: str,
+        use_hypotheses: bool,
+    ) -> dict[str, Any]:
+        if not use_hypotheses:
+            reason = f"intent_{intent}"
+        elif not self.hypothesis_retrieval_enabled:
+            reason = "disabled"
+        elif self.hypothesis_provider is None:
+            reason = "missing_provider"
+        else:
+            reason = "not_generated"
+        return {
+            "enabled": False,
+            "styles": ["event", "general"],
+            "queries": {},
+            "fallbacks": [],
+            "errors": [],
+            "reason": reason,
+        }
 
     async def _load_ranked_rows(
         self,
@@ -137,11 +177,17 @@ class MemoryRetriever:
             trace=trace,
         )
 
-    async def _generate_hypotheses(self, text: str) -> dict[str, list[str]]:
+    async def _generate_hypotheses(self, text: str) -> dict[str, Any]:
         if self.hypothesis_provider is None:
-            return {"queries": [], "fallbacks": [], "errors": []}
+            return {
+                "queries": [],
+                "queries_by_style": {},
+                "fallbacks": [],
+                "errors": [],
+            }
         generated = await self._gather_hypotheses(text)
         queries: list[str] = []
+        queries_by_style: dict[str, str] = {}
         fallbacks: list[str] = []
         errors: list[str] = []
         for style, value in generated:
@@ -149,8 +195,18 @@ class MemoryRetriever:
                 fallbacks.append(f"hypothesis_{style}_failed")
                 errors.append(f"hypothesis_{style}: {value}")
                 continue
-            queries.append(value)
-        return {"queries": queries, "fallbacks": fallbacks, "errors": errors}
+            text_value = value.strip()
+            if not text_value:
+                fallbacks.append(f"hypothesis_{style}_empty")
+                continue
+            queries.append(text_value)
+            queries_by_style[style] = text_value
+        return {
+            "queries": queries,
+            "queries_by_style": queries_by_style,
+            "fallbacks": fallbacks,
+            "errors": errors,
+        }
 
     async def _gather_hypotheses(
         self,
@@ -159,11 +215,19 @@ class MemoryRetriever:
         if self.hypothesis_provider is None:
             return []
         generated = await asyncio.gather(
-            self.hypothesis_provider.generate(text, style="event"),
-            self.hypothesis_provider.generate(text, style="general"),
+            self._generate_hypothesis_style(text, "event"),
+            self._generate_hypothesis_style(text, "general"),
             return_exceptions=True,
         )
         return list(zip(("event", "general"), generated, strict=True))
+
+    async def _generate_hypothesis_style(self, text: str, style: str) -> str:
+        if self.hypothesis_provider is None:
+            return ""
+        return await asyncio.wait_for(
+            self.hypothesis_provider.generate(text, style=style),
+            timeout=max(0.001, float(self.hypothesis_timeout_seconds)),
+        )
 
     async def _rank_query_set(
         self,
@@ -172,27 +236,16 @@ class MemoryRetriever:
         queries: list[str],
         limit: int,
     ) -> tuple[list[Any], dict[str, dict[str, int]]]:
-        result_sets: list[list[Any]] = []
-        lane_counts: dict[str, dict[str, int]] = {}
-        for query_text in queries:
-            query_vector = await self.embedding_provider.embed(query_text)
-            ranked = rank_rows(
-                rows,
-                query_vector,
-                query_text,
-                limit=limit,
-                threshold=self.score_threshold,
-            )
-            result_sets.append(ranked)
-            lane_counts[query_text] = {
-                "vector": sum(
-                    1 for record in ranked if "vector" in record.signals.get("lanes", [])
-                ),
-                "lexical": sum(
-                    1 for record in ranked if "lexical" in record.signals.get("lanes", [])
-                ),
-            }
-        return max_pool_records(result_sets, limit=limit), lane_counts
+        query_vectors = await asyncio.gather(
+            *(self.embedding_provider.embed(query_text) for query_text in queries)
+        )
+        return rank_multi_query_rows(
+            rows,
+            query_vectors,
+            queries,
+            limit=limit,
+            threshold=self.score_threshold,
+        )
 
 
 def _render_priority_sections(
