@@ -12,8 +12,9 @@ from amadeus.app.workspace import initialize_workspace
 from amadeus.events import EventBus
 from amadeus.memory import (
     AkashicMemoryEngine,
-    LLMMemoryExtractor,
     LLMHypothesisProvider,
+    LLMMemoryDecisionProvider,
+    LLMMemoryExtractor,
     MarkdownMemoryRuntime,
     MemoryMemorizer,
     MemoryRetriever,
@@ -199,6 +200,16 @@ class PassiveApp:
             except BaseException as error:
                 if first_error is None:
                     first_error = error
+            try:
+                await _close_runtime_memory_clients(self.runtime.memory_engine)
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
+            try:
+                await self.provider.aclose()
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
             finally:
                 self._state = AppState.CLOSED
 
@@ -321,6 +332,11 @@ def build_passive_app(
                     provider=provider,
                     model=config.provider.model,
                 ),
+                decision_provider=LLMMemoryDecisionProvider(
+                    memorizer=memorizer,
+                    provider=provider,
+                    model=config.provider.model,
+                ),
             ),
         )
     memory = build_markdown_memory_runtime(
@@ -369,6 +385,26 @@ def build_passive_app(
         tool_executor=tool_executor,
         plugin_manager=plugin_manager,
     )
+
+
+async def _close_runtime_memory_clients(memory_engine: Any | None) -> None:
+    if memory_engine is None:
+        return
+    providers: list[Any] = []
+    retriever = getattr(memory_engine, "retriever", None)
+    memorizer = getattr(memory_engine, "memorizer", None)
+    if retriever is not None:
+        providers.append(getattr(retriever, "embedding_provider", None))
+    if memorizer is not None:
+        providers.append(getattr(memorizer, "embedding_provider", None))
+    seen: set[int] = set()
+    for provider in providers:
+        if provider is None or id(provider) in seen:
+            continue
+        seen.add(id(provider))
+        close = getattr(provider, "aclose", None)
+        if callable(close):
+            await close()
 
 
 def _config_value(name: str, file_values: Mapping[str, str]) -> str | None:

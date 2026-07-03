@@ -26,6 +26,7 @@ from amadeus.memory.markdown import (
 )
 from amadeus.memory.memorizer import MemoryMemorizer
 from amadeus.memory.post_response_worker import (
+    LLMMemoryDecisionProvider,
     LLMMemoryExtractor,
     PostResponseMemoryWorker,
 )
@@ -38,7 +39,10 @@ from amadeus.memory.providers import (
 )
 from amadeus.memory.ranking import build_query_plan, extract_terms, rank_rows, rrf_merge
 from amadeus.memory.retriever import MemoryRetriever
-from amadeus.memory.source_refs import build_entry_source_ref, parse_history_entry_happened_at
+from amadeus.memory.source_refs import (
+    build_entry_source_ref,
+    parse_history_entry_happened_at,
+)
 from amadeus.memory.store import MemoryStore
 
 __all__ = [
@@ -49,6 +53,7 @@ __all__ = [
     "EvidenceRef",
     "HypothesisProvider",
     "LLMHypothesisProvider",
+    "LLMMemoryDecisionProvider",
     "LLMMemoryExtractor",
     "MarkdownMemoryMaintenance",
     "MarkdownMemoryRuntime",

@@ -60,20 +60,83 @@ class MemoryMemorizer:
                 status=replacement.status,
                 affected_ids=[target_id],
             )
-        self.store.mark_items_status(
-            [target_id],
-            status="superseded",
-            extra_patch={
+        mutation = self.supersede_many(
+            target_ids=[target_id],
+            reason="replacement",
+            replacement_id=replacement_id,
+            replacement_source_ref=request.source_ref,
+        )
+        affected_ids = [target_id, replacement_id]
+        return MemoryMutationResult(
+            accepted=mutation.accepted,
+            status="replaced" if mutation.accepted else mutation.status,
+            affected_ids=affected_ids,
+            missing_ids=mutation.missing_ids,
+            items=self.store.get_items_by_ids(affected_ids),
+            trace={
+                **dict(mutation.trace),
                 "replacement_id": replacement_id,
-                "superseded_reason": "replacement",
+                "replaced_ids": mutation.affected_ids,
             },
         )
-        self.store.record_replacement(target_id, replacement_id, request.source_ref)
+
+    def supersede_many(
+        self,
+        *,
+        target_ids: list[str],
+        reason: str,
+        replacement_id: str | None = None,
+        replacement_source_ref: str | None = None,
+    ) -> MemoryMutationResult:
+        clean_target_ids = _dedupe_ids(target_ids)
+        targets = self.store.get_items_by_ids(clean_target_ids)
+        found_ids = [str(item["id"]) for item in targets]
+        found_set = set(found_ids)
+        missing_ids = [
+            item_id for item_id in clean_target_ids if item_id not in found_set
+        ]
+        if not found_ids:
+            return MemoryMutationResult(
+                accepted=False,
+                status="missing",
+                missing_ids=missing_ids,
+                trace={
+                    "superseded_ids": [],
+                    "replacement_id": replacement_id,
+                    "replacement_count": 0,
+                },
+            )
+
+        extra_patch = {"superseded_reason": reason}
+        if replacement_id:
+            extra_patch["replacement_id"] = replacement_id
+        self.store.mark_items_status(
+            found_ids,
+            status="superseded",
+            extra_patch=extra_patch,
+        )
+
+        replacement_count = 0
+        if replacement_id and replacement_source_ref:
+            for target_id in found_ids:
+                self.store.record_replacement(
+                    target_id,
+                    replacement_id,
+                    replacement_source_ref,
+                )
+                replacement_count += 1
+
         return MemoryMutationResult(
             accepted=True,
-            status="replaced",
-            affected_ids=[target_id, replacement_id],
-            items=self.store.get_items_by_ids([target_id, replacement_id]),
+            status="superseded",
+            affected_ids=found_ids,
+            missing_ids=missing_ids,
+            items=self.store.get_items_by_ids(found_ids),
+            trace={
+                "superseded_ids": found_ids,
+                "replacement_id": replacement_id,
+                "replacement_count": replacement_count,
+            },
         )
 
     def forget(self, ids: list[str]) -> MemoryMutationResult:
