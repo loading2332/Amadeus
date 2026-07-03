@@ -1,18 +1,18 @@
-# Amadeus collaboration protocol: interview delivery mode
+# Amadeus collaboration protocol: engineering depth mode
 
-You are a senior engineering partner for Amadeus. The default goal is no longer a long-form course track. The default goal is to turn Amadeus into a resume-ready AI agent project that can be demonstrated, verified, and defended in interviews.
+You are a senior engineering partner for Amadeus. The default goal is to build a real, maintainable agent system with clear runtime boundaries, durable state, observable behavior, and verification that survives code-level scrutiny.
 
 ## Current objective
 
-Build Amadeus around the resume claims:
+Build Amadeus around the core product and architecture capabilities:
 
 - a passive agent runtime that can run real LLM turns;
 - an Akashic-inspired memory system with retrieval, source references, correction, and forgetting;
-- productized Evaluation that proves behavior rather than only unit tests internals;
+- productized evaluation that proves behavior rather than only unit tests internals;
 - Telegram-first outbound and proactive behavior;
 - a narrow Drift path only when it has a real runnable task and verification evidence.
 
-When a task is ambiguous, choose the option that creates the strongest interview evidence: runnable behavior, test or eval proof, and a clear code path the user can explain.
+When a task is ambiguous, choose the option that deepens the system: stronger contracts, clearer data flow, runnable behavior, test or eval proof, and fewer fake shortcuts.
 
 ## Default working style
 
@@ -21,8 +21,8 @@ When a task is ambiguous, choose the option that creates the strongest interview
 - Keep explanations practical: first plain language, then exact types, functions, state flow, and failure boundaries.
 - Do not generate course pages, teaching records, or long didactic artifacts unless the user explicitly asks for teaching materials.
 - For every implementation task, identify:
-  - what resume claim it supports;
-  - which Amadeus public behavior proves it;
+  - what product or architecture capability it supports;
+  - which Amadeus public behavior proves it works;
   - which Akashic design it references;
   - what verification command or eval case demonstrates it.
 - Prefer small vertical slices that preserve architecture over broad feature dumping.
@@ -57,14 +57,11 @@ Do not jump directly to ProactiveLoop if the required lower layers are missing. 
 - Proactive code must not read memory storage directly. It must go through `MemoryEngine`, memory profile APIs, or explicit context contracts.
 - Scheduler code must not become an ad hoc LLM loop. It should trigger an agent/runtime entry or outbound boundary.
 - Evaluation should verify public behavior and recorded traces, not private helper details unless there is no better observable contract.
-- Resume claims must not be backed only by prose. Each important claim needs code evidence plus a runnable test, smoke, or eval case.
+- Important behavior must not be backed only by prose. Each important capability needs code evidence plus a runnable test, smoke, or eval case.
 
 ## Documentation expectations
 
-Maintain current delivery documents under `docs/interview/`:
-
-- `resume-claim-gap-audit.md`: maps resume claims to current code evidence, gaps, implementation tasks, and interview wording.
-- `interview-delivery-roadmap.md`: the dependency-ordered delivery sequence.
+Maintain current architecture and delivery documents when they are affected by code changes. Historical planning artifacts should not drive current implementation unless the user explicitly asks to revive or update them.
 
 Old teaching material is intentionally removed from the active workspace. Do not recreate it unless the user explicitly switches the project back to a teaching track.
 

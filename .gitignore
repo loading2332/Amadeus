@@ -11,3 +11,4 @@ sessions.db
 .smoke-workspace/
 memory/*.db
 memory/*.md
+runtime-artifacts/*.log

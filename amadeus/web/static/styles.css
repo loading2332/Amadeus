@@ -1,0 +1,147 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  background: #f5f7fb;
+  color: #1c2633;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.shell {
+  width: min(920px, 100%);
+  min-height: 100vh;
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: #ffffff;
+  border-left: 1px solid #d8dee9;
+  border-right: 1px solid #d8dee9;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-bottom: 1px solid #e3e8f0;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+#sessionLabel {
+  margin: 4px 0 0;
+  color: #5f6b7a;
+  font-size: 13px;
+}
+
+.badge {
+  min-width: 96px;
+  padding: 7px 10px;
+  border: 1px solid #cfd7e3;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 13px;
+  color: #344256;
+  background: #f8fafc;
+}
+
+.messages {
+  padding: 22px;
+  overflow-y: auto;
+}
+
+.empty {
+  margin-top: 22vh;
+  text-align: center;
+  color: #748195;
+}
+
+.message {
+  display: flex;
+  margin: 0 0 14px;
+}
+
+.message.user {
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: min(680px, 86%);
+  padding: 11px 13px;
+  border-radius: 8px;
+  border: 1px solid #d9e1ec;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.message.user .bubble {
+  background: #1d4ed8;
+  color: #ffffff;
+  border-color: #1d4ed8;
+}
+
+.message.assistant .bubble {
+  background: #f8fafc;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 16px;
+  border-top: 1px solid #e3e8f0;
+}
+
+textarea {
+  width: 100%;
+  max-height: 160px;
+  resize: none;
+  border: 1px solid #cfd7e3;
+  border-radius: 8px;
+  padding: 12px;
+  font: inherit;
+  line-height: 1.4;
+}
+
+button {
+  min-width: 78px;
+  border: 0;
+  border-radius: 8px;
+  background: #111827;
+  color: #ffffff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled,
+textarea:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    border: 0;
+  }
+
+  .composer {
+    grid-template-columns: 1fr;
+  }
+
+  button {
+    min-height: 44px;
+  }
+}
