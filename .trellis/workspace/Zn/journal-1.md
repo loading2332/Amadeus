@@ -72,3 +72,36 @@ Added productized memory-quality evaluation evidence, fixed skipped eval semanti
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Memory hotness ranking
+
+**Date**: 2026-07-03
+**Task**: Memory hotness ranking
+**Branch**: `main`
+
+### Summary
+
+Implemented Akashic-style hotness fusion for memory ranking, exposed scoring signals in retrieval trace, updated interview docs and backend quality spec, and verified focused memory/runtime tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6bc42c9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
