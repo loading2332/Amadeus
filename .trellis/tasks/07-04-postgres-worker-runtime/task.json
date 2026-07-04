@@ -1,0 +1,32 @@
+{
+  "id": "postgres-worker-runtime",
+  "name": "postgres-worker-runtime",
+  "title": "Migrate persistence to PostgreSQL worker runtime",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "Zn",
+  "assignee": "Zn",
+  "createdAt": "2026-07-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "codex/delivery-runtime",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-04-postgres-foundation",
+    "07-04-memory-postgres-pgvector",
+    "07-04-turn-session-worker",
+    "07-04-markdown-memory-postgres-state",
+    "07-04-docker-runtime-cleanup"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
