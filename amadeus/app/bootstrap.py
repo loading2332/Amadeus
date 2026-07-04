@@ -9,26 +9,27 @@ from pathlib import Path
 from typing import Any
 
 from amadeus.app.workspace import initialize_workspace
+from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
 from amadeus.events import EventBus
 from amadeus.memory import (
-    AkashicMemoryEngine,
     LLMHypothesisProvider,
     LLMMemoryDecisionProvider,
     LLMMemoryExtractor,
+    LongTermMemoryEngine,
     MarkdownMemoryRuntime,
     MemoryMemorizer,
     MemoryRetriever,
-    MemoryStore,
     OpenAIEmbeddingConfig,
     OpenAIEmbeddingProvider,
     PostResponseMemoryWorker,
     build_markdown_memory_runtime,
 )
+from amadeus.memory.postgres import PostgresMemoryStore
 from amadeus.plugin.manager import PluginManager
 from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatClient, LLMProvider, LLMProviderConfig
 from amadeus.runtime.passive import PassiveRuntime
-from amadeus.session.store import SessionManager
+from amadeus.session import PostgresSessionStore, SessionManager
 from amadeus.tools.defaults import (
     EditFileTool,
     FetchMessagesTool,
@@ -55,10 +56,11 @@ def default_workspace_root() -> Path:
 class RuntimeConfig:
     workspace_root: Path
     provider: LLMProviderConfig
+    postgres_dsn: str
     default_session_key: str = "cli:default"
     memory_keep_count: int = 12
     long_term_memory_enabled: bool = False
-    long_term_memory_db_path: Path | None = None
+    default_memory_user_id: int = 1
     embedding_model: str | None = None
     embedding_api_key: str | None = None
     embedding_base_url: str | None = None
@@ -87,6 +89,7 @@ class PassiveApp:
     tool_registry: ToolRegistry
     tool_executor: ToolExecutor
     plugin_manager: PluginManager
+    postgres_db: PostgresDatabase | None = None
     _state: AppState = field(default=AppState.NEW, init=False)
     _lifecycle_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock,
@@ -204,6 +207,15 @@ class PassiveApp:
                 if first_error is None:
                     first_error = error
             try:
+                # The session and memory stores share one pool; close it once
+                # after the stores have released their references. Stores that
+                # do not own the pool are no-ops on close().
+                if self.postgres_db is not None:
+                    self.postgres_db.close()
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
+            try:
                 await _close_runtime_memory_clients(self.runtime.memory_engine)
             except BaseException as error:
                 if first_error is None:
@@ -235,6 +247,7 @@ def load_runtime_config(
         "OPENAI_BASE_URL": _config_value("OPENAI_BASE_URL", file_values),
         "OPENAI_API_KEY": _config_value("OPENAI_API_KEY", file_values),
         "OPENAI_MODEL": _config_value("OPENAI_MODEL", file_values),
+        "AMADEUS_POSTGRES_DSN": _config_value("AMADEUS_POSTGRES_DSN", file_values),
     }
     missing = [name for name, value in values.items() if not value]
     if missing:
@@ -247,7 +260,9 @@ def load_runtime_config(
     long_term_memory_enabled = _bool_config(
         "AMADEUS_LONG_TERM_MEMORY_ENABLED", file_values
     )
-    long_term_memory_db_path = root / "memory" / "long_term_memory.db"
+    default_memory_user_id = _int_config(
+        "AMADEUS_MEMORY_USER_ID", file_values, default=1
+    )
     embedding_model = _config_value("OPENAI_EMBEDDING_MODEL", file_values)
     embedding_api_key = (
         _config_value("OPENAI_EMBEDDING_API_KEY", file_values)
@@ -282,10 +297,11 @@ def load_runtime_config(
             timeout_seconds=timeout,
             max_tokens=max_tokens,
         ),
+        postgres_dsn=str(values["AMADEUS_POSTGRES_DSN"]),
         default_session_key=session_key,
         memory_keep_count=keep_count,
         long_term_memory_enabled=long_term_memory_enabled,
-        long_term_memory_db_path=long_term_memory_db_path,
+        default_memory_user_id=default_memory_user_id,
         embedding_model=embedding_model,
         embedding_api_key=embedding_api_key,
         embedding_base_url=embedding_base_url,
@@ -305,7 +321,17 @@ def build_passive_app(
     config = load_runtime_config(env_path=env_path, workspace_root=workspace_root)
     initialize_workspace(config.workspace_root)
     provider = LLMProvider(config.provider, client=client)
-    session_manager = SessionManager(config.workspace_root)
+    # Single shared PostgreSQL connection pool for every native-SQL store.
+    # ``PostgresDatabase.open`` fails fast when the pgvector extension is
+    # missing, so the whole runtime refuses to start without it.
+    postgres_db = PostgresDatabase(
+        PostgresConfig(dsn=normalize_psycopg_dsn(config.postgres_dsn))
+    )
+    postgres_db.open()
+    session_manager = SessionManager(
+        config.workspace_root,
+        store=PostgresSessionStore(db=postgres_db),
+    )
     event_bus = EventBus()
     tool_registry = ToolRegistry()
     tool_registry.register(FetchMessagesTool(store=session_manager.store))
@@ -316,11 +342,7 @@ def build_passive_app(
     tool_registry.register(ListDirTool())
     tool_executor = ToolExecutor(registry=tool_registry)
     long_term_memory = None
-    if (
-        config.long_term_memory_enabled
-        and config.embedding_model
-        and config.long_term_memory_db_path is not None
-    ):
+    if config.long_term_memory_enabled and config.embedding_model:
         embedding_provider = OpenAIEmbeddingProvider(
             OpenAIEmbeddingConfig(
                 api_key=str(config.embedding_api_key or config.provider.api_key),
@@ -329,12 +351,15 @@ def build_passive_app(
                 timeout_seconds=config.provider.timeout_seconds,
             )
         )
-        store = MemoryStore(config.long_term_memory_db_path)
+        store = PostgresMemoryStore(
+            config.default_memory_user_id,
+            db=postgres_db,
+        )
         memorizer = MemoryMemorizer(
             store=store,
             embedding_provider=embedding_provider,
         )
-        long_term_memory = AkashicMemoryEngine(
+        long_term_memory = LongTermMemoryEngine(
             store=store,
             retriever=MemoryRetriever(
                 store=store,
@@ -408,6 +433,7 @@ def build_passive_app(
         tool_registry=tool_registry,
         tool_executor=tool_executor,
         plugin_manager=plugin_manager,
+        postgres_db=postgres_db,
     )
 
 

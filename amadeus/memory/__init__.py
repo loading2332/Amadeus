@@ -1,6 +1,5 @@
 """Memory interfaces, stores, retrieval, and markdown maintenance."""
 
-from amadeus.memory.akashic import AkashicMemoryEngine
 from amadeus.memory.engine import (
     EvidenceRef,
     MemoryContextResult,
@@ -39,6 +38,7 @@ from amadeus.memory.providers import (
 )
 from amadeus.memory.ranking import build_query_plan, extract_terms, rank_rows, rrf_merge
 from amadeus.memory.retriever import MemoryRetriever
+from amadeus.memory.runtime import LongTermMemoryEngine
 from amadeus.memory.source_refs import (
     build_entry_source_ref,
     parse_history_entry_happened_at,
@@ -48,11 +48,11 @@ from amadeus.memory.store import MemoryStore
 __all__ = [
     "ConsolidateRequest",
     "ConsolidateResult",
-    "AkashicMemoryEngine",
     "EmbeddingProvider",
     "EvidenceRef",
     "HypothesisProvider",
     "LLMHypothesisProvider",
+    "LongTermMemoryEngine",
     "LLMMemoryDecisionProvider",
     "LLMMemoryExtractor",
     "MarkdownMemoryMaintenance",

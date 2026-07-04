@@ -4,6 +4,14 @@ import asyncio
 
 from amadeus.app.bootstrap import build_passive_app
 
+from tests.db.postgres_helpers import clean_postgres
+
+EMBEDDING_DIM = 1024
+
+
+def _embedding(values: list[float]) -> list[float]:
+    return [float(v) for v in values] + [0.0] * (EMBEDDING_DIM - len(values))
+
 
 class FakeCompletions:
     async def create(self, **kwargs):
@@ -65,7 +73,7 @@ def test_build_passive_app_exposes_readonly_tool_runtime(tmp_path):
     assert app.runtime.tool_executor is app.tool_executor
 
 
-def test_build_passive_app_uses_akashic_style_unscoped_file_tools(tmp_path):
+def test_build_passive_app_uses_unscoped_file_tools(tmp_path):
     env_path = tmp_path / "workspace" / ".env"
     env_path.parent.mkdir()
     env_path.write_text(
@@ -126,9 +134,11 @@ def test_build_passive_app_composes_store_retriever_memorizer_and_worker(
     tmp_path,
     monkeypatch,
 ):
+    clean_postgres().close()
+
     class StableEmbeddingProvider:
         async def embed(self, text: str) -> list[float]:
-            return [1.0, 0.0, 0.0]
+            return _embedding([1.0, 0.0, 0.0])
 
     class FakeExtractor:
         def __init__(self, *, provider, model: str) -> None:
@@ -160,8 +170,8 @@ def test_build_passive_app_composes_store_retriever_memorizer_and_worker(
 
     engine = app.runtime.memory_engine
     assert engine is not None
-    assert engine.__class__.__name__ == "AkashicMemoryEngine"
-    assert engine.store.__class__.__name__ == "MemoryStore"
+    assert engine.__class__.__name__ == "LongTermMemoryEngine"
+    assert engine.store.__class__.__name__ == "PostgresMemoryStore"
     assert engine.retriever.__class__.__name__ == "MemoryRetriever"
     assert engine.memorizer.__class__.__name__ == "MemoryMemorizer"
     assert engine.worker.__class__.__name__ == "PostResponseMemoryWorker"

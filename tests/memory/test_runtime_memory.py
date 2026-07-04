@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from amadeus.memory import (
-    AkashicMemoryEngine,
+    LongTermMemoryEngine,
     MemoryMemorizer,
     MemoryRetriever,
     MemoryStore,
@@ -77,11 +77,11 @@ class FakeClient:
         self.chat: ChatNamespace = FakeChatNamespace(completions=self.completions)
 
 
-def _build_engine(tmp_path) -> AkashicMemoryEngine:
+def _build_engine(tmp_path) -> LongTermMemoryEngine:
     provider = FakeEmbeddingProvider()
     store = MemoryStore(tmp_path / "long_term_memory.db")
     memorizer = MemoryMemorizer(store=store, embedding_provider=provider)
-    return AkashicMemoryEngine(
+    return LongTermMemoryEngine(
         store=store,
         retriever=MemoryRetriever(store=store, embedding_provider=provider),
         memorizer=memorizer,

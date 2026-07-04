@@ -33,7 +33,7 @@ def test_long_term_memory_config_can_be_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
     monkeypatch.setenv("OPENAI_MODEL", "chat-model")
     monkeypatch.setenv("AMADEUS_LONG_TERM_MEMORY_ENABLED", "1")
-    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-v4")
     monkeypatch.setenv("AMADEUS_LONG_TERM_MEMORY_TOP_K", "5")
 
     config = load_runtime_config(
@@ -42,7 +42,7 @@ def test_long_term_memory_config_can_be_enabled(tmp_path, monkeypatch):
     )
 
     assert config.long_term_memory_enabled is True
-    assert config.embedding_model == "text-embedding-3-small"
+    assert config.embedding_model == "text-embedding-v4"
     assert config.long_term_memory_top_k == 5
     assert config.memory_hypothesis_retrieval_enabled is True
     assert config.memory_hypothesis_timeout_seconds == 2.0
@@ -57,7 +57,7 @@ def test_memory_hypothesis_retrieval_config_can_be_disabled(
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
     monkeypatch.setenv("OPENAI_MODEL", "chat-model")
     monkeypatch.setenv("AMADEUS_LONG_TERM_MEMORY_ENABLED", "1")
-    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-v4")
     monkeypatch.setenv("AMADEUS_MEMORY_HYPOTHESIS_RETRIEVAL_ENABLED", "0")
     monkeypatch.setenv("AMADEUS_MEMORY_HYPOTHESIS_TIMEOUT_SECONDS", "0.75")
     monkeypatch.setenv("OPENAI_LIGHT_MODEL", "light-model")
@@ -94,12 +94,13 @@ def test_long_term_memory_config_supports_dedicated_embedding_provider(
     assert config.embedding_api_key == "embed-secret"
 
 
-def test_memory_runtime_config_targets_long_term_memory_db(tmp_path, monkeypatch):
+def test_memory_runtime_config_targets_postgres_memory_user(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
     monkeypatch.setenv("OPENAI_MODEL", "chat-model")
     monkeypatch.setenv("AMADEUS_LONG_TERM_MEMORY_ENABLED", "1")
-    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-v4")
+    monkeypatch.setenv("AMADEUS_MEMORY_USER_ID", "42")
 
     config = load_runtime_config(
         env_path=tmp_path / ".env",
@@ -107,9 +108,7 @@ def test_memory_runtime_config_targets_long_term_memory_db(tmp_path, monkeypatch
     )
 
     assert config.long_term_memory_enabled is True
-    assert config.long_term_memory_db_path == (
-        tmp_path / "memory" / "long_term_memory.db"
-    )
+    assert config.default_memory_user_id == 42
 
 
 def test_memory_protocol_dataclasses_match_task1_plan_shape():

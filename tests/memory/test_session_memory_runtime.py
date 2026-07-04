@@ -6,8 +6,8 @@ from typing import Any
 
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.memory import (
-    AkashicMemoryEngine,
     ConsolidateRequest,
+    LongTermMemoryEngine,
     MarkdownMemoryMaintenance,
     MarkdownMemoryStore,
     MemoryMemorizer,
@@ -182,7 +182,7 @@ def test_consolidation_ingests_pending_profile_preference_and_correction_into_me
     )
     store_db = MemoryStore(tmp_path / "long_term_memory.db")
     memorizer = MemoryMemorizer(store=store_db, embedding_provider=StableEmbeddingProvider())
-    memory_engine = AkashicMemoryEngine(
+    memory_engine = LongTermMemoryEngine(
         store=store_db,
         retriever=MemoryRetriever(store=store_db, embedding_provider=StableEmbeddingProvider()),
         memorizer=memorizer,

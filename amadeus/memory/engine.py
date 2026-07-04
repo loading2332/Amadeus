@@ -84,6 +84,76 @@ class MemoryMutationResult:
     trace: dict[str, Any] = field(default_factory=dict)
 
 
+class MemoryStoreProtocol(Protocol):
+    def insert_item(
+        self,
+        *,
+        item_id: str,
+        memory_type: str,
+        summary: str,
+        content_hash: str,
+        embedding: list[float],
+        source_ref: str,
+        happened_at: str | None,
+        scope_channel: str | None,
+        scope_chat_id: str | None,
+        emotional_weight: float,
+        extra: dict[str, Any],
+    ) -> None: ...
+
+    def upsert_item(
+        self,
+        *,
+        memory_type: str,
+        summary: str,
+        embedding: list[float],
+        source_ref: str,
+        happened_at: str | None = None,
+        scope_channel: str | None = None,
+        scope_chat_id: str | None = None,
+        emotional_weight: float = 0.0,
+        extra: dict[str, Any] | None = None,
+    ) -> tuple[str, str]: ...
+
+    def record_replacement(
+        self,
+        old_item_id: str,
+        new_item_id: str,
+        source_ref: str,
+    ) -> None: ...
+
+    def mark_items_status(
+        self,
+        ids: list[str],
+        *,
+        status: str,
+        extra_patch: dict[str, Any],
+    ) -> None: ...
+
+    def list_replacements_for(self, old_item_id: str) -> list[dict[str, str]]: ...
+
+    def find_replacements_by_source_ref(
+        self,
+        source_ref: str,
+    ) -> list[dict[str, str]]: ...
+
+    def list_active_items(
+        self,
+        *,
+        memory_types: tuple[str, ...] = (),
+        scope_channel: str | None = None,
+        scope_chat_id: str | None = None,
+        time_start: datetime | None = None,
+        time_end: datetime | None = None,
+    ) -> list[dict[str, Any]]: ...
+
+    def find_items_by_source_ref(self, source_ref: str) -> list[dict[str, Any]]: ...
+
+    def get_items_by_ids(self, ids: list[str]) -> list[dict[str, Any]]: ...
+
+    def get_item_by_id(self, item_id: str) -> dict[str, Any] | None: ...
+
+
 class MemoryEngine(Protocol):
     async def recall(self, request: MemoryRecallRequest) -> MemoryQueryResult: ...
 

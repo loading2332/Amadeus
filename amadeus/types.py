@@ -8,7 +8,7 @@ from amadeus.provider import LLMToolCall
 
 @dataclass
 class ReasonerResult:
-    """Akashic-aligned result from a multi-step reasoner loop.
+    """Result from a multi-step reasoner loop.
 
     Attributes:
         reply: Final assistant reply text.

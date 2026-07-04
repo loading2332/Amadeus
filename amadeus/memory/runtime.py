@@ -9,17 +9,17 @@ from amadeus.memory.engine import (
     MemoryMutationResult,
     MemoryQueryResult,
     MemoryRecallRequest,
+    MemoryStoreProtocol,
     MemoryWriteRequest,
 )
 from amadeus.memory.memorizer import MemoryMemorizer
 from amadeus.memory.post_response_worker import PostResponseMemoryWorker
-from amadeus.memory.retriever import MemoryRetriever, _render_priority_sections
-from amadeus.memory.store import MemoryStore
+from amadeus.memory.retriever import MemoryRetriever
 
 
 @dataclass
-class AkashicMemoryEngine:
-    store: MemoryStore
+class LongTermMemoryEngine:
+    store: MemoryStoreProtocol
     retriever: MemoryRetriever
     memorizer: MemoryMemorizer
     worker: PostResponseMemoryWorker

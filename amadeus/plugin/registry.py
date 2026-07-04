@@ -157,6 +157,6 @@ class PluginRegistry:
             self._import_owners.clear()
 
 
-# Global singleton — same pattern as Akashic's plugin_registry.
+# Global singleton for process-local plugin registration.
 # Tests must clear() before and after each relevant test.
 plugin_registry = PluginRegistry()

@@ -8,6 +8,8 @@ from amadeus.memory.engine import (
     MemoryContextResult,
     MemoryQueryResult,
     MemoryRecallRequest,
+    MemoryScope,
+    MemoryStoreProtocol,
 )
 from amadeus.memory.providers import EmbeddingProvider, HypothesisProvider
 from amadeus.memory.ranking import (
@@ -18,12 +20,11 @@ from amadeus.memory.ranking import (
     rank_multi_query_rows,
     trace_record,
 )
-from amadeus.memory.store import MemoryStore
 
 
 @dataclass
 class MemoryRetriever:
-    store: MemoryStore
+    store: MemoryStoreProtocol
     embedding_provider: EmbeddingProvider
     hypothesis_provider: HypothesisProvider | None = None
     hypothesis_retrieval_enabled: bool = True
@@ -127,18 +128,18 @@ class MemoryRetriever:
         memory_types: tuple[str, ...],
         limit: int,
     ) -> tuple[list[dict[str, Any]], list[Any], str, dict[str, dict[str, int]]]:
+        query_vectors = await self._embed_queries(queries)
         scoped_rows = _normalize_rows(
-            self.store.list_active_items(
+            self._candidate_rows(
+                request=request,
                 memory_types=memory_types,
-                scope_channel=request.scope.channel,
-                scope_chat_id=request.scope.chat_id,
-                time_start=request.time_start,
-                time_end=request.time_end,
+                query_vectors=query_vectors,
             )
         )
-        ranked, lane_counts = await self._rank_query_set(
+        ranked, lane_counts = self._rank_query_set(
             rows=scoped_rows,
             queries=queries,
+            query_vectors=query_vectors,
             limit=limit,
         )
         if ranked or (
@@ -146,19 +147,85 @@ class MemoryRetriever:
         ):
             return scoped_rows, ranked, "scoped", lane_counts
 
+        global_request = MemoryRecallRequest(
+            text=request.text,
+            intent=request.intent,
+            memory_types=memory_types,
+            limit=request.limit,
+            time_start=request.time_start,
+            time_end=request.time_end,
+            scope=MemoryScope(),
+            context=request.context,
+        )
         global_rows = _normalize_rows(
-            self.store.list_active_items(
+            self._candidate_rows(
+                request=global_request,
                 memory_types=memory_types,
-                time_start=request.time_start,
-                time_end=request.time_end,
+                query_vectors=query_vectors,
             )
         )
-        global_ranked, global_lane_counts = await self._rank_query_set(
+        global_ranked, global_lane_counts = self._rank_query_set(
             rows=global_rows,
             queries=queries,
+            query_vectors=query_vectors,
             limit=limit,
         )
         return global_rows, global_ranked, "global-fallback", global_lane_counts
+
+    async def _embed_queries(
+        self,
+        queries: list[str],
+    ) -> list[list[float]]:
+        return list(
+            await asyncio.gather(
+                *(self.embedding_provider.embed(query_text) for query_text in queries)
+            )
+        )
+
+    def _candidate_rows(
+        self,
+        *,
+        request: MemoryRecallRequest,
+        memory_types: tuple[str, ...],
+        query_vectors: list[list[float]],
+    ) -> list[dict[str, Any]]:
+        """Return candidate rows for ranking.
+
+        When the store exposes a pgvector-backed ``search_active_items`` method,
+        semantic candidates for every query are recalled through SQL ``<=>`` so the
+        runtime never falls back to a Python full-table scan as the completion
+        state. Stores without that method (e.g. legacy SQLite fakes) keep using
+        ``list_active_items`` and the ranking layer still scores them in Python.
+        """
+        search = getattr(self.store, "search_active_items", None)
+        if callable(search) and query_vectors:
+            rows_by_id: dict[str, dict[str, Any]] = {}
+            for query_vector in query_vectors:
+                if not query_vector:
+                    continue
+                rows = search(
+                    query_embedding=query_vector,
+                    memory_types=memory_types,
+                    scope_channel=request.scope.channel,
+                    scope_chat_id=request.scope.chat_id,
+                    time_start=request.time_start,
+                    time_end=request.time_end,
+                    limit=max(
+                        self.top_k,
+                        request.limit if request.limit > 0 else self.top_k,
+                    )
+                    * 4,
+                )
+                for row in rows:
+                    rows_by_id.setdefault(str(row["id"]), row)
+            return list(rows_by_id.values())
+        return self.store.list_active_items(
+            memory_types=memory_types,
+            scope_channel=request.scope.channel,
+            scope_chat_id=request.scope.chat_id,
+            time_start=request.time_start,
+            time_end=request.time_end,
+        )
 
     async def build_context(self, request: MemoryRecallRequest) -> MemoryContextResult:
         result = await self.recall(request)
@@ -229,16 +296,14 @@ class MemoryRetriever:
             timeout=max(0.001, float(self.hypothesis_timeout_seconds)),
         )
 
-    async def _rank_query_set(
+    def _rank_query_set(
         self,
         *,
         rows: list[dict[str, Any]],
         queries: list[str],
+        query_vectors: list[list[float]],
         limit: int,
     ) -> tuple[list[Any], dict[str, dict[str, int]]]:
-        query_vectors = await asyncio.gather(
-            *(self.embedding_provider.embed(query_text) for query_text in queries)
-        )
         return rank_multi_query_rows(
             rows,
             query_vectors,

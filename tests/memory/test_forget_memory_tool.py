@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from amadeus.memory import (
-    AkashicMemoryEngine,
+    LongTermMemoryEngine,
     MemoryMemorizer,
     MemoryRetriever,
     MemoryStore,
@@ -31,7 +31,7 @@ class FakeExtractor:
 def _build_engine(tmp_path):
     store = MemoryStore(tmp_path / "long_term_memory.db")
     memorizer = MemoryMemorizer(store=store, embedding_provider=FakeEmbeddingProvider())
-    return store, AkashicMemoryEngine(
+    return store, LongTermMemoryEngine(
         store=store,
         retriever=MemoryRetriever(store=store, embedding_provider=FakeEmbeddingProvider()),
         memorizer=memorizer,

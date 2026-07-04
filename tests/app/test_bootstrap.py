@@ -7,8 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
-from typing import get_type_hints
+from typing import Any, get_type_hints
 
 import pytest
 from amadeus.app.bootstrap import AppState, build_passive_app, load_runtime_config
@@ -25,6 +24,14 @@ from amadeus.tools.forget_memory import ForgetMemoryTool
 from amadeus.tools.memorize import MemorizeTool
 from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.undo_memory_by_source import UndoMemoryBySourceTool
+
+from tests.db.postgres_helpers import clean_postgres
+
+EMBEDDING_DIM = 1024
+
+
+def _embedding(values: list[float]) -> list[float]:
+    return [float(v) for v in values] + [0.0] * (EMBEDDING_DIM - len(values))
 
 
 class FakeCompletions:
@@ -137,6 +144,7 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
     assert config.provider.base_url == "https://from-file.example.test/v1"
     assert config.provider.model == "env-model"
     assert config.provider.max_tokens == 333
+    assert config.postgres_dsn == "postgresql://amadeus:amadeus@localhost:5432/amadeus"
     assert config.default_session_key == "chat:file"
     assert config.memory_keep_count == 8
 
@@ -170,7 +178,26 @@ def test_load_runtime_config_requires_provider_values(tmp_path, monkeypatch):
         load_runtime_config(env_path=env_path, workspace_root=tmp_path)
 
 
+def test_load_runtime_config_requires_postgres_dsn(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://llm.example.test/v1",
+                "OPENAI_API_KEY=secret",
+                "OPENAI_MODEL=fake-model",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AMADEUS_POSTGRES_DSN", raising=False)
+
+    with pytest.raises(ValueError, match="AMADEUS_POSTGRES_DSN"):
+        load_runtime_config(env_path=env_path, workspace_root=tmp_path)
+
+
 def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
+    clean_postgres().close()
     env_path = tmp_path / ".env"
     env_path.write_text(
         "\n".join(
@@ -230,6 +257,7 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
     tmp_path,
     monkeypatch,
 ):
+    clean_postgres().close()
     env_path = tmp_path / ".env"
     env_path.write_text(
         "\n".join(
@@ -247,8 +275,8 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
     class StableEmbeddingProvider:
         async def embed(self, text: str) -> list[float]:
             if "中文" in text:
-                return [1.0, 0.0, 0.0]
-            return [0.8, 0.2, 0.0]
+                return _embedding([1.0, 0.0, 0.0])
+            return _embedding([0.8, 0.2, 0.0])
 
     class FakeExtractor:
         def __init__(self, *, provider, model: str) -> None:
@@ -280,26 +308,23 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
     )
 
     async def scenario():
-        try:
-            return await app.runtime.run_turn(
-                session_key="chat:1",
-                user_message="以后默认中文回复",
-            )
-        finally:
-            await app.aclose()
-
-    result = asyncio.run(scenario())
-
-    assert result.memory_trace["post_response"]["written_count"] == 1
-    assert app.runtime.memory_engine is not None
-    recalled = asyncio.run(
-        app.runtime.memory_engine.recall(
+        result = await app.runtime.run_turn(
+            session_key="chat:1",
+            user_message="以后默认中文回复",
+        )
+        assert app.runtime.memory_engine is not None
+        recalled = await app.runtime.memory_engine.recall(
             MemoryRecallRequest(
                 text="默认用中文",
                 memory_types=("preference",),
             )
         )
-    )
+        await app.aclose()
+        return result, recalled
+
+    result, recalled = asyncio.run(scenario())
+
+    assert result.memory_trace["post_response"]["written_count"] == 1
     assert recalled.records
 
 
@@ -326,12 +351,13 @@ def test_build_passive_app_uses_dedicated_embedding_provider_config(
 
     class StableEmbeddingProvider:
         async def embed(self, text: str) -> list[float]:
-            return [0.8, 0.2, 0.0]
+            return _embedding([0.8, 0.2, 0.0])
 
     def fake_embedding_provider(config):
         captured["api_key"] = config.api_key
         captured["base_url"] = config.base_url
         captured["model"] = config.model
+        captured["timeout_seconds"] = config.timeout_seconds
         return StableEmbeddingProvider()
 
     monkeypatch.setattr(
@@ -344,18 +370,19 @@ def test_build_passive_app_uses_dedicated_embedding_provider_config(
         env_path=env_path,
         client=FakeClient(),
     )
-
-    assert app.runtime.memory_engine is not None
-    assert captured == {
-        "api_key": "embed-secret",
-        "base_url": "https://embed.example.test/compatible-mode/v1",
-        "model": "text-embedding-v4",
-    }
-
-    asyncio.run(app.aclose())
-
+    try:
+        assert app.runtime.memory_engine is not None
+        assert captured == {
+            "api_key": "embed-secret",
+            "base_url": "https://embed.example.test/compatible-mode/v1",
+            "model": "text-embedding-v4",
+            "timeout_seconds": 90.0,
+        }
+    finally:
+        asyncio.run(app.aclose())
 
 def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatch):
+    clean_postgres().close()
     env_path = tmp_path / ".env"
     env_path.write_text(
         "\n".join(
@@ -364,7 +391,7 @@ def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatc
                 "OPENAI_API_KEY=secret",
                 "OPENAI_MODEL=fake-model",
                 "AMADEUS_LONG_TERM_MEMORY_ENABLED=1",
-                "OPENAI_EMBEDDING_MODEL=fake-embedding",
+                "OPENAI_EMBEDDING_MODEL=text-embedding-v4",
             ]
         ),
         encoding="utf-8",
@@ -373,8 +400,8 @@ def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatc
     class StableEmbeddingProvider:
         async def embed(self, text: str) -> list[float]:
             if "中文" in text:
-                return [1.0, 0.0, 0.0]
-            return [0.8, 0.2, 0.0]
+                return _embedding([1.0, 0.0, 0.0])
+            return _embedding([0.8, 0.2, 0.0])
 
     class FakeExtractor:
         def __init__(self, *, provider, model: str) -> None:

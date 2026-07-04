@@ -5,15 +5,15 @@ from dataclasses import dataclass
 from amadeus.memory.engine import (
     MemoryIngestResult,
     MemoryMutationResult,
+    MemoryStoreProtocol,
     MemoryWriteRequest,
 )
 from amadeus.memory.providers import EmbeddingProvider
-from amadeus.memory.store import MemoryStore
 
 
 @dataclass
 class MemoryMemorizer:
-    store: MemoryStore
+    store: MemoryStoreProtocol
     embedding_provider: EmbeddingProvider
 
     async def memorize(self, request: MemoryWriteRequest) -> MemoryIngestResult:

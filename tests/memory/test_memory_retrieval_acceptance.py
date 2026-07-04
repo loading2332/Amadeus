@@ -6,7 +6,7 @@ from datetime import datetime
 
 import amadeus.tools as public_tools
 from amadeus.memory import (
-    AkashicMemoryEngine,
+    LongTermMemoryEngine,
     MemoryMemorizer,
     MemoryRetriever,
     MemoryStore,
@@ -43,7 +43,7 @@ def _memory_fixture(tmp_path):
     manager.save(session)
     store = MemoryStore(tmp_path / "long_term_memory.db")
     memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
-    engine = AkashicMemoryEngine(
+    engine = LongTermMemoryEngine(
         store=store,
         retriever=MemoryRetriever(store=store, embedding_provider=StableEmbeddingProvider()),
         memorizer=memorizer,
@@ -169,7 +169,7 @@ def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_pat
 def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
     store = MemoryStore(tmp_path / "long_term_memory.db")
     memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
-    engine = AkashicMemoryEngine(
+    engine = LongTermMemoryEngine(
         store=store,
         retriever=MemoryRetriever(store=store, embedding_provider=StableEmbeddingProvider()),
         memorizer=memorizer,

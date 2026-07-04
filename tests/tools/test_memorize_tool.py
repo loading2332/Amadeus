@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from amadeus.memory import (
-    AkashicMemoryEngine,
+    LongTermMemoryEngine,
     MemoryMemorizer,
     MemoryRetriever,
     MemoryStore,
@@ -35,7 +35,7 @@ def _build_memory_engine(tmp_path):
     memorizer = MemoryMemorizer(store=store, embedding_provider=provider)
     retriever = MemoryRetriever(store=store, embedding_provider=provider)
     worker = PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor())
-    return AkashicMemoryEngine(
+    return LongTermMemoryEngine(
         store=store,
         retriever=retriever,
         memorizer=memorizer,

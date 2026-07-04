@@ -1,19 +1,22 @@
 # Database Guidelines
 
-> SQLite persistence conventions used by Amadeus.
+> Persistence conventions used by Amadeus.
 
 ---
 
 ## Overview
 
-Amadeus currently uses the Python standard-library `sqlite3` module directly.
-There is no ORM and no separate migration framework. Stores initialize their
-own schema with `CREATE TABLE IF NOT EXISTS` in `_init_schema()`.
+Amadeus is in a SQLite-to-PostgreSQL transition. Legacy local stores still use
+the Python standard-library `sqlite3` module directly, while production runtime
+state is moving to PostgreSQL through focused store boundaries and Alembic
+migrations. There is no ORM in runtime store code.
 
 Primary examples:
 
-- Session storage: `amadeus/session/store.py`.
-- Long-term memory storage: `amadeus/memory/store.py`.
+- Legacy session storage: `amadeus/session/store.py`.
+- PostgreSQL session storage: `amadeus/session/postgres.py`.
+- Legacy long-term memory storage: `amadeus/memory/store.py`.
+- PostgreSQL pgvector memory storage: `amadeus/memory/postgres.py`.
 - Markdown memory write index: `amadeus/memory/markdown.py`.
 
 ## Query Patterns
@@ -21,17 +24,21 @@ Primary examples:
 - Use parameterized SQL for values. Dynamic SQL is acceptable only for generated placeholder lists whose length is derived from an already-owned Python list.
 - Keep each store responsible for its own connection, schema, lock, row mapping, and close lifecycle.
 - Protect shared SQLite connections with a lock. Existing stores use `threading.Lock` or `threading.RLock` with `check_same_thread=False`.
+- Register PostgreSQL connection-level adapters, such as pgvector's psycopg adapter, at pool configuration time instead of formatting typed values by hand in store methods.
 - Return plain dictionaries or typed dataclasses at module boundaries. Convert `sqlite3.Row` inside the store with helpers such as `_row_to_item()` or `_row_to_message()`.
 - Preserve caller-visible ordering for batch id lookups. `MemoryStore.get_items_by_ids()` reorders rows back into input id order.
 - Commit after write operations inside the store method that owns the mutation.
 
 ## Migrations
 
-- Additive schema changes belong in the owning store's `_init_schema()` and must use idempotent DDL.
+- SQLite additive schema changes belong in the owning store's `_init_schema()` and must use idempotent DDL.
+- PostgreSQL schema changes belong in Alembic migrations under `migrations/versions/`.
 - New tables and indexes should follow the existing naming pattern:
   - tables: `memory_items`, `memory_replacements`, `sessions`, `messages`;
   - indexes: `ix_<table>_<column_or_purpose>`.
 - If a change needs backfill or destructive migration, add a focused migration/test plan before changing runtime code.
+- Domain-derived values must use the same canonical Python algorithm in runtime and backfills. For memory `content_hash`, use the `_content_hash(summary, memory_type)` contract (`sha256` over normalized text, truncated to 16 hex chars); do not substitute database `md5` or a generated SQL expression with different normalization.
+- PostgreSQL memory embeddings use pgvector. Keep schema dimensions aligned with the configured embedding model and test dimension mismatches explicitly.
 
 ## Naming Conventions
 
@@ -51,3 +58,4 @@ Primary examples:
 - Do not build SQL by concatenating external strings.
 - Do not treat message ids as memory ids. `forget_memory` and memory mutation APIs operate on memory ids returned by `recall_memory`.
 - Do not add a new database abstraction unless it removes real duplication across stores.
+- Do not split memory reinforcement semantics between database-generated hashes and Python-generated hashes; this breaks cross-store behavior and migration consistency.

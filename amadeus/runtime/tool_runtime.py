@@ -10,7 +10,7 @@ from amadeus.tools.base import ToolResult
 def tool_call_batch_snapshot(
     tool_calls: list[LLMToolCall],
 ) -> dict[str, object]:
-    """Akashic-aligned batch snapshot: 记录本轮所有 tool call 的基础信息。"""
+    """Batch snapshot: 记录本轮所有 tool call 的基础信息。"""
     return {
         "call_ids": [tc.id for tc in tool_calls],
         "names": [tc.name for tc in tool_calls],
