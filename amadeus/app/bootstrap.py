@@ -396,6 +396,8 @@ def build_passive_app(
         event_bus=event_bus,
         keep_count=config.memory_keep_count,
         long_term_memory=long_term_memory,
+        user_id=config.default_memory_user_id,
+        db=postgres_db,
     )
     tool_registry.register(RecallMemoryTool(memory_engine=long_term_memory))
     tool_registry.register(RuntimeMemorizeTool(memory_engine=long_term_memory))

@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import shutil
-import sqlite3
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from psycopg import IntegrityError
+
+from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.memory.engine import MemoryEngine, MemoryWriteRequest
 from amadeus.memory.source_refs import (
@@ -83,7 +86,14 @@ class _ConsolidationDraft:
 
 
 class MarkdownMemoryStore:
-    def __init__(self, workspace_root: str | Path) -> None:
+    def __init__(
+        self,
+        workspace_root: str | Path,
+        *,
+        user_id: int = 1,
+        db: PostgresDatabase | None = None,
+        dsn: str | None = None,
+    ) -> None:
         root = Path(workspace_root)
         self.memory_dir = root / "memory"
         self.journal_dir = self.memory_dir / "journal"
@@ -95,8 +105,19 @@ class MarkdownMemoryStore:
         self.recent_context_file = self.memory_dir / "RECENT_CONTEXT.md"
         self.history_file = self.memory_dir / "HISTORY.md"
         self.pending_file = self.memory_dir / "PENDING.md"
-        self._index_path = self.memory_dir / "consolidation_writes.db"
         self._lock = threading.Lock()
+        self.user_id = int(user_id)
+        if db is None:
+            dsn_value = dsn or os.environ.get(
+                "AMADEUS_POSTGRES_DSN",
+                "postgresql://amadeus:amadeus@localhost:5432/amadeus",
+            )
+            db = PostgresDatabase(PostgresConfig(dsn=normalize_psycopg_dsn(dsn_value)))
+            db.open()
+            self._owns_db = True
+        else:
+            self._owns_db = False
+        self.db = db
 
         for path in (
             self.memory_file,
@@ -106,8 +127,12 @@ class MarkdownMemoryStore:
         ):
             if not path.exists():
                 path.touch()
-        self._init_index()
+        self._ensure_user()
         self._recover_pending_snapshot()
+
+    def close(self) -> None:
+        if self._owns_db:
+            self.db.close()
 
     def read_long_term(self) -> str:
         return self.memory_file.read_text(encoding="utf-8") if self.memory_file.exists() else ""
@@ -222,19 +247,17 @@ class MarkdownMemoryStore:
         if self.snapshot_path.exists():
             self.rollback_pending_snapshot()
 
-    def _init_index(self) -> None:
-        with sqlite3.connect(self._index_path) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS writes (
-                    source_ref TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    target TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY(source_ref, kind, target)
+    def _ensure_user(self) -> None:
+        with self.db.connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO users (id, metadata, updated_at)
+                    VALUES (%s, '{}'::jsonb, now())
+                    ON CONFLICT (id) DO UPDATE SET updated_at = now()
+                    """,
+                    (self.user_id,),
                 )
-                """
-            )
             conn.commit()
 
     def _append_once(
@@ -251,14 +274,27 @@ class MarkdownMemoryStore:
             return False
         marker = self._marker(source_ref, kind)
         target_key = str(target.relative_to(self.memory_dir))
-        with self._lock, sqlite3.connect(self._index_path) as conn:
-            try:
-                conn.execute(
-                    "INSERT INTO writes (source_ref, kind, target, created_at) VALUES (?, ?, ?, ?)",
-                    (source_ref, kind, target_key, datetime.now().astimezone().isoformat()),
-                )
-            except sqlite3.IntegrityError:
-                return False
+        with self._lock, self.db.connection() as conn:
+            with conn.cursor() as cursor:
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO memory_markdown_writes (
+                            user_id, source_ref, kind, target, created_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (
+                            self.user_id,
+                            source_ref,
+                            kind,
+                            target_key,
+                            datetime.now().astimezone(),
+                        ),
+                    )
+                except IntegrityError:
+                    conn.rollback()
+                    return False
             _append_text(target, f"{marker}\n{content}", trailing_blank_line=trailing_blank_line)
             conn.commit()
         return True
@@ -592,8 +628,10 @@ def build_markdown_memory_runtime(
     event_bus: EventBus | None = None,
     keep_count: int = 12,
     long_term_memory: MemoryEngine | None = None,
+    user_id: int = 1,
+    db: PostgresDatabase | None = None,
 ) -> MarkdownMemoryRuntime:
-    store = MarkdownMemoryStore(workspace_root)
+    store = MarkdownMemoryStore(workspace_root, user_id=user_id, db=db)
     maintenance = MarkdownMemoryMaintenance(
         store=store,
         provider=provider,

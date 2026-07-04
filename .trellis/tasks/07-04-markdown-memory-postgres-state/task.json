@@ -3,7 +3,7 @@
   "name": "markdown-memory-postgres-state",
   "title": "PostgreSQL state for Markdown memory",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

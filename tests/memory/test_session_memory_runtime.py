@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from amadeus.events import EventBus, TurnCommitted
 from amadeus.memory import (
     ConsolidateRequest,
@@ -19,6 +20,8 @@ from amadeus.memory import (
 )
 from amadeus.memory.engine import MemoryRecallRequest
 from amadeus.session.store import SessionManager, fetch_messages, search_messages
+
+from tests.db.postgres_helpers import clean_postgres
 
 
 class FakeProvider:
@@ -53,6 +56,15 @@ class FakeExtractor:
         return []
 
 
+@pytest.fixture
+def markdown_store(tmp_path):
+    db = clean_postgres()
+    try:
+        yield MarkdownMemoryStore(tmp_path, db=db)
+    finally:
+        db.close()
+
+
 def test_session_store_persists_stable_message_ids_and_fetches_source_ref(tmp_path):
     manager = SessionManager(tmp_path)
     session = manager.get_or_create("chat:1")
@@ -71,14 +83,17 @@ def test_session_store_persists_stable_message_ids_and_fetches_source_ref(tmp_pa
     assert result["messages"][0]["id"] == "chat:1:0"
 
 
-def test_turn_committed_refreshes_recent_turns_when_window_not_ready(tmp_path):
+def test_turn_committed_refreshes_recent_turns_when_window_not_ready(
+    tmp_path,
+    markdown_store,
+):
     manager = SessionManager(tmp_path)
     session = manager.get_or_create("chat:1")
     session.add_message("user", "not enough yet")
     session.add_message("assistant", "short reply")
     manager.save(session)
 
-    store = MarkdownMemoryStore(tmp_path)
+    store = markdown_store
     bus = EventBus()
     MarkdownMemoryMaintenance(
         store=store,
@@ -106,7 +121,10 @@ def test_turn_committed_refreshes_recent_turns_when_window_not_ready(tmp_path):
     assert "[a-preview] short reply" in recent
 
 
-def test_consolidation_writes_history_pending_recent_context_and_updates_cursor(tmp_path):
+def test_consolidation_writes_history_pending_recent_context_and_updates_cursor(
+    tmp_path,
+    markdown_store,
+):
     manager = SessionManager(tmp_path)
     session = manager.get_or_create("chat:1")
     for index in range(8):
@@ -131,7 +149,7 @@ def test_consolidation_writes_history_pending_recent_context_and_updates_cursor(
         }
         """,
     )
-    store = MarkdownMemoryStore(tmp_path)
+    store = markdown_store
     maintenance = MarkdownMemoryMaintenance(
         store=store,
         provider=provider,
@@ -151,6 +169,7 @@ def test_consolidation_writes_history_pending_recent_context_and_updates_cursor(
 
 def test_consolidation_ingests_pending_profile_preference_and_correction_into_memory_engine(
     tmp_path,
+    markdown_store,
 ):
     manager = SessionManager(tmp_path)
     session = manager.get_or_create("chat:1")
@@ -188,7 +207,7 @@ def test_consolidation_ingests_pending_profile_preference_and_correction_into_me
         memorizer=memorizer,
         worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
     )
-    store = MarkdownMemoryStore(tmp_path)
+    store = markdown_store
     maintenance = MarkdownMemoryMaintenance(
         store=store,
         provider=provider,
@@ -221,8 +240,8 @@ def test_consolidation_ingests_pending_profile_preference_and_correction_into_me
     assert correction.records[0].signals["extra"]["lifecycle"] == "correction"
 
 
-def test_append_once_deduplicates_same_source_ref(tmp_path):
-    store = MarkdownMemoryStore(tmp_path)
+def test_append_once_deduplicates_same_source_ref(tmp_path, markdown_store):
+    store = markdown_store
 
     first = store.append_pending_once(
         "- [identity] first",
@@ -238,10 +257,11 @@ def test_append_once_deduplicates_same_source_ref(tmp_path):
     assert first is True
     assert second is False
     assert store.read_pending().count("- [identity] first") == 1
+    assert not (tmp_path / "memory" / "consolidation_writes.db").exists()
 
 
-def test_optimizer_updates_memory_and_does_not_update_self(tmp_path):
-    store = MarkdownMemoryStore(tmp_path)
+def test_optimizer_updates_memory_and_does_not_update_self(tmp_path, markdown_store):
+    store = markdown_store
     store.write_self("custom self")
     store.write_long_term("# 用户长期记忆\n\n## 用户事实\n- old")
     store.append_pending("- [preference] 用户偏好低风险迁移。")
@@ -256,8 +276,8 @@ def test_optimizer_updates_memory_and_does_not_update_self(tmp_path):
     assert not store.snapshot_path.exists()
 
 
-def test_optimizer_rolls_back_pending_when_model_returns_empty(tmp_path):
-    store = MarkdownMemoryStore(tmp_path)
+def test_optimizer_rolls_back_pending_when_model_returns_empty(tmp_path, markdown_store):
+    store = markdown_store
     store.write_long_term("# 用户长期记忆")
     store.append_pending("- [identity] must survive")
     optimizer = MemoryOptimizer(store=store, provider=FakeProvider(""), model="fake")
@@ -268,8 +288,11 @@ def test_optimizer_rolls_back_pending_when_model_returns_empty(tmp_path):
     assert not store.snapshot_path.exists()
 
 
-def test_refresh_recent_turns_ignores_context_frame_and_tool_messages(tmp_path):
-    store = MarkdownMemoryStore(tmp_path)
+def test_refresh_recent_turns_ignores_context_frame_and_tool_messages(
+    tmp_path,
+    markdown_store,
+):
+    store = markdown_store
     manager = SessionManager(tmp_path)
     session = manager.get_or_create("chat:1")
     session.add_message("user", "<system-reminder data-system-context-frame=\"true\">x</system-reminder>")
