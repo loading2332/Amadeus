@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from amadeus.app.bootstrap import default_workspace_root, load_runtime_config
-from amadeus.session import PostgresSessionStore, SessionStore
+from amadeus.session import PostgresSessionStore
 from amadeus.turns import PostgresTurnStore, TurnStore
 from amadeus.web.routes import api_router
 from amadeus.web.static_routes import static_router
@@ -32,8 +32,10 @@ def create_app(
         turn_store = PostgresTurnStore(config.postgres_dsn)
         resolved_session_store = session_store or PostgresSessionStore(config.postgres_dsn)
     else:
+        if session_store is None:
+            raise ValueError("session_store is required when injecting a turn store")
         turn_store = store
-        resolved_session_store = session_store or SessionStore(root / "sessions.db")
+        resolved_session_store = session_store
     resolved_static_dir = (
         Path(static_dir)
         if static_dir is not None

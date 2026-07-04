@@ -18,6 +18,29 @@ def test_docker_compose_defines_pgvector_postgres_service() -> None:
     assert "postgres-data" in compose["volumes"]
 
 
+def test_docker_compose_defines_runtime_services_and_workspace_volume() -> None:
+    compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
+
+    services = compose["services"]
+
+    assert services["migrate"]["command"] == ["alembic", "upgrade", "head"]
+    assert services["api"]["ports"] == ["8000:8000"]
+    assert services["worker"]["command"] == [
+        "python",
+        "-m",
+        "amadeus.worker.turn_worker",
+        "--workspace-root",
+        "/workspace",
+    ]
+    assert "amadeus-workspace" in compose["volumes"]
+    assert services["api"]["environment"]["AMADEUS_POSTGRES_DSN"].endswith(
+        "@postgres:5432/amadeus"
+    )
+    assert services["worker"]["environment"]["AMADEUS_POSTGRES_DSN"].endswith(
+        "@postgres:5432/amadeus"
+    )
+
+
 def test_initial_migration_creates_vector_extension_and_foundation_tables() -> None:
     migration = Path(
         "migrations/versions/20260704_0001_postgres_foundation.py"

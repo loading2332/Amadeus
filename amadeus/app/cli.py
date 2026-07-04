@@ -53,7 +53,7 @@ def _build_parser() -> argparse.ArgumentParser:
     chat.add_argument(
         "--trace",
         action="store_true",
-        help="Show extended trace: tools, context retry, provider model/usage, sessions DB path.",
+        help="Show extended trace: tools, context retry, provider model/usage, persistence backend.",
     )
     eval_parser = subcommands.add_parser("eval", help="Run evaluation suites.")
     eval_commands = eval_parser.add_subparsers(dest="eval_command")
@@ -186,8 +186,7 @@ def _format_trace(result: PassiveTurnResult, app: object) -> str:
     parts.append(f"  User message ID:    {result.user_message_id}")
     parts.append(f"  Assistant message ID: {result.assistant_message_id}")
     if isinstance(app, PassiveApp):
-        sessions_db = app.config.workspace_root / "sessions.db"
-        parts.append(f"  Sessions DB:        {sessions_db}")
+        parts.append("  Persistence:        PostgreSQL")
 
     # Context retry / trim
     retry = result.context_retry or {}

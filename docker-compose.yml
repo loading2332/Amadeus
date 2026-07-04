@@ -15,5 +15,59 @@ services:
       timeout: 5s
       retries: 12
 
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      AMADEUS_POSTGRES_DSN: postgresql://amadeus:amadeus@postgres:5432/amadeus
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    command: ["uvicorn", "amadeus.web.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-replace-me}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_EMBEDDING_BASE_URL: ${OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_EMBEDDING_API_KEY: ${OPENAI_EMBEDDING_API_KEY:-replace-me}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-v4}
+      AMADEUS_POSTGRES_DSN: postgresql://amadeus:amadeus@postgres:5432/amadeus
+      AMADEUS_LONG_TERM_MEMORY_ENABLED: ${AMADEUS_LONG_TERM_MEMORY_ENABLED:-1}
+      AMADEUS_MEMORY_USER_ID: ${AMADEUS_MEMORY_USER_ID:-1}
+    ports:
+      - "8000:8000"
+    volumes:
+      - amadeus-workspace:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: .
+    command: ["python", "-m", "amadeus.worker.turn_worker", "--workspace-root", "/workspace"]
+    environment:
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-replace-me}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_EMBEDDING_BASE_URL: ${OPENAI_EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_EMBEDDING_API_KEY: ${OPENAI_EMBEDDING_API_KEY:-replace-me}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-v4}
+      AMADEUS_POSTGRES_DSN: postgresql://amadeus:amadeus@postgres:5432/amadeus
+      AMADEUS_LONG_TERM_MEMORY_ENABLED: ${AMADEUS_LONG_TERM_MEMORY_ENABLED:-1}
+      AMADEUS_MEMORY_USER_ID: ${AMADEUS_MEMORY_USER_ID:-1}
+    volumes:
+      - amadeus-workspace:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   postgres-data:
+  amadeus-workspace:

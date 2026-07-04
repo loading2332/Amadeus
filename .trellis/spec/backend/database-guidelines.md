@@ -7,9 +7,10 @@
 ## Overview
 
 Amadeus is in a SQLite-to-PostgreSQL transition. Legacy local stores still use
-the Python standard-library `sqlite3` module directly, while production runtime
-state is moving to PostgreSQL through focused store boundaries and Alembic
-migrations. There is no ORM in runtime store code.
+the Python standard-library `sqlite3` module directly for compatibility tests
+and old local fixtures. Current production runtime state must use PostgreSQL
+through focused store boundaries and Alembic migrations. There is no ORM in
+runtime store code.
 
 Primary examples:
 
@@ -17,7 +18,8 @@ Primary examples:
 - PostgreSQL session storage: `amadeus/session/postgres.py`.
 - Legacy long-term memory storage: `amadeus/memory/store.py`.
 - PostgreSQL pgvector memory storage: `amadeus/memory/postgres.py`.
-- Markdown memory write index: `amadeus/memory/markdown.py`.
+- Markdown memory write index: `memory_markdown_writes` in PostgreSQL, owned by
+  `amadeus/memory/markdown.py`.
 
 ## Query Patterns
 
@@ -31,7 +33,8 @@ Primary examples:
 
 ## Migrations
 
-- SQLite additive schema changes belong in the owning store's `_init_schema()` and must use idempotent DDL.
+- SQLite additive schema changes belong only to legacy/test stores. Do not add
+  new production runtime state through a SQLite `_init_schema()` path.
 - PostgreSQL schema changes belong in Alembic migrations under `migrations/versions/`.
 - New tables and indexes should follow the existing naming pattern:
   - tables: `memory_items`, `memory_replacements`, `sessions`, `messages`;
