@@ -344,9 +344,9 @@ class SessionStore:
 
 
 class SessionManager:
-    def __init__(self, workspace_root: str | Path) -> None:
+    def __init__(self, workspace_root: str | Path, store: Any | None = None) -> None:
         self.workspace_root = Path(workspace_root)
-        self.store = SessionStore(self.workspace_root / "sessions.db")
+        self.store = store or SessionStore(self.workspace_root / "sessions.db")
         self._cache: dict[str, Session] = {}
 
     def get_or_create(self, key: str) -> Session:

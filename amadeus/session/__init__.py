@@ -1,5 +1,6 @@
 """Session store and message trace persistence."""
 
+from amadeus.session.postgres import PostgresSessionStore
 from amadeus.session.store import (
     Session,
     SessionManager,
@@ -10,6 +11,7 @@ from amadeus.session.store import (
 )
 
 __all__ = [
+    "PostgresSessionStore",
     "Session",
     "SessionManager",
     "SessionStore",

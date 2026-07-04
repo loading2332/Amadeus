@@ -1,3 +1,4 @@
+from amadeus.turns.postgres import PostgresTurnStore
 from amadeus.turns.store import (
     TERMINAL_TURN_STATUSES,
     TURN_DONE,
@@ -16,4 +17,5 @@ __all__ = [
     "TURN_PROCESSING",
     "Turn",
     "TurnStore",
+    "PostgresTurnStore",
 ]

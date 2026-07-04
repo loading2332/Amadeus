@@ -8,9 +8,12 @@ version = "0.1.0"
 description = "Amadeus runtime context and prompt assembly layer"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.16",
     "fastapi>=0.139.0",
     "langsmith>=0.9.5",
     "openai>=1.0",
+    "pgvector>=0.3",
+    "psycopg[binary,pool]>=3.2",
     "PyYAML>=6.0",
     "uvicorn>=0.49.0",
 ]

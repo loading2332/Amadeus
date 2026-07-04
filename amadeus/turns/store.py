@@ -30,6 +30,8 @@ class Turn:
     updated_at: str | None
     started_at: str | None
     finished_at: str | None
+    user_id: int | None = None
+    session_id: int | None = None
 
 
 class TurnStore:
