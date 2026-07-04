@@ -1,20 +1,24 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from amadeus.app.bootstrap import default_workspace_root
-from amadeus.turns import TurnStore
+from amadeus.app.bootstrap import default_workspace_root, load_runtime_config
+from amadeus.session import PostgresSessionStore, SessionStore
+from amadeus.turns import PostgresTurnStore, TurnStore
 from amadeus.web.routes import api_router
 from amadeus.web.static_routes import static_router
 
 
 def create_app(
     *,
-    store: TurnStore | None = None,
+    store: TurnStore | PostgresTurnStore | None = None,
+    session_store: object | None = None,
     workspace_root: str | Path | None = None,
+    env_path: str | Path = ".env",
     static_dir: str | Path | None = None,
 ) -> FastAPI:
     root = (
@@ -22,7 +26,14 @@ def create_app(
         if workspace_root is not None
         else default_workspace_root()
     )
-    turn_store = store or TurnStore(root / "turns.db")
+    turn_store: Any
+    if store is None:
+        config = load_runtime_config(env_path=env_path, workspace_root=root)
+        turn_store = PostgresTurnStore(config.postgres_dsn)
+        resolved_session_store = session_store or PostgresSessionStore(config.postgres_dsn)
+    else:
+        turn_store = store
+        resolved_session_store = session_store or SessionStore(root / "sessions.db")
     resolved_static_dir = (
         Path(static_dir)
         if static_dir is not None
@@ -31,6 +42,7 @@ def create_app(
 
     app = FastAPI(title="Amadeus Web Chat")
     app.state.turn_store = turn_store
+    app.state.session_store = resolved_session_store
     app.state.static_dir = resolved_static_dir
 
     if resolved_static_dir.exists():

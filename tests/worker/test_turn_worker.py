@@ -1,7 +1,17 @@
 import asyncio
 
-from amadeus.turns import TURN_DONE, TURN_FAILED, TURN_PENDING, Turn, TurnStore
+from amadeus.session import PostgresSessionStore
+from amadeus.turns import (
+    TURN_DONE,
+    TURN_FAILED,
+    TURN_PENDING,
+    PostgresTurnStore,
+    Turn,
+    TurnStore,
+)
 from amadeus.worker.turn_worker import TurnWorker
+
+from tests.db.postgres_helpers import clean_postgres
 
 
 class FakeRunner:
@@ -69,3 +79,28 @@ def test_turn_worker_respects_processing_session(tmp_path):
     assert loaded_active.status != TURN_PENDING
     assert loaded_same.status == TURN_PENDING
     assert loaded_other.status == TURN_DONE
+
+
+def test_turn_worker_completes_postgres_turn():
+    db = clean_postgres()
+    try:
+        sessions = PostgresSessionStore(db=db)
+        session = sessions.create_session(user_id=1, title="worker")
+        store = PostgresTurnStore(db=db)
+        turn = store.create_turn(
+            user_id=1,
+            session_id=session["session_id"],
+            content="hello",
+        )
+        worker = TurnWorker(store=store, runner=FakeRunner())
+
+        assert asyncio.run(worker.run_once()) is True
+
+        completed = store.get_turn(turn.id)
+        assert completed is not None
+        assert completed.status == TURN_DONE
+        assert completed.answer == "reply:hello"
+        assert completed.user_id == 1
+        assert completed.session_id == session["session_id"]
+    finally:
+        db.close()
