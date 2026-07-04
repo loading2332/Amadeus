@@ -171,3 +171,40 @@ Implemented FastAPI web chat entrypoint with turn queue, SSE status tracking, in
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: PostgreSQL worker runtime migration
+
+**Date**: 2026-07-04
+**Task**: PostgreSQL worker runtime migration
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+Completed PostgreSQL foundation, Postgres web turn/session runtime, pgvector memory store, Markdown memory PostgreSQL write state, Docker runtime cleanup, real WSL Docker health smoke, and archived the parent Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9e4cad0` | (see git log) |
+| `2f75ab8` | (see git log) |
+| `198f587` | (see git log) |
+| `a5f8424` | (see git log) |
+| `2e9155d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
