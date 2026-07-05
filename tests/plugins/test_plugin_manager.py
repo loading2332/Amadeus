@@ -17,7 +17,8 @@ from amadeus.plugin import (
     plugin_registry,
 )
 from amadeus.runtime.lifecycle import BeforeTurnContext
-from amadeus.session.store import SessionManager
+from amadeus.session.identity import SessionRef
+from amadeus.session.store import InMemorySessionStore, SessionManager
 from amadeus.tools.registry import ToolRegistry
 
 PLUGIN_TEMPLATE = """\
@@ -101,7 +102,10 @@ def _isolate_global_registry() -> Any:
 
 def _before_turn() -> BeforeTurnContext:
     return BeforeTurnContext(
-        session_key="test", user_message="hello", history=[], retrieved_memory=None
+        session=SessionRef(user_id=1, session_id=1),
+        user_message="hello",
+        history=[],
+        retrieved_memory=None,
     )
 
 
@@ -581,7 +585,7 @@ def test_context_injects_exact_shared_dependencies(tmp_path: Path) -> None:
     bus = EventBus()
     tools = ToolRegistry()
     workspace = tmp_path / "ws"
-    session_manager = SessionManager(tmp_path / "sessions")
+    session_manager = SessionManager(tmp_path / "sessions", store=InMemorySessionStore())
     memory_engine = cast(MemoryEngine, object())
     manager = _manager(
         [("workspace", root)],
@@ -1137,3 +1141,4 @@ def test_cancelled_terminate_all_cleans_every_plugin_and_releases_ownership(
     import_paths, fresh_names = asyncio.run(scenario())
     assert len(import_paths) == 2
     assert fresh_names == ["first", "second"]
+

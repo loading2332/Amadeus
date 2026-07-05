@@ -8,6 +8,7 @@ from amadeus.app.bootstrap import build_passive_app
 from amadeus.evaluation.memory_quality_runner import run_memory_quality_evaluation
 from amadeus.evaluation.memory_recall_runner import run_memory_recall_evaluation
 from amadeus.runtime.passive import PassiveTurnResult
+from amadeus.session.identity import require_session_ref
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -45,7 +46,10 @@ def _build_parser() -> argparse.ArgumentParser:
     chat.add_argument(
         "--session-key",
         default=None,
-        help="Stable session key. Defaults to AMADEUS_SESSION_KEY or cli:default.",
+        help=(
+            "Canonical session key in user/session shape. "
+            "Defaults to AMADEUS_SESSION_KEY or user:1:session:1."
+        ),
     )
     chat.add_argument("--retrieved-memory", default=None)
     chat.add_argument("--skill", action="append", default=[])
@@ -142,9 +146,13 @@ async def _run_chat(args: argparse.Namespace) -> None:
     primary_error: BaseException | None = None
     try:
         await app.start()
-        session_key = args.session_key or app.config.default_session_key
+        session = (
+            app.config.default_session
+            if args.session_key is None
+            else require_session_ref(args.session_key)
+        )
         result = await app.runtime.run_turn(
-            session_key=session_key,
+            session=session,
             user_message=args.message,
             retrieved_memory=args.retrieved_memory,
             active_skills=args.skill,

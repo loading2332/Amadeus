@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from amadeus.session import PostgresSessionStore
-from amadeus.turns import TURN_PENDING, PostgresTurnStore
+from amadeus.turns import TURN_DONE, TURN_PENDING, PostgresTurnStore
 from amadeus.web.app import create_app
 from fastapi.testclient import TestClient
 
@@ -39,5 +39,51 @@ def test_postgres_web_session_and_message_api_is_user_scoped() -> None:
         assert payload["status"] == TURN_PENDING
         assert payload["user_id"] == 1
         assert payload["session_id"] == first_session_id
+    finally:
+        db.close()
+
+
+def test_postgres_web_get_turn_returns_404_for_missing_turn() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        app = create_app(store=turn_store, session_store=session_store)
+        client = TestClient(app)
+
+        response = client.get("/api/turns/missing")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Turn not found"}
+    finally:
+        db.close()
+
+
+def test_postgres_web_sse_endpoint_emits_terminal_turn_and_closes() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        app = create_app(store=turn_store, session_store=session_store)
+        client = TestClient(app)
+        session = session_store.create_session(user_id=1, title="one")
+
+        turn = turn_store.create_turn(
+            user_id=1,
+            session_id=int(session["session_id"]),
+            content="hello",
+            metadata={"channel": "web"},
+        )
+        assert turn_store.claim_next_pending() is not None
+        turn_store.mark_done(turn.id, "assistant reply")
+
+        with client.stream("GET", f"/api/turns/{turn.id}/events") as response:
+            body = "".join(response.iter_text())
+
+        assert response.status_code == 200
+        assert "event: done" in body
+        assert f'"turn_id": "{turn.id}"' in body
+        assert f'"status": "{TURN_DONE}"' in body
+        assert '"answer": "assistant reply"' in body
     finally:
         db.close()

@@ -13,7 +13,8 @@ from amadeus.provider import (
     LLMProviderConfig,
 )
 from amadeus.runtime.passive import PassiveRuntime
-from amadeus.session.store import SessionManager
+from amadeus.session.identity import SessionRef
+from amadeus.session.store import InMemorySessionStore, SessionManager
 from amadeus.tools.base import ToolResult
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
@@ -60,9 +61,13 @@ class EchoTool:
         return ToolResult(tool_name=self.name, output={"echo": kwargs["text"]})
 
 
+def _session(session_id: int = 1, *, user_id: int = 1) -> SessionRef:
+    return SessionRef(user_id=user_id, session_id=session_id)
+
+
 def test_session_history_rebuilds_tool_chain_into_assistant_and_tool_messages(tmp_path):
-    manager = SessionManager(tmp_path)
-    session = manager.get_or_create("chat:1")
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    session = manager.get_or_create(_session())
     session.add_message("user", "please use a tool")
     session.add_message(
         "assistant",
@@ -85,7 +90,7 @@ def test_session_history_rebuilds_tool_chain_into_assistant_and_tool_messages(tm
     manager.save(session)
     manager._cache.clear()
 
-    reloaded = manager.get_or_create("chat:1")
+    reloaded = manager.get_or_create(_session())
     history = reloaded.get_history()
 
     assert [message["role"] for message in history] == ["user", "assistant", "tool", "assistant"]
@@ -140,7 +145,7 @@ def test_second_turn_reuses_rebuilt_tool_chain_history_for_provider_messages(tmp
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
     registry.register(EchoTool())
     runtime = PassiveRuntime(
@@ -151,8 +156,8 @@ def test_second_turn_reuses_rebuilt_tool_chain_history_for_provider_messages(tmp
         tool_executor=ToolExecutor(registry=registry),
     )
 
-    asyncio.run(runtime.run_turn(session_key="chat:1", user_message="first turn"))
-    asyncio.run(runtime.run_turn(session_key="chat:1", user_message="second turn"))
+    asyncio.run(runtime.run_turn(session=_session(), user_message="first turn"))
+    asyncio.run(runtime.run_turn(session=_session(), user_message="second turn"))
 
     second_turn_messages = client.completions.calls[2]["messages"]
     history_slice = second_turn_messages[1:-1]
@@ -167,3 +172,5 @@ def test_second_turn_reuses_rebuilt_tool_chain_history_for_provider_messages(tmp
     assert history_slice[2]["tool_call_id"] == "call_1"
     assert '"echo": "hello"' in history_slice[2]["content"]
     assert history_slice[3]["content"] == "first final"
+
+

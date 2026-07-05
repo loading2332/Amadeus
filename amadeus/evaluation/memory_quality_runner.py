@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import tempfile
 import time
@@ -33,6 +34,7 @@ from amadeus.evaluation.langsmith_sync import (
     sync_memory_quality_dataset,
 )
 from amadeus.memory.engine import MemoryWriteRequest
+from amadeus.session.identity import SessionRef
 
 
 @dataclass(frozen=True)
@@ -195,10 +197,10 @@ async def _run_memory_quality_case_async(
             raise TypeError("evaluation app_builder must return PassiveApp")
         try:
             await app.start()
-            source_session_key = f"eval-source:{case.id}"
+            source_session = _eval_session_ref(case.id, kind="source")
             source_message_ids = _seed_session_messages(
                 app,
-                session_key=source_session_key,
+                session=source_session,
                 messages=case.seed_session_messages,
             )
             await _seed_long_term_memories(app, case, source_message_ids)
@@ -218,17 +220,17 @@ async def _run_memory_quality_case_async(
 def _seed_session_messages(
     app: PassiveApp,
     *,
-    session_key: str,
+    session: SessionRef,
     messages: tuple[Any, ...],
 ) -> list[str]:
-    session = app.session_manager.get_or_create(session_key)
+    turn_session = app.session_manager.get_or_create(session)
     for message in messages:
         extra: dict[str, Any] = {}
         if message.timestamp is not None:
             extra["timestamp"] = message.timestamp
-        session.add_message(message.role, message.content, **extra)
-    app.session_manager.save(session)
-    return [str(message.get("id") or "") for message in session.messages]
+        turn_session.add_message(message.role, message.content, **extra)
+    app.session_manager.save(turn_session)
+    return [str(message.get("id") or "") for message in turn_session.messages]
 
 
 async def _seed_long_term_memories(
@@ -271,16 +273,16 @@ async def _run_write_case(
         raise ValueError(
             "memory quality evaluation requires AMADEUS_LONG_TERM_MEMORY_ENABLED=1"
         )
-    turn_session_key = f"eval-turn:{case.id}"
+    turn_session = _eval_session_ref(case.id, kind="turn")
     _seed_session_messages(
         app,
-        session_key=turn_session_key,
+        session=turn_session,
         messages=case.turn_messages,
     )
-    turn_session = app.session_manager.get_or_create(turn_session_key)
+    turn_store = app.session_manager.get_or_create(turn_session)
     write_trace = await memory_engine.run_post_response(
-        session_key=turn_session_key,
-        messages=list(turn_session.messages),
+        session=turn_session,
+        messages=list(turn_store.messages),
         explicit_memory_ids=[],
     )
 
@@ -338,6 +340,12 @@ async def _run_write_case(
         "source_refs": source_refs,
         "error": None,
     }
+
+
+def _eval_session_ref(case_id: str, *, kind: str) -> SessionRef:
+    digest = hashlib.blake2b(f"{kind}:{case_id}".encode(), digest_size=8).digest()
+    session_id = int.from_bytes(digest, "big") & ((1 << 31) - 1)
+    return SessionRef(user_id=1, session_id=max(1, session_id))
 
 
 def _collect_superseded_memories(

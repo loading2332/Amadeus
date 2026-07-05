@@ -62,6 +62,7 @@ from amadeus.runtime.step_phases import (
     default_after_step_modules,
     default_before_step_modules,
 )
+from amadeus.session.identity import SessionRef
 from amadeus.session.store import Session, SessionManager
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
@@ -69,7 +70,7 @@ from amadeus.tools.registry import ToolRegistry
 
 @dataclass(frozen=True)
 class PassiveTurnResult:
-    session_key: str
+    session: SessionRef
     user_message_id: str
     assistant_message_id: str
     assistant_response: str
@@ -78,6 +79,10 @@ class PassiveTurnResult:
     tool_chain: list[dict[str, Any]] = field(default_factory=list)
     context_retry: dict[str, Any] = field(default_factory=dict)
     memory_trace: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
 
 
 @dataclass
@@ -332,7 +337,7 @@ class PassiveRuntime:
     async def run_turn(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         user_message: str,
         retrieved_memory: str | None = None,
         active_skills: list[str] | None = None,
@@ -341,7 +346,7 @@ class PassiveRuntime:
     ) -> PassiveTurnResult:
         before_turn_context = await self._before_turn.run(
             BeforeTurnInput(
-                session_key=session_key,
+                session=session,
                 user_message=user_message,
                 retrieved_memory=retrieved_memory,
                 active_skills=tuple(active_skills or ()),
@@ -363,7 +368,7 @@ class PassiveRuntime:
                 )
             )
             return await self._complete_turn(
-                session_key=session_key,
+                session=session,
                 user_message=user_message,
                 assistant_content=before_turn_context.abort_reply,
                 rendered=abort_rendered,
@@ -396,7 +401,7 @@ class PassiveRuntime:
                 )
             )
             return await self._complete_turn(
-                session_key=session_key,
+                session=session,
                 user_message=user_message,
                 assistant_content=before_reasoning_context.abort_reply,
                 rendered=abort_rendered,
@@ -410,7 +415,7 @@ class PassiveRuntime:
                 memory_trace=dict(before_reasoning_context.memory_trace),
                 extra=extra,
             )
-        session = self.session_manager.get_or_create(session_key)
+        runtime_session = self.session_manager.get_or_create(session)
         history = before_reasoning_context.history
         resolved_retrieved_memory = before_reasoning_context.retrieved_memory
         resolved_memory_trace = before_reasoning_context.memory_trace
@@ -453,7 +458,7 @@ class PassiveRuntime:
             )
             prompt_render = await self._prompt_render.run(
                 PromptRenderInput(
-                    session_key=session_key,
+                    session=session,
                     attempt_index=attempt_index,
                     attempt_name=attempt.name,
                     runtime_context=context,
@@ -465,7 +470,7 @@ class PassiveRuntime:
                 reasoner_result = await self.reasoner.reason(
                     messages=messages,
                     tool_schemas=tool_schemas,
-                    session_key=session_key,
+                    session=session,
                 )
                 assistant_content = reasoner_result.reply
                 tool_chain = reasoner_result.tool_chain
@@ -473,7 +478,7 @@ class PassiveRuntime:
                 context_retry["selected_plan"] = attempt.name
                 context_retry["trimmed_sections"] = sorted(attempt.disabled_sections)
                 if attempt_index > 0:
-                    self._trim_session_history(session, attempt.history_window)
+                    self._trim_session_history(runtime_session, attempt.history_window)
                 break
             except ContextLengthError:
                 continue
@@ -493,7 +498,7 @@ class PassiveRuntime:
         if rendered is None:  # pragma: no cover - defensive invariant
             raise RuntimeError("runtime did not render prompt context")
         return await self._complete_turn(
-            session_key=session_key,
+            session=session,
             user_message=user_message,
             assistant_content=assistant_content,
             rendered=rendered,
@@ -507,7 +512,7 @@ class PassiveRuntime:
     async def _complete_turn(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         user_message: str,
         assistant_content: str,
         rendered: ContextRenderResult,
@@ -519,7 +524,7 @@ class PassiveRuntime:
     ) -> PassiveTurnResult:
         after_reasoning = await self._after_reasoning.run(
             AfterReasoningInput(
-                session_key=session_key,
+                session=session,
                 user_message=user_message,
                 assistant_content=assistant_content,
                 rendered=rendered,
@@ -530,7 +535,7 @@ class PassiveRuntime:
             )
         )
         after_turn_context = AfterTurnContext(
-            session_key=session_key,
+            session=session,
             user_message_id=after_reasoning.user_message_id,
             assistant_message_id=after_reasoning.assistant_message_id,
             assistant_response=after_reasoning.assistant_response,
@@ -544,7 +549,7 @@ class PassiveRuntime:
             )
         )
         return PassiveTurnResult(
-            session_key=after_reasoning.session_key,
+            session=after_reasoning.session,
             user_message_id=after_reasoning.user_message_id,
             assistant_message_id=after_reasoning.assistant_message_id,
             assistant_response=after_reasoning.assistant_response,

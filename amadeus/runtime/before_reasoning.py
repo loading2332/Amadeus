@@ -35,7 +35,7 @@ class _BuildBeforeReasoningCtxModule:
     async def run(self, frame: BeforeReasoningFrame) -> BeforeReasoningFrame:
         before_turn = frame.input.before_turn
         frame.slots[_CTX_SLOT] = BeforeReasoningContext(
-            session_key=before_turn.session_key,
+            session=before_turn.session,
             user_message=before_turn.user_message,
             history=list(before_turn.history),
             retrieved_memory=before_turn.retrieved_memory,

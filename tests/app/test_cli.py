@@ -6,6 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 from amadeus.app.cli import _run_chat
+from amadeus.session.identity import SessionRef
+
+_DEFAULT_SESSION_KEY = "user:1:session:1"
+_DEFAULT_SESSION = SessionRef(user_id=1, session_id=1)
 
 
 def test_run_chat_starts_before_turn_and_closes_on_runtime_error(monkeypatch):
@@ -17,7 +21,10 @@ def test_run_chat_starts_before_turn_and_closes_on_runtime_error(monkeypatch):
             raise RuntimeError("turn failed")
 
     class App:
-        config = SimpleNamespace(default_session_key="cli:default")
+        config = SimpleNamespace(
+            default_session=_DEFAULT_SESSION,
+            default_session_key=_DEFAULT_SESSION_KEY,
+        )
         runtime = Runtime()
 
         async def start(self):
@@ -50,7 +57,10 @@ def test_run_chat_preserves_runtime_error_when_close_also_fails(monkeypatch):
             raise RuntimeError("turn failed")
 
     class App:
-        config = SimpleNamespace(default_session_key="cli:default")
+        config = SimpleNamespace(
+            default_session=_DEFAULT_SESSION,
+            default_session_key=_DEFAULT_SESSION_KEY,
+        )
         runtime = Runtime()
 
         async def start(self):
@@ -85,7 +95,10 @@ def test_run_chat_preserves_start_error_when_close_also_fails(monkeypatch):
             raise AssertionError("turn must not run")
 
     class App:
-        config = SimpleNamespace(default_session_key="cli:default")
+        config = SimpleNamespace(
+            default_session=_DEFAULT_SESSION,
+            default_session_key=_DEFAULT_SESSION_KEY,
+        )
         runtime = Runtime()
 
         async def start(self):
@@ -119,7 +132,7 @@ def test_run_chat_propagates_close_error_when_operation_succeeds(monkeypatch):
         async def run_turn(self, **kwargs):
             return SimpleNamespace(
                 assistant_response="reply",
-                session_key="cli:default",
+                session_key=_DEFAULT_SESSION_KEY,
                 user_message_id="user:1",
                 assistant_message_id="assistant:1",
                 tool_chain=[],
@@ -128,7 +141,10 @@ def test_run_chat_propagates_close_error_when_operation_succeeds(monkeypatch):
             )
 
     class App:
-        config = SimpleNamespace(default_session_key="cli:default")
+        config = SimpleNamespace(
+            default_session=_DEFAULT_SESSION,
+            default_session_key=_DEFAULT_SESSION_KEY,
+        )
         runtime = Runtime()
 
         async def start(self):
@@ -161,7 +177,7 @@ def test_format_trace_includes_session_and_tool_chain():
     from amadeus.runtime.passive import PassiveTurnResult
 
     result = PassiveTurnResult(
-        session_key="trace:1",
+        session=SessionRef(user_id=1, session_id=1),
         user_message_id="trace:1:0",
         assistant_message_id="trace:1:1",
         assistant_response="final answer",
@@ -192,7 +208,7 @@ def test_format_trace_includes_session_and_tool_chain():
 
     output = _format_trace(result, None)
 
-    assert "Session key:        trace:1" in output
+    assert "Session key:        user:1:session:1" in output
     assert "User message ID:    trace:1:0" in output
     assert "Assistant message ID: trace:1:1" in output
     assert "Tool chain steps:   1" in output
@@ -211,7 +227,7 @@ def test_format_trace_includes_memory_retrieval_section():
 
     output = _format_trace(
         PassiveTurnResult(
-            session_key="trace:1",
+            session=SessionRef(user_id=1, session_id=1),
             user_message_id="trace:1:0",
             assistant_message_id="trace:1:1",
             assistant_response="done",

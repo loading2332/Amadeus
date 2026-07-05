@@ -5,6 +5,7 @@ from typing import Any, TypeAlias, cast
 
 from amadeus.runtime.lifecycle import AfterStepContext, BeforeStepContext, TurnLifecycle
 from amadeus.runtime.phase import PhaseFrame, PhaseModule, topo_sort_modules
+from amadeus.session.identity import SessionRef
 
 _BEFORE_CTX_SLOT = "step:before_ctx"
 _AFTER_CTX_SLOT = "step:after_ctx"
@@ -15,7 +16,7 @@ _TELEMETRY_PREFIX = "step:telemetry:"
 
 @dataclass
 class BeforeStepInput:
-    session_key: str
+    session: SessionRef
     iteration: int
     messages: list[dict[str, Any]]
     tool_schemas: list[dict[str, Any]] | None
@@ -23,7 +24,7 @@ class BeforeStepInput:
 
 @dataclass
 class AfterStepInput:
-    session_key: str
+    session: SessionRef
     iteration: int
     messages: list[dict[str, Any]]
     tool_chain: list[dict[str, Any]]
@@ -49,7 +50,7 @@ class _BuildBeforeStepCtxModule:
 
     async def run(self, frame: BeforeStepFrame) -> BeforeStepFrame:
         frame.slots[_BEFORE_CTX_SLOT] = BeforeStepContext(
-            session_key=frame.input.session_key,
+            session=frame.input.session,
             iteration=frame.input.iteration,
             messages=list(frame.input.messages),
             tool_schemas=frame.input.tool_schemas,
@@ -105,7 +106,7 @@ class _BuildAfterStepCtxModule:
 
     async def run(self, frame: AfterStepFrame) -> AfterStepFrame:
         frame.slots[_AFTER_CTX_SLOT] = AfterStepContext(
-            session_key=frame.input.session_key,
+            session=frame.input.session,
             iteration=frame.input.iteration,
             messages=list(frame.input.messages),
             tool_chain=list(frame.input.tool_chain),

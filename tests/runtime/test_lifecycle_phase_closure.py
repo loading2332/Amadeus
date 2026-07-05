@@ -30,7 +30,8 @@ from amadeus.runtime.step_phases import (
     default_after_step_modules,
     default_before_step_modules,
 )
-from amadeus.session.store import SessionManager
+from amadeus.session.identity import SessionRef
+from amadeus.session.store import InMemorySessionStore, SessionManager
 
 
 class _BeforeReasoningExportModule:
@@ -42,6 +43,10 @@ class _BeforeReasoningExportModule:
         frame.slots["reasoning:extra_hint:test"] = "hint before reasoning"
         frame.slots["reasoning:abort_reply"] = "abort before reasoning"
         return frame
+
+
+def _session(session_id: int = 1) -> SessionRef:
+    return SessionRef(user_id=1, session_id=session_id)
 
 
 def test_before_reasoning_collects_hints_and_abort_reply() -> None:
@@ -57,7 +62,7 @@ def test_before_reasoning_collects_hints_and_abort_reply() -> None:
         phase.run(
             BeforeReasoningInput(
                 before_turn=BeforeTurnContext(
-                    session_key="chat:1",
+                    session=_session(),
                     user_message="hello",
                     history=[],
                     retrieved_memory=None,
@@ -112,7 +117,7 @@ def test_step_phases_collect_early_stop_and_telemetry() -> None:
     before = asyncio.run(
         before_phase.run(
             BeforeStepInput(
-                session_key="chat:1",
+                session=_session(),
                 iteration=0,
                 messages=[],
                 tool_schemas=None,
@@ -122,7 +127,7 @@ def test_step_phases_collect_early_stop_and_telemetry() -> None:
     after = asyncio.run(
         after_phase.run(
             AfterStepInput(
-                session_key="chat:1",
+                session=_session(),
                 iteration=0,
                 messages=[],
                 tool_chain=[{"calls": []}],
@@ -147,7 +152,7 @@ class _AfterReasoningMetadataModule:
 
 
 def test_after_reasoning_persists_turn_and_metadata(tmp_path) -> None:
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     bus = EventBus()
     events: list[TurnCommitted] = []
     bus.on(TurnCommitted, lambda event: events.append(event))
@@ -171,7 +176,7 @@ def test_after_reasoning_persists_turn_and_metadata(tmp_path) -> None:
     result = asyncio.run(
         phase.run(
             AfterReasoningInput(
-                session_key="chat:1",
+                session=_session(),
                 user_message="hello",
                 assistant_content="saved reply",
                 rendered=rendered,
@@ -182,7 +187,7 @@ def test_after_reasoning_persists_turn_and_metadata(tmp_path) -> None:
         )
     )
 
-    session = manager.get_or_create("chat:1")
+    session = manager.get_or_create(_session())
     assert result.assistant_response == "saved reply"
     assert [message["role"] for message in session.messages] == ["user", "assistant"]
     assert session.messages[-1]["source"] == "phase"
@@ -209,7 +214,7 @@ def test_after_turn_phase_calls_existing_tap_and_isolates_failures(
         default_after_turn_modules(
             lifecycle=lifecycle,
             memory_engine=None,
-            session_manager=SessionManager(tmp_path),
+            session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         ),
         frame_factory=AfterTurnFrame,
     )
@@ -218,7 +223,7 @@ def test_after_turn_phase_calls_existing_tap_and_isolates_failures(
         phase.run(
             AfterTurnInput(
                 context=AfterTurnContext(
-                    session_key="chat:1",
+                    session=_session(),
                     user_message_id="u1",
                     assistant_message_id="a1",
                     assistant_response="done",
@@ -231,3 +236,4 @@ def test_after_turn_phase_calls_existing_tap_and_isolates_failures(
 
     assert observed == ["done"]
     assert "tap failed" in caplog.text
+

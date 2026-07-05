@@ -7,6 +7,7 @@ from amadeus.context import Message
 from amadeus.memory.engine import MemoryEngine, MemoryRecallRequest, MemoryScope
 from amadeus.runtime.lifecycle import BeforeTurnContext, TurnLifecycle
 from amadeus.runtime.phase import PhaseFrame, PhaseModule, topo_sort_modules
+from amadeus.session.identity import SessionRef
 from amadeus.session.store import Session, SessionManager
 
 _SESSION_SLOT = "session:session"
@@ -18,7 +19,7 @@ _ABORT_REPLY_SLOT = "session:abort_reply"
 
 @dataclass
 class BeforeTurnInput:
-    session_key: str
+    session: SessionRef
     user_message: str
     retrieved_memory: str | None = None
     active_skills: tuple[str, ...] = ()
@@ -50,9 +51,7 @@ class _AcquireSessionModule:
         self._session_manager = session_manager
 
     async def run(self, frame: BeforeTurnFrame) -> BeforeTurnFrame:
-        frame.slots[_SESSION_SLOT] = self._session_manager.get_or_create(
-            frame.input.session_key
-        )
+        frame.slots[_SESSION_SLOT] = self._session_manager.get_or_create(frame.input.session)
         return frame
 
 
@@ -72,6 +71,7 @@ class _PrepareContextModule:
     async def run(self, frame: BeforeTurnFrame) -> BeforeTurnFrame:
         if _CTX_SLOT in frame.slots:
             return frame
+        session_ref = frame.input.session
         session = cast(Session, frame.slots[_SESSION_SLOT])
         history = session.get_history(self._history_window)
         retrieved_memory = frame.input.retrieved_memory
@@ -82,10 +82,10 @@ class _PrepareContextModule:
                     MemoryRecallRequest(
                         text=frame.input.user_message,
                         intent="context",
-                        scope=MemoryScope(chat_id=frame.input.session_key),
+                        scope=MemoryScope(chat_id=session_ref.session_key, session=session_ref),
                         context={
                             "history": history,
-                            "session_key": frame.input.session_key,
+                            "session": session_ref,
                         },
                     )
                 )
@@ -121,7 +121,7 @@ class _BuildBeforeTurnCtxModule:
             frame.slots[_CONTEXT_BUNDLE_SLOT],
         )
         frame.slots[_CTX_SLOT] = BeforeTurnContext(
-            session_key=frame.input.session_key,
+            session=frame.input.session,
             user_message=frame.input.user_message,
             history=list(bundle.history),
             retrieved_memory=bundle.retrieved_memory,

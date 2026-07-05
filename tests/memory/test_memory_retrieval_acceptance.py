@@ -5,43 +5,52 @@ import importlib.util
 from datetime import datetime
 
 import amadeus.tools as public_tools
+import pytest
 from amadeus.memory import (
     LongTermMemoryEngine,
     MemoryMemorizer,
     MemoryRetriever,
-    MemoryStore,
     MemoryWriteRequest,
     PostResponseMemoryWorker,
 )
+from amadeus.memory.postgres import PostgresMemoryStore
 from amadeus.prompts import build_behavior_rules_prompt
-from amadeus.session.store import SessionManager
+from amadeus.session.identity import SessionRef
+from amadeus.session.store import InMemorySessionStore, SessionManager
 from amadeus.tools.defaults import FetchMessagesTool, SearchMessagesTool
 from amadeus.tools.forget_memory import ForgetMemoryTool
 from amadeus.tools.recall_memory import RecallMemoryTool
 
+from tests.db.pgvector_helpers import pad_embedding
+from tests.db.postgres_helpers import clean_postgres
+
+
+def _session(session_id: int = 1, *, user_id: int = 1) -> SessionRef:
+    return SessionRef(user_id=user_id, session_id=session_id)
+
 
 class StableEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
-        return [1.0, 0.0, 0.0]
+        return pad_embedding([1.0, 0.0, 0.0])
 
 
 class FakeExtractor:
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, object]],
     ) -> list[dict[str, object]]:
+        del session, messages
         return []
 
 
-def _memory_fixture(tmp_path):
-    manager = SessionManager(tmp_path)
-    session = manager.get_or_create("chat:1")
+def _memory_fixture(tmp_path, store):
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    session = manager.get_or_create(_session())
     session.add_message("user", "用户正在学习 memory evidence")
     session.add_message("assistant", "原始消息必须通过 fetch_messages 回源")
     manager.save(session)
-    store = MemoryStore(tmp_path / "long_term_memory.db")
     memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
     engine = LongTermMemoryEngine(
         store=store,
@@ -54,7 +63,7 @@ def _memory_fixture(tmp_path):
             MemoryWriteRequest(
                 summary="用户正在学习 memory evidence",
                 memory_type="event",
-                source_ref='["chat:1:0","chat:1:1"]#h:acceptance',
+                source_ref='["session:1:1:0","session:1:1:1"]#h:acceptance',
             )
         )
     )
@@ -62,8 +71,17 @@ def _memory_fixture(tmp_path):
     return manager, engine, ingested.item_id
 
 
-def test_recall_evidence_can_fetch_original_messages(tmp_path):
-    manager, engine, _ = _memory_fixture(tmp_path)
+@pytest.fixture
+def memory_store():
+    db = clean_postgres()
+    try:
+        yield PostgresMemoryStore(user_id=1, db=db)
+    finally:
+        db.close()
+
+
+def test_recall_evidence_can_fetch_original_messages(tmp_path, memory_store):
+    manager, engine, _ = _memory_fixture(tmp_path, memory_store)
 
     recalled = asyncio.run(
         RecallMemoryTool(memory_engine=engine).execute(query="memory evidence")
@@ -72,8 +90,8 @@ def test_recall_evidence_can_fetch_original_messages(tmp_path):
     fetched = FetchMessagesTool(store=manager.store).execute(evidence=evidence)
 
     assert [message["id"] for message in fetched.output["messages"]] == [
-        "chat:1:0",
-        "chat:1:1",
+        "session:1:1:0",
+        "session:1:1:1",
     ]
     assert [message["content"] for message in fetched.output["messages"]] == [
         "用户正在学习 memory evidence",
@@ -81,21 +99,21 @@ def test_recall_evidence_can_fetch_original_messages(tmp_path):
     ]
 
 
-def test_search_source_ref_can_fetch_full_original_message(tmp_path):
-    manager, _, _ = _memory_fixture(tmp_path)
+def test_search_source_ref_can_fetch_full_original_message(tmp_path, memory_store):
+    manager, _, _ = _memory_fixture(tmp_path, memory_store)
 
     searched = SearchMessagesTool(store=manager.store).execute(
-        query="memory evidence", session_key="chat:1"
+        query="memory evidence", session_key="user:1:session:1"
     )
     source_ref = searched.output["messages"][0]["source_ref"]
     fetched = FetchMessagesTool(store=manager.store).execute(source_ref=source_ref)
 
-    assert fetched.output["messages"][0]["id"] == "chat:1:0"
+    assert fetched.output["messages"][0]["id"] == "session:1:1:0"
     assert fetched.output["messages"][0]["content"] == "用户正在学习 memory evidence"
 
 
-def test_correction_fetches_source_then_forgets_memory_id_only(tmp_path):
-    manager, engine, memory_id = _memory_fixture(tmp_path)
+def test_correction_fetches_source_then_forgets_memory_id_only(tmp_path, memory_store):
+    manager, engine, memory_id = _memory_fixture(tmp_path, memory_store)
     recall_tool = RecallMemoryTool(memory_engine=engine)
     recalled = asyncio.run(recall_tool.execute(query="memory evidence"))
 
@@ -103,19 +121,19 @@ def test_correction_fetches_source_then_forgets_memory_id_only(tmp_path):
         evidence=recalled.output["items"][0]["evidence"]
     )
     forgotten = ForgetMemoryTool(memory_engine=engine).execute(ids=[memory_id])
-    wrong_id = ForgetMemoryTool(memory_engine=engine).execute(ids=["chat:1:0"])
+    wrong_id = ForgetMemoryTool(memory_engine=engine).execute(ids=["session:1:1:0"])
 
     assert fetched.output["count"] == 2
     assert forgotten.output["superseded_ids"] == [memory_id]
-    assert wrong_id.output["missing_ids"] == ["chat:1:0"]
+    assert wrong_id.output["missing_ids"] == ["session:1:1:0"]
     still_fetchable = FetchMessagesTool(store=manager.store).execute(
-        source_ref='["chat:1:0","chat:1:1"]'
+        source_ref='["session:1:1:0","session:1:1:1"]'
     )
     assert still_fetchable.output["count"] == 2
 
 
 def test_tool_descriptions_define_candidate_and_original_evidence_boundaries(tmp_path):
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
 
     assert "fetch_messages" in RecallMemoryTool(memory_engine=None).description
     assert "最终证据" in FetchMessagesTool(store=manager.store).description
@@ -150,15 +168,15 @@ def test_correct_memory_module_is_not_publicly_importable():
     assert importlib.util.find_spec("amadeus.tools.correct_memory") is None
 
 
-def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_path):
-    _, engine, memory_id = _memory_fixture(tmp_path)
+def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_path, memory_store):
+    _, engine, memory_id = _memory_fixture(tmp_path, memory_store)
 
     recalled = asyncio.run(
         RecallMemoryTool(memory_engine=engine).execute(query="memory evidence")
     )
     evidence = recalled.output["items"][0]["evidence"][0]
 
-    assert evidence["source_ref"] == '["chat:1:0","chat:1:1"]#h:acceptance'
+    assert evidence["source_ref"] == '["session:1:1:0","session:1:1:1"]#h:acceptance'
     assert evidence["metadata"] == {}
     assert recalled.output["citation_required"] is True
     assert recalled.output["citation_format"] == "§cited:[id1,id2,...]§"
@@ -166,8 +184,8 @@ def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_pat
     assert "actually used" in recalled.output["citation_rule"]
 
 
-def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_recall_memory_preserves_time_filter_trace_and_signals(memory_store):
+    store = memory_store
     memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
     engine = LongTermMemoryEngine(
         store=store,
@@ -180,7 +198,7 @@ def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
             MemoryWriteRequest(
                 summary="[2026-06-01 09:00] 用户开始实现 Phase 2。",
                 memory_type="event",
-                source_ref='["chat:1:0"]#h:early',
+                source_ref='["session:1:1:0"]#h:early',
                 happened_at="2026-06-01T09:00:00+08:00",
             )
         )
@@ -190,7 +208,7 @@ def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
             MemoryWriteRequest(
                 summary="[2026-06-20 09:00] 用户完成 Phase 2 smoke。",
                 memory_type="event",
-                source_ref='["chat:1:1"]#h:late',
+                source_ref='["session:1:1:1"]#h:late',
                 happened_at="2026-06-20T09:00:00+08:00",
             )
         )
@@ -205,7 +223,7 @@ def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
     )
 
     assert recalled.output["count"] == 1
-    assert recalled.output["items"][0]["source_ref"] == '["chat:1:1"]#h:late'
+    assert recalled.output["items"][0]["source_ref"] == '["session:1:1:1"]#h:late'
     assert recalled.output["trace"]["time_filters"] == {
         "start": "2026-06-20T00:30:00",
         "end": "2026-06-20T01:30:00",
@@ -220,3 +238,5 @@ def test_recall_memory_preserves_time_filter_trace_and_signals(tmp_path):
     assert signals["hotness_recency"] > 0
     assert signals["emotional_weight"] == 0
     assert signals["hotness_updated_at"]
+
+

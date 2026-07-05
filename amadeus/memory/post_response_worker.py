@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -8,6 +7,11 @@ from typing import Any, Protocol
 from amadeus.memory.engine import MemoryScope, MemoryWriteRequest
 from amadeus.memory.memorizer import MemoryMemorizer
 from amadeus.memory.ranking import rank_rows
+from amadeus.memory.source_refs import (
+    build_message_source_ref,
+    source_ref_message_ids,
+)
+from amadeus.session.identity import SessionRef
 
 ALLOWED_POST_RESPONSE_TYPES = {"profile", "preference", "procedure", "fact", "event"}
 
@@ -16,7 +20,7 @@ class MemoryExtractor(Protocol):
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, Any]],
     ) -> list[dict[str, Any]]: ...
 
@@ -169,7 +173,7 @@ class LLMMemoryExtractor:
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         transcript = "\n".join(
@@ -194,7 +198,7 @@ class LLMMemoryExtractor:
                 },
                 {
                     "role": "user",
-                    "content": f"session_key={session_key}\n{transcript}",
+                    "content": f"session_key={session.session_key}\n{transcript}",
                 },
             ],
             model=self.model,
@@ -218,12 +222,12 @@ class PostResponseMemoryWorker:
     async def run(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, Any]],
         explicit_memory_ids: list[str],
     ) -> dict[str, Any]:
         candidates = await self.extractor.extract(
-            session_key=session_key,
+            session=session,
             messages=messages,
         )
         decider = self.decision_provider or CreateOnlyMemoryDecisionProvider()
@@ -336,7 +340,7 @@ def _normalize_candidate(
     source_message_ids = _string_list(candidate.get("source_message_ids"))
     source_ref = str(candidate.get("source_ref") or "").strip()
     if not source_message_ids and source_ref:
-        source_message_ids = _message_ids_from_source_ref(source_ref)
+        source_message_ids = source_ref_message_ids(source_ref)
     if not source_message_ids:
         source_message_ids = [
             str(message.get("id") or "").strip()
@@ -350,7 +354,7 @@ def _normalize_candidate(
         else:
             return "source_ref_must_resolve_to_user_message"
     if not source_ref and source_message_ids:
-        source_ref = _build_source_ref(source_message_ids, summary)
+        source_ref = build_message_source_ref(source_message_ids, summary)
     if not source_ref:
         return "source_ref_required"
     source_text = _source_text(source_message_ids, messages)
@@ -424,28 +428,6 @@ def _message_ids_index(messages: list[dict[str, Any]]) -> dict[str, dict[str, An
         for message in messages
         if str(message.get("id") or "").strip()
     }
-
-
-def _message_ids_from_source_ref(source_ref: str) -> list[str]:
-    base = source_ref.split("#", 1)[0].strip()
-    if not base:
-        return []
-    try:
-        payload = json.loads(base)
-    except json.JSONDecodeError:
-        return [base]
-    if isinstance(payload, list):
-        return [str(item).strip() for item in payload if str(item).strip()]
-    if isinstance(payload, str) and payload.strip():
-        return [payload.strip()]
-    return []
-
-
-def _build_source_ref(source_message_ids: list[str], summary: str) -> str:
-    digest = hashlib.sha256(summary.encode("utf-8")).hexdigest()[:8]
-    return f"{json.dumps(source_message_ids, ensure_ascii=False)}#h:{digest}"
-
-
 def _is_short_term_noise(text: str) -> bool:
     return any(term in text for term in ("短期", "今晚", "这两天", "临时")) and any(
         term in text for term in ("别记", "不要记", "先别记", "长期")

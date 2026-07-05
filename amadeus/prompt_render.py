@@ -7,11 +7,12 @@ from amadeus.context import ContextBuilder, ContextRenderResult, RuntimeContext
 from amadeus.prompting import PromptSectionRender
 from amadeus.runtime.lifecycle import PromptRenderContext, TurnLifecycle
 from amadeus.runtime.phase import PhaseFrame, PhaseModule, topo_sort_modules
+from amadeus.session.identity import SessionRef
 
 
 @dataclass(frozen=True)
 class PromptRenderInput:
-    session_key: str
+    session: SessionRef
     attempt_index: int
     attempt_name: str
     runtime_context: RuntimeContext
@@ -19,13 +20,17 @@ class PromptRenderInput:
 
 @dataclass
 class PromptRenderCtx:
-    session_key: str
+    session: SessionRef
     attempt_index: int
     attempt_name: str
     runtime_context: RuntimeContext
     system_sections_top: list[PromptSectionRender] = field(default_factory=list)
     system_sections_bottom: list[PromptSectionRender] = field(default_factory=list)
     extra_hints: list[str] = field(default_factory=list)
+
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
 
 
 @dataclass(frozen=True)
@@ -57,7 +62,7 @@ class _BuildPromptRenderCtxModule:
     async def run(self, frame: PromptRenderFrame) -> PromptRenderFrame:
         input = frame.input
         frame.slots[_CTX_SLOT] = PromptRenderCtx(
-            session_key=input.session_key,
+            session=input.session,
             attempt_index=input.attempt_index,
             attempt_name=input.attempt_name,
             runtime_context=input.runtime_context,
@@ -77,7 +82,7 @@ class _EmitPromptRenderCtxModule:
         ctx = cast(PromptRenderCtx, frame.slots[_CTX_SLOT])
         emitted = await self._lifecycle.prompt_render(
             PromptRenderContext(
-                session_key=ctx.session_key,
+                session=ctx.session,
                 attempt_index=ctx.attempt_index,
                 attempt_name=ctx.attempt_name,
                 runtime_context=ctx.runtime_context,

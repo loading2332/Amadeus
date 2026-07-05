@@ -7,6 +7,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
+from amadeus.session.identity import build_session_key
 from amadeus.turns.store import (
     TURN_DONE,
     TURN_FAILED,
@@ -41,7 +42,6 @@ class PostgresTurnStore:
         session_id: int,
         content: str,
         metadata: dict[str, Any] | None = None,
-        session_key: str | None = None,
     ) -> Turn:
         turn_id = str(uuid.uuid4())
         with self.db.connection() as conn:
@@ -69,6 +69,10 @@ class PostgresTurnStore:
         return turn
 
     def get_turn(self, turn_id: str) -> Turn | None:
+        try:
+            parsed_turn_id = str(uuid.UUID(str(turn_id)))
+        except (TypeError, ValueError):
+            return None
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -79,7 +83,7 @@ class PostgresTurnStore:
                     FROM conversation_turns
                     WHERE id = %s
                     """,
-                    (turn_id,),
+                    (parsed_turn_id,),
                 )
                 row = cursor.fetchone()
         return _row_to_turn(row) if row is not None else None
@@ -162,7 +166,7 @@ def _row_to_turn(row: Mapping[str, Any]) -> Turn:
     session_id = int(row["session_id"])
     return Turn(
         id=str(row["id"]),
-        session_key=f"user:{user_id}:session:{session_id}",
+        session_key=build_session_key(user_id, session_id),
         content=str(row["content"]),
         status=str(row["status"]),
         answer=row["answer"],

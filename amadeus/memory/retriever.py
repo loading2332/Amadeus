@@ -192,10 +192,10 @@ class MemoryRetriever:
         """Return candidate rows for ranking.
 
         When the store exposes a pgvector-backed ``search_active_items`` method,
-        semantic candidates for every query are recalled through SQL ``<=>`` so the
-        runtime never falls back to a Python full-table scan as the completion
-        state. Stores without that method (e.g. legacy SQLite fakes) keep using
-        ``list_active_items`` and the ranking layer still scores them in Python.
+        semantic candidates for every query are recalled through SQL ``<=>`` so
+        the runtime avoids a Python full-table scan on the main production
+        path. Stores without that method keep using ``list_active_items`` and
+        the ranking layer still scores them in Python.
         """
         search = getattr(self.store, "search_active_items", None)
         if callable(search) and query_vectors:

@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from amadeus.memory import (
     LongTermMemoryEngine,
     MemoryMemorizer,
     MemoryRetriever,
-    MemoryStore,
     MemoryWriteRequest,
     PostResponseMemoryWorker,
 )
@@ -21,6 +21,7 @@ from amadeus.memory.engine import (
     MemoryQueryResult,
     MemoryRecallRequest,
 )
+from amadeus.memory.postgres import PostgresMemoryStore
 from amadeus.provider import (
     ChatCompletionsClient,
     ChatNamespace,
@@ -28,24 +29,31 @@ from amadeus.provider import (
     LLMProviderConfig,
 )
 from amadeus.runtime.passive import PassiveRuntime
-from amadeus.session.store import SessionManager
+from amadeus.session.identity import SessionRef
+from amadeus.session.store import InMemorySessionStore, SessionManager
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.registry import ToolRegistry
 
+from tests.db.pgvector_helpers import pad_embedding
+from tests.db.postgres_helpers import clean_postgres
+
 
 class FakeEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
-        return [1.0, 0.0, 0.0] if "Amadeus" in text or "检索" in text else [0.0, 1.0, 0.0]
+        if "Amadeus" in text or "检索" in text:
+            return pad_embedding([1.0, 0.0, 0.0])
+        return pad_embedding([0.0, 1.0, 0.0])
 
 
 class FakeExtractor:
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, object]],
     ) -> list[dict[str, object]]:
+        del session, messages
         return []
 
 
@@ -77,9 +85,22 @@ class FakeClient:
         self.chat: ChatNamespace = FakeChatNamespace(completions=self.completions)
 
 
-def _build_engine(tmp_path) -> LongTermMemoryEngine:
+def _session(session_id: int = 1, *, user_id: int = 1) -> SessionRef:
+    return SessionRef(user_id=user_id, session_id=session_id)
+
+
+@pytest.fixture
+def memory_engine():
+    db = clean_postgres()
+    try:
+        yield _build_engine(db)
+    finally:
+        db.close()
+
+
+def _build_engine(db) -> LongTermMemoryEngine:
     provider = FakeEmbeddingProvider()
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+    store = PostgresMemoryStore(user_id=1, db=db)
     memorizer = MemoryMemorizer(store=store, embedding_provider=provider)
     return LongTermMemoryEngine(
         store=store,
@@ -89,14 +110,14 @@ def _build_engine(tmp_path) -> LongTermMemoryEngine:
     )
 
 
-def test_runtime_retrieves_memory_into_context_frame(tmp_path):
-    engine = _build_engine(tmp_path)
+def test_runtime_retrieves_memory_into_context_frame(tmp_path, memory_engine):
+    engine = memory_engine
     asyncio.run(
         engine.memorize(
             MemoryWriteRequest(
                 summary="[2026-06-06 10:00] 用户确认正在迁移 Amadeus 检索记忆。",
                 memory_type="event",
-                source_ref='["chat:1:0"]#h:abc123',
+                source_ref='["session:1:1:0"]#h:abc123',
             )
         )
     )
@@ -105,11 +126,13 @@ def test_runtime_retrieves_memory_into_context_frame(tmp_path):
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         memory_engine=engine,
     )
 
-    result = asyncio.run(runtime.run_turn(session_key="chat:1", user_message="Amadeus 检索做到哪了？"))
+    result = asyncio.run(
+        runtime.run_turn(session=_session(), user_message="Amadeus 检索做到哪了？")
+    )
 
     sent_messages = client.completions.calls[0]["messages"]
     assert result.assistant_response == "assistant reply"
@@ -120,14 +143,14 @@ def test_runtime_retrieves_memory_into_context_frame(tmp_path):
     )
 
 
-def test_runtime_exposes_memory_trace_on_turn_result(tmp_path):
-    engine = _build_engine(tmp_path)
+def test_runtime_exposes_memory_trace_on_turn_result(tmp_path, memory_engine):
+    engine = memory_engine
     asyncio.run(
         engine.memorize(
             MemoryWriteRequest(
                 summary="[2026-06-06 10:00] 用户完成 Memory Phase 2 设计。",
                 memory_type="event",
-                source_ref='["chat:1:0"]#h:trace',
+                source_ref='["session:1:1:0"]#h:trace',
             )
         )
     )
@@ -135,11 +158,13 @@ def test_runtime_exposes_memory_trace_on_turn_result(tmp_path):
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=LLMProvider(LLMProviderConfig(api_key="secret", model="fake"), client=client),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         memory_engine=engine,
     )
 
-    result = asyncio.run(runtime.run_turn(session_key="chat:1", user_message="Memory Phase 2 到哪了？"))
+    result = asyncio.run(
+        runtime.run_turn(session=_session(), user_message="Memory Phase 2 到哪了？")
+    )
 
     assert result.memory_trace["record_count"] >= 1
     assert result.memory_trace["injected_ids"]
@@ -165,10 +190,11 @@ def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
         async def run_post_response(
             self,
             *,
-            session_key: str,
+            session: SessionRef,
             messages: list[dict[str, Any]],
             explicit_memory_ids: list[str],
         ) -> dict[str, Any]:
+            del session, messages, explicit_memory_ids
             return {"status": "skipped"}
 
     client = FakeClient()
@@ -176,11 +202,11 @@ def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         memory_engine=BrokenMemory(),
     )
 
-    result = asyncio.run(runtime.run_turn(session_key="chat:1", user_message="hello"))
+    result = asyncio.run(runtime.run_turn(session=_session(), user_message="hello"))
 
     assert result.assistant_response == "assistant reply"
 
@@ -209,10 +235,11 @@ def test_runtime_marks_pre_retrieval_as_context_intent(tmp_path):
         async def run_post_response(
             self,
             *,
-            session_key: str,
+            session: SessionRef,
             messages: list[dict[str, Any]],
             explicit_memory_ids: list[str],
         ) -> dict[str, Any]:
+            del session, messages, explicit_memory_ids
             return {"status": "skipped"}
 
     memory = RecordingMemory()
@@ -222,24 +249,27 @@ def test_runtime_marks_pre_retrieval_as_context_intent(tmp_path):
         provider=LLMProvider(
             LLMProviderConfig(api_key="secret", model="fake"), client=client
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         memory_engine=memory,
     )
 
-    asyncio.run(runtime.run_turn(session_key="chat:1", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session(), user_message="hello"))
 
     assert memory.requests[0].intent == "context"
-    assert memory.requests[0].context == {"history": [], "session_key": "chat:1"}
+    assert memory.requests[0].context == {
+        "history": [],
+        "session": _session(),
+    }
 
 
-def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path):
-    engine = _build_engine(tmp_path)
+def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path, memory_engine):
+    engine = memory_engine
     asyncio.run(
         engine.memorize(
             MemoryWriteRequest(
                 summary="用户完成 Amadeus 检索重构",
                 memory_type="event",
-                source_ref='["chat:1:0"]',
+                source_ref='["session:1:1:0"]',
             )
         )
     )
@@ -281,14 +311,14 @@ def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path):
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         memory_engine=engine,
         tool_registry=registry,
         tool_executor=ToolExecutor(registry=registry),
     )
 
     result = asyncio.run(
-        runtime.run_turn(session_key="chat:1", user_message="Amadeus 检索做到哪了？")
+        runtime.run_turn(session=_session(), user_message="Amadeus 检索做到哪了？")
     )
 
     assert result.assistant_response == "done"
@@ -299,3 +329,4 @@ def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path):
     tool_messages = [message for message in second_messages if message["role"] == "tool"]
     assert len(tool_messages) == 1
     assert '"count": 1' in tool_messages[0]["content"]
+

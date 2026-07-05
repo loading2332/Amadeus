@@ -12,11 +12,16 @@ from amadeus.runtime.lifecycle import (
     PromptRenderContext,
     TurnLifecycle,
 )
+from amadeus.session.identity import SessionRef
 
 
 @dataclass(frozen=True)
 class _TapEvent:
     value: str
+
+
+def _session() -> SessionRef:
+    return SessionRef(user_id=1, session_id=1)
 
 
 def test_event_bus_fanout_isolates_observer_failures(caplog):
@@ -41,7 +46,7 @@ def test_event_bus_fanout_isolates_observer_failures(caplog):
 def test_turn_lifecycle_runs_mutable_gates_in_registration_order():
     lifecycle = TurnLifecycle(EventBus())
     before = BeforeTurnContext(
-        session_key="cli:1",
+        session=_session(),
         user_message="hello",
         history=[],
         retrieved_memory=None,
@@ -49,7 +54,7 @@ def test_turn_lifecycle_runs_mutable_gates_in_registration_order():
         runtime_metadata={},
     )
     prompt = PromptRenderContext(
-        session_key="cli:1",
+        session=_session(),
         attempt_index=0,
         attempt_name="full",
         runtime_context=RuntimeContext(
@@ -89,13 +94,13 @@ def test_turn_lifecycle_runs_mutable_gates_in_registration_order():
 def test_turn_lifecycle_gate_can_replace_context():
     lifecycle = TurnLifecycle(EventBus())
     original = BeforeTurnContext(
-        session_key="cli:1",
+        session=_session(),
         user_message="hello",
         history=[],
         retrieved_memory=None,
     )
     replacement = BeforeTurnContext(
-        session_key="cli:1",
+        session=_session(),
         user_message="hello",
         history=[],
         retrieved_memory="replacement memory",
@@ -111,7 +116,7 @@ def test_turn_lifecycle_routes_after_turn_through_failure_isolated_tap(caplog):
     lifecycle = TurnLifecycle(EventBus())
     seen: list[str] = []
     context = AfterTurnContext(
-        session_key="cli:1",
+        session=_session(),
         user_message_id="user-1",
         assistant_message_id="assistant-1",
         assistant_response="reply",

@@ -2,34 +2,41 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from amadeus.memory import (
     LongTermMemoryEngine,
     MemoryMemorizer,
     MemoryRetriever,
-    MemoryStore,
     MemoryWriteRequest,
     PostResponseMemoryWorker,
 )
+from amadeus.memory.postgres import PostgresMemoryStore
+from amadeus.session.identity import SessionRef
 from amadeus.tools.forget_memory import ForgetMemoryTool
+
+from tests.db.pgvector_helpers import pad_embedding
+from tests.db.postgres_helpers import clean_postgres
 
 
 class FakeEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
-        return [1.0, 0.0] if "Amadeus" in text else [0.0, 1.0]
+        if "Amadeus" in text:
+            return pad_embedding([1.0, 0.0])
+        return pad_embedding([0.0, 1.0])
 
 
 class FakeExtractor:
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, object]],
     ) -> list[dict[str, object]]:
+        del session, messages
         return []
 
 
-def _build_engine(tmp_path):
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def _build_engine(store):
     memorizer = MemoryMemorizer(store=store, embedding_provider=FakeEmbeddingProvider())
     return store, LongTermMemoryEngine(
         store=store,
@@ -39,14 +46,23 @@ def _build_engine(tmp_path):
     )
 
 
-def test_forget_memory_tool_marks_existing_items_superseded(tmp_path):
-    store, engine = _build_engine(tmp_path)
+@pytest.fixture
+def memory_store():
+    db = clean_postgres()
+    try:
+        yield PostgresMemoryStore(user_id=1, db=db)
+    finally:
+        db.close()
+
+
+def test_forget_memory_tool_marks_existing_items_superseded(memory_store):
+    store, engine = _build_engine(memory_store)
     result = asyncio.run(
         engine.memorize(
             MemoryWriteRequest(
                 summary="[2026-06-06 10:00] 用户确认迁移 Amadeus 检索记忆。",
                 memory_type="event",
-                source_ref='["chat:1:0"]#h:abc123',
+                source_ref='["session:1:1:0"]#h:abc123',
             )
         )
     )
@@ -63,14 +79,14 @@ def test_forget_memory_tool_marks_existing_items_superseded(tmp_path):
     assert store.get_items_by_ids([result.item_id])[0]["status"] == "superseded"
 
 
-def test_forget_memory_tool_ignores_duplicates_and_reports_missing(tmp_path):
-    _store, engine = _build_engine(tmp_path)
+def test_forget_memory_tool_ignores_duplicates_and_reports_missing(memory_store):
+    _store, engine = _build_engine(memory_store)
     result = asyncio.run(
         engine.memorize(
             MemoryWriteRequest(
                 summary="[2026-06-06 10:00] 用户确认迁移 Amadeus 检索记忆。",
                 memory_type="event",
-                source_ref='["chat:1:0"]#h:abc123',
+                source_ref='["session:1:1:0"]#h:abc123',
             )
         )
     )
@@ -92,3 +108,4 @@ def test_forget_memory_tool_reports_unconfigured_memory_engine():
 
     assert output.is_error is True
     assert output.output["error"] == "memory engine is not configured"
+

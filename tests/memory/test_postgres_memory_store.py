@@ -39,7 +39,7 @@ def test_insert_and_fetch_round_trip_preserves_embedding_and_extra() -> None:
             summary="用户偏好中文",
             content_hash="hash_a",
             embedding=_pad([1.0, 0.0, 0.0]),
-            source_ref='["chat:1:0"]#h:a',
+            source_ref='["session:1:1:0"]#h:a',
             happened_at="2026-07-04T10:00:00+00:00",
             scope_channel="telegram",
             scope_chat_id="100",
@@ -51,7 +51,7 @@ def test_insert_and_fetch_round_trip_preserves_embedding_and_extra() -> None:
         assert item is not None
         assert item["memory_type"] == "fact"
         assert item["summary"] == "用户偏好中文"
-        assert item["source_ref"] == '["chat:1:0"]#h:a'
+        assert item["source_ref"] == '["session:1:1:0"]#h:a'
         assert item["status"] == "active"
         assert item["reinforcement"] == 1
         assert item["emotional_weight"] == 0.5
@@ -74,7 +74,7 @@ def test_upsert_skips_by_source_ref_reinforces_by_content_hash() -> None:
             memory_type="preference",
             summary="默认中文",
             embedding=embedding,
-            source_ref='["chat:1:0"]#h:a',
+            source_ref='["session:1:1:0"]#h:a',
         )
         assert first_status == "new"
 
@@ -83,7 +83,7 @@ def test_upsert_skips_by_source_ref_reinforces_by_content_hash() -> None:
             memory_type="preference",
             summary="默认中文",
             embedding=embedding,
-            source_ref='["chat:1:0"]#h:a',
+            source_ref='["session:1:1:0"]#h:a',
         )
         assert second_status == "skipped"
         assert second_id == first_id
@@ -93,7 +93,7 @@ def test_upsert_skips_by_source_ref_reinforces_by_content_hash() -> None:
             memory_type="preference",
             summary="默认中文",
             embedding=embedding,
-            source_ref='["chat:1:1"]#h:b',
+            source_ref='["session:1:1:1"]#h:b',
         )
         assert reinforced_status == "reinforced"
         assert reinforced_id == first_id
@@ -115,7 +115,7 @@ def test_replacement_chain_records_and_reads_with_user_scope() -> None:
             summary="旧事实",
             content_hash="old",
             embedding=_pad([0.0, 1.0, 0.0]),
-            source_ref='["chat:1:0"]#h:old',
+            source_ref='["session:1:1:0"]#h:old',
             happened_at=None,
             scope_channel=None,
             scope_chat_id=None,
@@ -128,24 +128,24 @@ def test_replacement_chain_records_and_reads_with_user_scope() -> None:
             summary="新事实",
             content_hash="new",
             embedding=_pad([1.0, 0.0, 0.0]),
-            source_ref='["chat:1:1"]#h:new',
+            source_ref='["session:1:1:1"]#h:new',
             happened_at=None,
             scope_channel=None,
             scope_chat_id=None,
             emotional_weight=0.0,
             extra={},
         )
-        store.record_replacement("mem_old", "mem_new", '["chat:1:1"]#h:new')
+        store.record_replacement("mem_old", "mem_new", '["session:1:1:1"]#h:new')
 
         assert store.list_replacements_for("mem_old") == [
             {"old_item_id": "mem_old", "new_item_id": "mem_new"}
         ]
-        by_source = store.find_replacements_by_source_ref('["chat:1:1"]#h:new')
+        by_source = store.find_replacements_by_source_ref('["session:1:1:1"]#h:new')
         assert by_source == [
             {
                 "old_item_id": "mem_old",
                 "new_item_id": "mem_new",
-                "source_ref": '["chat:1:1"]#h:new',
+                "source_ref": '["session:1:1:1"]#h:new',
             }
         ]
     finally:
@@ -160,7 +160,7 @@ def test_list_active_items_filters_scope_type_and_time() -> None:
             memory_type="procedure",
             summary="部署前 smoke",
             embedding=_pad([1.0, 0.0, 0.0]),
-            source_ref='["chat:1:0"]#h:p',
+            source_ref='["session:1:1:0"]#h:p',
             scope_channel="telegram",
             scope_chat_id="100",
             happened_at="2026-07-04T10:00:00+00:00",
@@ -169,7 +169,7 @@ def test_list_active_items_filters_scope_type_and_time() -> None:
             memory_type="preference",
             summary="偏好中文",
             embedding=_pad([0.95, 0.05, 0.0]),
-            source_ref='["chat:1:1"]#h:f',
+            source_ref='["session:1:1:1"]#h:f',
             scope_channel="web",
             scope_chat_id="200",
             happened_at="2026-07-04T09:00:00+00:00",
@@ -206,13 +206,13 @@ def test_search_active_items_uses_pgvector_distance_operator() -> None:
             memory_type="fact",
             summary="aligned fact",
             embedding=_pad([1.0, 0.0, 0.0]),
-            source_ref='["chat:1:0"]#h:aligned',
+            source_ref='["session:1:1:0"]#h:aligned',
         )
         store.upsert_item(
             memory_type="fact",
             summary="orthogonal fact",
             embedding=_pad([0.0, 1.0, 0.0]),
-            source_ref='["chat:1:1"]#h:orthogonal',
+            source_ref='["session:1:1:1"]#h:orthogonal',
         )
 
         rows = store.search_active_items(
@@ -241,7 +241,7 @@ def test_user_isolation_blocks_cross_user_reads_and_writes() -> None:
             memory_type="fact",
             summary="user1 secret fact",
             embedding=_pad([1.0, 0.0, 0.0]),
-            source_ref='["chat:1:0"]#h:u1',
+            source_ref='["session:1:1:0"]#h:u1',
         )
         store_user2.upsert_item(
             memory_type="fact",
@@ -258,7 +258,7 @@ def test_user_isolation_blocks_cross_user_reads_and_writes() -> None:
         assert store_user2.get_item_by_id(u1_ids[0]) is None
         assert store_user1.get_item_by_id(u2_ids[0]) is None
         # Cross-user source_ref lookups do not leak rows.
-        assert store_user2.find_items_by_source_ref('["chat:1:0"]#h:u1') == []
+        assert store_user2.find_items_by_source_ref('["session:1:1:0"]#h:u1') == []
         assert store_user1.find_items_by_source_ref('["chat:2:0"]#h:u2') == []
 
         # Search must stay within user scope.
@@ -288,7 +288,7 @@ def test_embedding_dimension_mismatch_is_rejected_by_pgvector() -> None:
                 summary="bad dim",
                 content_hash="bad",
                 embedding=[1.0, 0.0, 0.0],  # only 3 dims, schema wants 1024
-                source_ref='["chat:1:0"]#h:bad',
+                source_ref='["session:1:1:0"]#h:bad',
                 happened_at=None,
                 scope_channel=None,
                 scope_chat_id=None,
@@ -329,3 +329,4 @@ def test_store_fail_fast_when_vector_extension_missing(monkeypatch) -> None:
     with pytest.raises(PostgresExtensionError, match="vector"):
         check_vector_extension(FakeConnection())
     del monkeypatch
+

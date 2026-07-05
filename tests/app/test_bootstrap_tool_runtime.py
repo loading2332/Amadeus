@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from amadeus.app.bootstrap import build_passive_app
+from amadeus.session.identity import SessionRef
 
 from tests.db.postgres_helpers import clean_postgres
 
@@ -148,9 +149,10 @@ def test_build_passive_app_composes_store_retriever_memorizer_and_worker(
         async def extract(
             self,
             *,
-            session_key: str,
+            session: SessionRef,
             messages: list[dict[str, object]],
         ):
+            del session, messages
             return []
 
     monkeypatch.setattr(

@@ -30,6 +30,7 @@ from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatClient, LLMProvider, LLMProviderConfig
 from amadeus.runtime.passive import PassiveRuntime
 from amadeus.session import PostgresSessionStore, SessionManager
+from amadeus.session.identity import SessionRef, parse_session_key
 from amadeus.tools.defaults import (
     EditFileTool,
     FetchMessagesTool,
@@ -57,7 +58,7 @@ class RuntimeConfig:
     workspace_root: Path
     provider: LLMProviderConfig
     postgres_dsn: str
-    default_session_key: str = "cli:default"
+    default_session: SessionRef = field(default_factory=lambda: SessionRef(1, 1))
     memory_keep_count: int = 12
     long_term_memory_enabled: bool = False
     default_memory_user_id: int = 1
@@ -68,6 +69,10 @@ class RuntimeConfig:
     memory_hypothesis_retrieval_enabled: bool = True
     memory_hypothesis_timeout_seconds: float = 2.0
     light_model: str | None = None
+
+    @property
+    def default_session_key(self) -> str:
+        return self.default_session.session_key
 
 
 class AppState(str, Enum):  # noqa: UP042
@@ -256,7 +261,9 @@ def load_runtime_config(
     timeout = _float_config("OPENAI_TIMEOUT_SECONDS", file_values, default=90.0)
     max_tokens = _int_config("OPENAI_MAX_TOKENS", file_values, default=2048)
     keep_count = _int_config("AMADEUS_MEMORY_KEEP_COUNT", file_values, default=12)
-    session_key = _config_value("AMADEUS_SESSION_KEY", file_values) or "cli:default"
+    session_key = (
+        _config_value("AMADEUS_SESSION_KEY", file_values) or "user:1:session:1"
+    )
     long_term_memory_enabled = _bool_config(
         "AMADEUS_LONG_TERM_MEMORY_ENABLED", file_values
     )
@@ -288,6 +295,18 @@ def load_runtime_config(
     light_model = _config_value("OPENAI_LIGHT_MODEL", file_values)
     if long_term_memory_enabled and not embedding_model:
         raise ValueError("Missing Amadeus runtime config: OPENAI_EMBEDDING_MODEL")
+    parsed_session_key = parse_session_key(session_key)
+    if parsed_session_key is None:
+        raise ValueError(
+            "AMADEUS_SESSION_KEY must use canonical user/session shape: "
+            f"{session_key}"
+        )
+    session_user_id, session_id = parsed_session_key
+    if session_user_id != default_memory_user_id:
+        raise ValueError(
+            "AMADEUS_SESSION_KEY user_id must match AMADEUS_MEMORY_USER_ID: "
+            f"{session_key} vs {default_memory_user_id}"
+        )
     return RuntimeConfig(
         workspace_root=root,
         provider=LLMProviderConfig(
@@ -298,7 +317,7 @@ def load_runtime_config(
             max_tokens=max_tokens,
         ),
         postgres_dsn=str(values["AMADEUS_POSTGRES_DSN"]),
-        default_session_key=session_key,
+        default_session=SessionRef(session_user_id, session_id),
         memory_keep_count=keep_count,
         long_term_memory_enabled=long_term_memory_enabled,
         default_memory_user_id=default_memory_user_id,

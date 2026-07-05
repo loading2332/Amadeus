@@ -8,7 +8,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
 
-from amadeus.session.store import SessionStore, fetch_messages, search_messages
+from amadeus.session.store import (
+    SessionStoreProtocol,
+    fetch_messages,
+    search_messages,
+)
 from amadeus.tools.base import ToolResult
 
 ToolParameters = dict[str, Any]
@@ -159,7 +163,7 @@ def _scan_text_file(
 
 @dataclass
 class FetchMessagesTool:
-    store: SessionStore
+    store: SessionStoreProtocol
     name: str = "fetch_messages"
     description: str = (
         "Fetch persisted original session messages by ids, source_ref, or recall evidence. "
@@ -200,7 +204,7 @@ class FetchMessagesTool:
 
 @dataclass
 class SearchMessagesTool:
-    store: SessionStore
+    store: SessionStoreProtocol
     name: str = "search_messages"
     description: str = (
         "Search persisted session messages by substring and return candidate previews with source_ref. "

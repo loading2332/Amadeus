@@ -26,10 +26,38 @@ from amadeus.runtime.lifecycle import (
 )
 from amadeus.runtime.passive import PassiveRuntime
 from amadeus.runtime.step_phases import AfterStepFrame, BeforeStepFrame
-from amadeus.session.store import SessionManager
+from amadeus.session.identity import SessionRef
+from amadeus.session.store import InMemorySessionStore, SessionManager
 from amadeus.tools.base import ToolResult
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
+
+_SESSION_IDS = {
+    "chat": 1,
+    "lifecycle": 2,
+    "phase": 3,
+    "prompt-phase": 4,
+    "abort-before-turn": 5,
+    "abort-before-reasoning": 6,
+    "hint": 7,
+    "step-before": 8,
+    "step-after": 9,
+    "phase-atomic": 10,
+    "prompt-phase-atomic": 11,
+    "phase-reset": 12,
+    "prompt-phase-reset": 13,
+    "lifecycle-retry": 14,
+    "phase-retry": 15,
+    "lifecycle-after": 16,
+    "persist": 17,
+    "filter": 18,
+    "retry": 19,
+    "retry-all": 20,
+}
+
+
+def _session(label: str) -> SessionRef:
+    return SessionRef(user_id=1, session_id=_SESSION_IDS[label])
 
 
 class FakeCompletions:
@@ -204,7 +232,7 @@ def test_passive_runtime_persists_turn_and_emits_committed_event(tmp_path):
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     bus = EventBus()
     events = []
     bus.on(TurnCommitted, lambda event: events.append(event))
@@ -216,16 +244,44 @@ def test_passive_runtime_persists_turn_and_emits_committed_event(tmp_path):
     )
 
     result = asyncio.run(
-        runtime.run_turn(session_key="chat:1", user_message="hello")
+        runtime.run_turn(session=_session("chat"), user_message="hello")
     )
 
-    session = manager.get_or_create("chat:1")
+    session = manager.get_or_create(_session("chat"))
     assert [message["role"] for message in session.messages] == ["user", "assistant"]
-    assert result.user_message_id == "chat:1:0"
-    assert result.assistant_message_id == "chat:1:1"
+    assert result.user_message_id == "session:1:1:0"
+    assert result.assistant_message_id == "session:1:1:1"
     assert result.assistant_response == "assistant reply"
     assert len(events) == 1
     assert events[0].assistant_response == "assistant reply"
+
+
+def test_passive_runtime_accepts_structured_session_ref(tmp_path: Path) -> None:
+    client = FakeClient()
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=provider,
+        session_manager=manager,
+    )
+
+    result = asyncio.run(
+        runtime.run_turn(session=SessionRef(user_id=7, session_id=9), user_message="hello")
+    )
+
+    session = manager.get_or_create(SessionRef(user_id=7, session_id=9))
+    assert result.session == SessionRef(user_id=7, session_id=9)
+    assert result.session_key == "user:7:session:9"
+    assert result.user_message_id == "session:7:9:0"
+    assert result.assistant_message_id == "session:7:9:1"
+    assert [message["id"] for message in session.messages] == [
+        "session:7:9:0",
+        "session:7:9:1",
+    ]
 
 
 def test_passive_runtime_applies_before_turn_and_prompt_render_gates(tmp_path):
@@ -237,7 +293,7 @@ def test_passive_runtime_applies_before_turn_and_prompt_render_gates(tmp_path):
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     order: list[str] = []
 
@@ -254,7 +310,7 @@ def test_passive_runtime_applies_before_turn_and_prompt_render_gates(tmp_path):
     runtime.lifecycle.on_before_turn(before_turn)
     runtime.lifecycle.on_prompt_render(prompt_render)
 
-    asyncio.run(runtime.run_turn(session_key="lifecycle:1", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("lifecycle"), user_message="hello"))
 
     rendered_messages = client.completions.calls[0]["messages"]
     rendered_text = "\n".join(str(message["content"]) for message in rendered_messages)
@@ -271,11 +327,11 @@ def test_passive_runtime_phase_module_changes_provider_prompt(tmp_path) -> None:
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_before_turn_plugin_modules([_RuntimeMarkerModule()])
 
-    asyncio.run(runtime.run_turn(session_key="phase:1", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("phase"), user_message="hello"))
 
     rendered_text = "\n".join(
         str(message["content"])
@@ -294,11 +350,11 @@ def test_passive_runtime_prompt_render_module_changes_provider_prompt(
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_prompt_render_plugin_modules([_PromptMarkerModule()])
 
-    asyncio.run(runtime.run_turn(session_key="prompt-phase:1", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("prompt-phase"), user_message="hello"))
 
     rendered_text = "\n".join(
         str(message["content"])
@@ -309,7 +365,7 @@ def test_passive_runtime_prompt_render_module_changes_provider_prompt(
 
 def test_before_turn_abort_skips_provider_and_persists_control_reply(tmp_path) -> None:
     client = FakeClient()
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=LLMProvider(
@@ -321,13 +377,13 @@ def test_before_turn_abort_skips_provider_and_persists_control_reply(tmp_path) -
     runtime.set_before_turn_plugin_modules([_BeforeTurnAbortModule()])
 
     result = asyncio.run(
-        runtime.run_turn(session_key="abort:before-turn", user_message="hello")
+        runtime.run_turn(session=_session("abort-before-turn"), user_message="hello")
     )
 
     assert client.completions.calls == []
     assert result.assistant_response == "blocked at before_turn"
     assert result.context_retry["selected_plan"] == "before_turn_abort"
-    session = manager.get_or_create("abort:before-turn")
+    session = manager.get_or_create(_session("abort-before-turn"))
     assert [message["role"] for message in session.messages] == ["user", "assistant"]
 
 
@@ -341,12 +397,12 @@ def test_before_reasoning_abort_skips_provider_and_persists_control_reply(
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_before_reasoning_plugin_modules([_BeforeReasoningAbortModule()])
 
     result = asyncio.run(
-        runtime.run_turn(session_key="abort:before-reasoning", user_message="hello")
+        runtime.run_turn(session=_session("abort-before-reasoning"), user_message="hello")
     )
 
     assert client.completions.calls == []
@@ -362,12 +418,12 @@ def test_before_turn_and_reasoning_hints_reach_prompt(tmp_path: Path) -> None:
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_before_turn_plugin_modules([_LifecycleHintModule()])
     runtime.set_before_reasoning_plugin_modules([_ReasoningHintModule()])
 
-    asyncio.run(runtime.run_turn(session_key="hint:1", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("hint"), user_message="hello"))
 
     rendered_text = "\n".join(
         str(message["content"]) for message in client.completions.calls[0]["messages"]
@@ -409,14 +465,14 @@ def test_before_step_early_stop_skips_tool_batch(tmp_path: Path) -> None:
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         tool_registry=registry,
         tool_executor=ToolExecutor(registry=registry),
     )
     runtime.set_before_step_plugin_modules([_BeforeStepStopModule()])
 
     result = asyncio.run(
-        runtime.run_turn(session_key="step:before", user_message="use tool")
+        runtime.run_turn(session=_session("step-before"), user_message="use tool")
     )
 
     assert result.assistant_response == "before step stopped"
@@ -457,14 +513,14 @@ def test_after_step_early_stop_skips_followup_llm_round(tmp_path: Path) -> None:
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         tool_registry=registry,
         tool_executor=ToolExecutor(registry=registry),
     )
     runtime.set_after_step_plugin_modules([_AfterStepStopModule()])
 
     result = asyncio.run(
-        runtime.run_turn(session_key="step:after", user_message="use tool")
+        runtime.run_turn(session=_session("step-after"), user_message="use tool")
     )
 
     assert result.assistant_response == "after step stopped"
@@ -480,7 +536,7 @@ def test_failed_phase_rebuild_keeps_previous_runtime_phase(tmp_path) -> None:
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_before_turn_plugin_modules([_RuntimeMarkerModule()])
 
@@ -489,7 +545,7 @@ def test_failed_phase_rebuild_keeps_previous_runtime_phase(tmp_path) -> None:
             [_RuntimeMarkerModule(), _RuntimeMarkerModule()]
         )
 
-    asyncio.run(runtime.run_turn(session_key="phase:atomic", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("phase-atomic"), user_message="hello"))
     rendered_text = "\n".join(
         str(message["content"])
         for message in client.completions.calls[0]["messages"]
@@ -507,7 +563,7 @@ def test_failed_prompt_phase_rebuild_keeps_previous_runtime_phase(
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_prompt_render_plugin_modules([_PromptMarkerModule()])
 
@@ -516,7 +572,7 @@ def test_failed_prompt_phase_rebuild_keeps_previous_runtime_phase(
             [_PromptMarkerModule(), _PromptMarkerModule()]
         )
 
-    asyncio.run(runtime.run_turn(session_key="prompt-phase:atomic", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("prompt-phase-atomic"), user_message="hello"))
     rendered_text = "\n".join(
         str(message["content"])
         for message in client.completions.calls[0]["messages"]
@@ -532,12 +588,12 @@ def test_setting_empty_phase_snapshot_restores_builtin_runtime(tmp_path) -> None
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_before_turn_plugin_modules([_RuntimeMarkerModule()])
     runtime.set_before_turn_plugin_modules([])
 
-    asyncio.run(runtime.run_turn(session_key="phase:reset", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("phase-reset"), user_message="hello"))
 
     rendered_text = "\n".join(
         str(message["content"])
@@ -556,12 +612,12 @@ def test_setting_empty_prompt_phase_snapshot_restores_builtin_runtime(
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         ),
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_prompt_render_plugin_modules([_PromptMarkerModule()])
     runtime.set_prompt_render_plugin_modules([])
 
-    asyncio.run(runtime.run_turn(session_key="prompt-phase:reset", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("prompt-phase-reset"), user_message="hello"))
 
     rendered_text = "\n".join(
         str(message["content"])
@@ -579,7 +635,7 @@ def test_prompt_render_gate_receives_fresh_context_for_each_retry(tmp_path):
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     attempts: list[tuple[int, int]] = []
 
@@ -591,7 +647,7 @@ def test_prompt_render_gate_receives_fresh_context_for_each_retry(tmp_path):
 
     runtime.lifecycle.on_prompt_render(mark_attempt)
 
-    asyncio.run(runtime.run_turn(session_key="lifecycle:retry", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("lifecycle-retry"), user_message="hello"))
 
     assert [attempt_index for attempt_index, _ in attempts] == [0, 1]
     assert attempts[0][1] != attempts[1][1]
@@ -614,11 +670,11 @@ def test_prompt_render_phase_module_receives_fresh_context_for_each_retry(
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
-        session_manager=SessionManager(tmp_path),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
     )
     runtime.set_prompt_render_plugin_modules([_PromptMarkerModule()])
 
-    asyncio.run(runtime.run_turn(session_key="phase:retry", user_message="hello"))
+    asyncio.run(runtime.run_turn(session=_session("phase-retry"), user_message="hello"))
 
     first_text = str(client.completions.calls[0]["messages"])
     second_text = str(client.completions.calls[1]["messages"])
@@ -634,7 +690,7 @@ def test_after_turn_tap_observes_persisted_turn_and_isolates_failures(tmp_path, 
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     bus = EventBus()
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
@@ -660,7 +716,7 @@ def test_after_turn_tap_observes_persisted_turn_and_isolates_failures(tmp_path, 
     runtime.lifecycle.on_after_turn(observe)
 
     result = asyncio.run(
-        runtime.run_turn(session_key="lifecycle:after", user_message="hello")
+        runtime.run_turn(session=_session("lifecycle-after"), user_message="hello")
     )
 
     assert result.assistant_response == "assistant reply"
@@ -674,7 +730,7 @@ def test_passive_runtime_strips_stage_directions_before_persisting(tmp_path):
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     bus = EventBus()
     events = []
     bus.on(TurnCommitted, lambda event: events.append(event))
@@ -686,10 +742,10 @@ def test_passive_runtime_strips_stage_directions_before_persisting(tmp_path):
     )
 
     result = asyncio.run(
-        runtime.run_turn(session_key="chat:1", user_message="你真厉害。")
+        runtime.run_turn(session=_session("chat"), user_message="你真厉害。")
     )
 
-    session = manager.get_or_create("chat:1")
+    session = manager.get_or_create(_session("chat"))
     assert result.assistant_response == "什么啊……谢了。"
     assert session.messages[-1]["content"] == "什么啊……谢了。"
     assert events[0].assistant_response == "什么啊……谢了。"
@@ -736,7 +792,7 @@ def test_passive_runtime_executes_single_tool_call_before_persisting_final_reply
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
     registry.register(EchoTool())
     runtime = PassiveRuntime(
@@ -748,10 +804,10 @@ def test_passive_runtime_executes_single_tool_call_before_persisting_final_reply
     )
 
     result = asyncio.run(
-        runtime.run_turn(session_key="chat:1", user_message="please use a tool")
+        runtime.run_turn(session=_session("chat"), user_message="please use a tool")
     )
 
-    session = manager.get_or_create("chat:1")
+    session = manager.get_or_create(_session("chat"))
     assert result.assistant_response == "assistant after tool"
     assert [message["role"] for message in session.messages] == ["user", "assistant"]
     assert len(client.completions.calls) == 2
@@ -833,7 +889,7 @@ def test_passive_runtime_continues_when_followup_response_requests_another_tool(
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
     registry.register(EchoTool())
     runtime = PassiveRuntime(
@@ -845,7 +901,7 @@ def test_passive_runtime_continues_when_followup_response_requests_another_tool(
     )
 
     result = asyncio.run(
-        runtime.run_turn(session_key="chat:1", user_message="use tools twice")
+        runtime.run_turn(session=_session("chat"), user_message="use tools twice")
     )
 
     assert result.assistant_response == "final answer"
@@ -898,7 +954,7 @@ def test_passive_runtime_returns_progress_summary_when_tool_loop_hits_iteration_
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
     registry.register(EchoTool())
     runtime = PassiveRuntime(
@@ -911,14 +967,14 @@ def test_passive_runtime_returns_progress_summary_when_tool_loop_hits_iteration_
     )
 
     result = asyncio.run(
-        runtime.run_turn(session_key="chat:1", user_message="use too many tools")
+        runtime.run_turn(session=_session("chat"), user_message="use too many tools")
     )
 
     assert len(client.completions.calls) == 1
     assert "工具执行已经达到本轮上限" in result.assistant_response
     assert "echo_tool" in result.assistant_response
     assert "first" in result.assistant_response
-    assert manager.get_or_create("chat:1").messages[-1]["content"] == result.assistant_response
+    assert manager.get_or_create(_session("chat")).messages[-1]["content"] == result.assistant_response
     # tool_chain has the calls up to the limit
     assert len(result.tool_chain) == 1
     assert result.tool_chain[0]["calls"][0]["name"] == "echo_tool"
@@ -946,7 +1002,7 @@ def test_tool_chain_is_persisted_in_assistant_message_extra(tmp_path):
         ),
     ]
     provider = LLMProvider(LLMProviderConfig(api_key="secret", model="fake-model"), client=client)
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
     registry.register(EchoTool())
     runtime = PassiveRuntime(
@@ -954,11 +1010,11 @@ def test_tool_chain_is_persisted_in_assistant_message_extra(tmp_path):
         tool_registry=registry, tool_executor=ToolExecutor(registry=registry),
     )
     result = asyncio.run(
-        runtime.run_turn(session_key="persist:1", user_message="use tool")
+        runtime.run_turn(session=_session("persist"), user_message="use tool")
     )
 
     # 从 session 中重新读取 assistant message，验证 tool_chain 已持久化
-    session = manager.get_or_create("persist:1")
+    session = manager.get_or_create(_session("persist"))
     assistant_msg = session.messages[-1]
     assert assistant_msg["role"] == "assistant"
     assert assistant_msg["content"] == result.assistant_response
@@ -968,7 +1024,7 @@ def test_tool_chain_is_persisted_in_assistant_message_extra(tmp_path):
 
     # 验证从数据库重新加载后 tool_chain 仍然存在
     manager._cache.clear()
-    reloaded_session = manager.get_or_create("persist:1")
+    reloaded_session = manager.get_or_create(_session("persist"))
     reloaded_msg = reloaded_session.messages[-1]
     assert "tool_chain" in reloaded_msg
     assert reloaded_msg["tool_chain"][0]["calls"][0]["name"] == "echo_tool"
@@ -995,7 +1051,7 @@ def test_tool_messages_are_not_in_session_history(tmp_path):
         ),
     ]
     provider = LLMProvider(LLMProviderConfig(api_key="secret", model="fake-model"), client=client)
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
     registry.register(EchoTool())
     runtime = PassiveRuntime(
@@ -1003,10 +1059,10 @@ def test_tool_messages_are_not_in_session_history(tmp_path):
         tool_registry=registry, tool_executor=ToolExecutor(registry=registry),
     )
     result = asyncio.run(
-        runtime.run_turn(session_key="filter:1", user_message="use tool")
+        runtime.run_turn(session=_session("filter"), user_message="use tool")
     )
 
-    session = manager.get_or_create("filter:1")
+    session = manager.get_or_create(_session("filter"))
     # session.messages 应只有 user + assistant，没有 tool 中间消息
     assert [m["role"] for m in session.messages] == ["user", "assistant"]
     assert len(session.messages) == 2
@@ -1025,7 +1081,7 @@ def test_passive_runtime_retries_with_next_context_trim_attempt(tmp_path):
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
@@ -1034,7 +1090,7 @@ def test_passive_runtime_retries_with_next_context_trim_attempt(tmp_path):
 
     result = asyncio.run(
         runtime.run_turn(
-            session_key="retry:1",
+            session=_session("retry"),
             user_message="hello",
             runtime_metadata={"trace": "large runtime metadata"},
         )
@@ -1060,7 +1116,7 @@ def test_passive_runtime_persists_fallback_when_all_context_trim_attempts_fail(t
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
     )
-    manager = SessionManager(tmp_path)
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
@@ -1068,12 +1124,13 @@ def test_passive_runtime_persists_fallback_when_all_context_trim_attempts_fail(t
     )
 
     result = asyncio.run(
-        runtime.run_turn(session_key="retry:all", user_message="too much context")
+        runtime.run_turn(session=_session("retry-all"), user_message="too much context")
     )
 
     assert "上下文过长" in result.assistant_response
     assert len(client.completions.calls) == len(result.context_retry["attempts"])
     assert result.context_retry["selected_plan"] is None
-    session = manager.get_or_create("retry:all")
+    session = manager.get_or_create(_session("retry-all"))
     assert [message["role"] for message in session.messages] == ["user", "assistant"]
     assert session.messages[-1]["content"] == result.assistant_response
+

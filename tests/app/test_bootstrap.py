@@ -20,6 +20,7 @@ from amadeus.plugin import Plugin, plugin_registry
 from amadeus.plugin.types import PluginLoadReport
 from amadeus.provider import ChatCompletionsClient, ChatNamespace
 from amadeus.runtime.lifecycle import BeforeTurnContext
+from amadeus.session.identity import SessionRef
 from amadeus.tools.forget_memory import ForgetMemoryTool
 from amadeus.tools.memorize import MemorizeTool
 from amadeus.tools.recall_memory import RecallMemoryTool
@@ -32,6 +33,10 @@ EMBEDDING_DIM = 1024
 
 def _embedding(values: list[float]) -> list[float]:
     return [float(v) for v in values] + [0.0] * (EMBEDDING_DIM - len(values))
+
+
+def _session(session_id: int = 1, *, user_id: int = 1) -> SessionRef:
+    return SessionRef(user_id=user_id, session_id=session_id)
 
 
 class FakeCompletions:
@@ -129,7 +134,8 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
                 "OPENAI_API_KEY=file-key",
                 "OPENAI_MODEL=file-model",
                 "OPENAI_MAX_TOKENS=333",
-                "AMADEUS_SESSION_KEY=chat:file",
+                "AMADEUS_SESSION_KEY=user:7:session:9",
+                "AMADEUS_MEMORY_USER_ID=7",
                 "AMADEUS_MEMORY_KEEP_COUNT=8",
             ]
         ),
@@ -145,7 +151,8 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
     assert config.provider.model == "env-model"
     assert config.provider.max_tokens == 333
     assert config.postgres_dsn == "postgresql://amadeus:amadeus@localhost:5432/amadeus"
-    assert config.default_session_key == "chat:file"
+    assert config.default_session == SessionRef(7, 9)
+    assert config.default_session_key == "user:7:session:9"
     assert config.memory_keep_count == 8
 
 
@@ -196,6 +203,43 @@ def test_load_runtime_config_requires_postgres_dsn(tmp_path, monkeypatch):
         load_runtime_config(env_path=env_path, workspace_root=tmp_path)
 
 
+def test_load_runtime_config_requires_canonical_session_key(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://llm.example.test/v1",
+                "OPENAI_API_KEY=secret",
+                "OPENAI_MODEL=fake-model",
+                "AMADEUS_SESSION_KEY=chat:file",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="canonical user/session shape"):
+        load_runtime_config(env_path=env_path, workspace_root=tmp_path)
+
+
+def test_load_runtime_config_requires_session_user_to_match_memory_user(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://llm.example.test/v1",
+                "OPENAI_API_KEY=secret",
+                "OPENAI_MODEL=fake-model",
+                "AMADEUS_SESSION_KEY=user:7:session:9",
+                "AMADEUS_MEMORY_USER_ID=1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must match AMADEUS_MEMORY_USER_ID"):
+        load_runtime_config(env_path=env_path, workspace_root=tmp_path)
+
+
 def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
     clean_postgres().close()
     env_path = tmp_path / ".env"
@@ -220,16 +264,22 @@ def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
     async def scenario():
         await app.start()
         try:
-            return await app.runtime.run_turn(session_key="chat:1", user_message="hello")
+            return await app.runtime.run_turn(
+                session=app.config.default_session,
+                user_message="hello",
+            )
         finally:
             await app.aclose()
 
     result = asyncio.run(scenario())
 
-    session = app.session_manager.get_or_create("chat:1")
+    session = app.session_manager.get_or_create(app.config.default_session)
     recent = app.memory.store.read_recent_context()
     assert result.assistant_response == "assistant reply"
-    assert [message["id"] for message in session.messages] == ["chat:1:0", "chat:1:1"]
+    assert [message["id"] for message in session.messages] == [
+        "session:1:1:0",
+        "session:1:1:1",
+    ]
     assert "## Recent Turns" in recent
     assert "[user] hello" in recent
     assert "[a-preview] assistant reply" in recent
@@ -283,12 +333,13 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
             self.provider = provider
             self.model = model
 
-        async def extract(self, *, session_key: str, messages: list[dict[str, Any]]):
+        async def extract(self, *, session: SessionRef, messages: list[dict[str, Any]]):
+            assert session == _session()
             return [
                 {
                     "summary": "用户明确要求长期记住：默认用中文",
                     "memory_type": "preference",
-                    "source_ref": '["chat:1:0"]#h:extract',
+                    "source_ref": '["session:1:1:0"]#h:extract',
                 }
             ]
 
@@ -309,7 +360,7 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
 
     async def scenario():
         result = await app.runtime.run_turn(
-            session_key="chat:1",
+            session=app.config.default_session,
             user_message="以后默认中文回复",
         )
         assert app.runtime.memory_engine is not None
@@ -408,7 +459,8 @@ def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatc
             self.provider = provider
             self.model = model
 
-        async def extract(self, *, session_key: str, messages: list[dict[str, Any]]):
+        async def extract(self, *, session: SessionRef, messages: list[dict[str, Any]]):
+            assert session == _session()
             return []
 
     monkeypatch.setattr(
@@ -433,24 +485,24 @@ def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatc
             remembered = await MemorizeTool(memory_engine=engine).execute(
                 summary="用户长期偏好中文输出",
                 memory_type="preference",
-                source_ref='["chat:1:0"]#h:pref',
+                source_ref='["session:1:1:0"]#h:pref',
             )
             replacement = await engine.memorizer.replace(
                 target_id=remembered.output["memory_id"],
                 request=MemoryWriteRequest(
                     summary="用户长期偏好英文输出",
                     memory_type="preference",
-                    source_ref='["chat:1:1"]#h:new',
+                    source_ref='["session:1:1:1"]#h:new',
                 ),
             )
             restored = UndoMemoryBySourceTool(memory_engine=engine).execute(
-                source_ref='["chat:1:1"]#h:new'
+                source_ref='["session:1:1:1"]#h:new'
             )
             recalled = await RecallMemoryTool(memory_engine=engine).execute(
                 query="中文输出"
             )
             turn = await app.runtime.run_turn(
-                session_key="chat:1",
+                session=app.config.default_session,
                 user_message="继续这个任务",
             )
             forgotten = ForgetMemoryTool(memory_engine=engine).execute(
@@ -519,7 +571,7 @@ def test_memory_engine_protocol_exposes_task1_plan_methods():
     )
     assert list(inspect.signature(MemoryEngine.run_post_response).parameters) == [
         "self",
-        "session_key",
+        "session",
         "messages",
         "explicit_memory_ids",
     ]
@@ -569,7 +621,7 @@ def test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close(tmp_path):
             ]
 
             result = await app.runtime.run_turn(
-                session_key="plugin:e2e",
+                session=_session(21),
                 user_message="hello",
             )
             assert len(client.completions.calls) == 1
@@ -600,7 +652,7 @@ def test_user_plugin_changes_real_turn_prompt_and_is_unbound_on_close(tmp_path):
         assert app.plugin_manager.loaded_names == []
         after_close = await app.runtime.lifecycle.before_turn(
             BeforeTurnContext(
-                session_key="plugin:after-close",
+                session=_session(22),
                 user_message="hello again",
                 history=[],
                 retrieved_memory=None,
@@ -735,7 +787,7 @@ def test_phase_rebuild_failure_rolls_back_runtime_and_plugin_lifecycle(tmp_path)
         assert manager.terminate_calls == 1
 
         result = await app.runtime.run_turn(
-            session_key="phase:rollback",
+            session=_session(31),
             user_message="still available",
         )
         assert result.assistant_response == "assistant reply"
@@ -768,7 +820,7 @@ def test_prompt_phase_rebuild_failure_rolls_back_runtime_and_plugin_lifecycle(tm
         assert manager.terminate_calls == 1
 
         result = await app.runtime.run_turn(
-            session_key="prompt-phase:rollback",
+            session=_session(32),
             user_message="still available",
         )
         assert result.assistant_response == "assistant reply"
@@ -806,7 +858,7 @@ def test_lifecycle_phase_rebuild_failure_rolls_back_runtime_and_plugin_lifecycle
         assert manager.terminate_calls == 1
 
         result = await app.runtime.run_turn(
-            session_key="after-reasoning-phase:rollback",
+            session=_session(33),
             user_message="still available",
         )
         assert result.assistant_response == "assistant reply"
@@ -923,7 +975,7 @@ class BlockingPlugin(Plugin):
         assert record.import_path not in sys.modules
         after_close = await app.event_bus.emit(
             BeforeTurnContext(
-                session_key="plugin:after-cancelled-close",
+                session=_session(23),
                 user_message="hello",
                 history=[],
                 retrieved_memory=None,

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from typing import Any
 
 from psycopg.types.json import Jsonb
 
 from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
+from amadeus.session.identity import (
+    build_message_id,
+    build_session_key,
+    require_session_key,
+)
 from amadeus.session.store import Session, _now_iso
-
-_SESSION_KEY_RE = re.compile(r"^user:(?P<user_id>\d+):session:(?P<session_id>\d+)$")
 
 
 class PostgresSessionStore:
@@ -90,9 +92,7 @@ class PostgresSessionStore:
         return [_session_row(row) for row in rows]
 
     def get_session_meta(self, key: str) -> dict[str, Any] | None:
-        user_id, session_id = self._session_identity(key)
-        if session_id is None:
-            return None
+        user_id, session_id = require_session_key(key)
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -107,62 +107,50 @@ class PostgresSessionStore:
                 row = cursor.fetchone()
         if row is None:
             return None
-        meta = _session_meta_from_row(row)
-        legacy_key = meta["metadata"].get("legacy_session_key")
-        if isinstance(legacy_key, str) and legacy_key:
-            meta["key"] = legacy_key
-        return meta
+        return _session_meta_from_row(row)
 
     def upsert_session(self, session: Session) -> None:
-        user_id, session_id = self._session_identity(session.key)
+        user_id, session_id = require_session_key(session.key)
         self.ensure_user(user_id)
         metadata = dict(session.metadata)
-        if _parse_session_key(session.key) is None:
-            metadata["legacy_session_key"] = session.key
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
-                if session_id is None:
-                    cursor.execute(
-                        """
-                        INSERT INTO conversation_sessions (
-                            user_id, title, metadata, last_consolidated, updated_at
-                        )
-                        VALUES (%s, %s, %s, %s, now())
-                        RETURNING id
-                        """,
-                        (
-                            user_id,
-                            metadata.get("title"),
-                            Jsonb(metadata),
-                            int(session.last_consolidated),
-                        ),
+                cursor.execute(
+                    """
+                    INSERT INTO conversation_sessions (
+                        id, user_id, title, metadata, last_consolidated, updated_at
                     )
-                    row = cursor.fetchone()
-                    session_id = int(row["id"])
-                else:
-                    cursor.execute(
-                        """
-                        INSERT INTO conversation_sessions (
-                            id, user_id, title, metadata, last_consolidated, updated_at
-                        )
-                        VALUES (%s, %s, %s, %s, %s, now())
-                        ON CONFLICT (id) DO UPDATE SET
-                            metadata = excluded.metadata,
-                            last_consolidated = excluded.last_consolidated,
-                            updated_at = now()
-                        """,
-                        (
-                            session_id,
-                            user_id,
-                            metadata.get("title"),
-                            Jsonb(metadata),
-                            int(session.last_consolidated),
+                    VALUES (%s, %s, %s, %s, %s, now())
+                    ON CONFLICT (id) DO UPDATE SET
+                        metadata = excluded.metadata,
+                        last_consolidated = excluded.last_consolidated,
+                        updated_at = now()
+                    """,
+                    (
+                        session_id,
+                        user_id,
+                        metadata.get("title"),
+                        Jsonb(metadata),
+                        int(session.last_consolidated),
+                    ),
+                )
+                cursor.execute(
+                    """
+                    SELECT setval(
+                        pg_get_serial_sequence('conversation_sessions', 'id'),
+                        GREATEST(
+                            (SELECT COALESCE(MAX(id), 1) FROM conversation_sessions),
+                            %s
                         ),
+                        true
                     )
+                    """,
+                    (session_id,),
+                )
             conn.commit()
 
     def next_seq(self, session_key: str) -> int:
-        user_id, session_id = self._require_session_identity(session_key)
+        user_id, session_id = require_session_key(session_key)
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -186,12 +174,9 @@ class PostgresSessionStore:
         seq: int,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        user_id, session_id = self._require_session_identity(session_key)
-        if _parse_session_key(session_key) is None:
-            message_id = f"{session_key}:{int(seq)}"
-        else:
-            message_id = f"session:{user_id}:{session_id}:{int(seq)}"
-        payload = {"session_key": session_key, **(extra or {})}
+        user_id, session_id = require_session_key(session_key)
+        message_id = build_message_id(user_id, session_id, seq)
+        payload = dict(extra or {})
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -236,7 +221,7 @@ class PostgresSessionStore:
         }
 
     def fetch_session_messages(self, session_key: str) -> list[dict[str, Any]]:
-        user_id, session_id = self._require_session_identity(session_key)
+        user_id, session_id = require_session_key(session_key)
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -252,10 +237,10 @@ class PostgresSessionStore:
         return [_message_row(row) for row in rows]
 
     def list_messages(self, *, user_id: int, session_id: int) -> list[dict[str, Any]]:
-        return self.fetch_session_messages(_session_key(user_id, session_id))
+        return self.fetch_session_messages(build_session_key(user_id, session_id))
 
     def update_last_consolidated(self, session_key: str, value: int) -> None:
-        user_id, session_id = self._require_session_identity(session_key)
+        user_id, session_id = require_session_key(session_key)
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -332,7 +317,7 @@ class PostgresSessionStore:
         clauses = ["content ILIKE %s"]
         params: list[Any] = [f"%{query}%"]
         if session_key:
-            user_id, session_id = self._require_session_identity(session_key)
+            user_id, session_id = require_session_key(session_key)
             clauses.extend(["user_id = %s", "session_id = %s"])
             params.extend([user_id, session_id])
         if role:
@@ -359,59 +344,12 @@ class PostgresSessionStore:
                 rows = cursor.fetchall()
         return [_message_row(row) for row in rows], int(total_row["count"] or 0)
 
-    def _session_identity(self, key: str) -> tuple[int, int | None]:
-        parsed = _parse_session_key(key)
-        if parsed is not None:
-            return parsed
-        with self.db.connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT id
-                    FROM conversation_sessions
-                    WHERE user_id = %s AND metadata->>'legacy_session_key' = %s
-                    ORDER BY id ASC
-                    LIMIT 1
-                    """,
-                    (1, key),
-                )
-                row = cursor.fetchone()
-        return 1, int(row["id"]) if row is not None else None
-
-    def _require_session_identity(self, key: str) -> tuple[int, int]:
-        user_id, session_id = self._session_identity(key)
-        if session_id is None:
-            session = Session(key=key)
-            self.upsert_session(session)
-            user_id, session_id = self._session_identity(key)
-        if session_id is None:  # pragma: no cover - defensive invariant
-            raise RuntimeError(f"PostgreSQL session was not created for key: {key}")
-        return user_id, session_id
-
-
-def _parse_session_key(key: str) -> tuple[int, int] | None:
-    match = _SESSION_KEY_RE.match(key)
-    if match is None:
-        return None
-    return int(match.group("user_id")), int(match.group("session_id"))
-
-
-def _require_session_key(key: str) -> tuple[int, int]:
-    parsed = _parse_session_key(key)
-    if parsed is None:
-        raise ValueError(f"PostgreSQL session key must use user/session shape: {key}")
-    return parsed
-
-
-def _session_key(user_id: int, session_id: int) -> str:
-    return f"user:{int(user_id)}:session:{int(session_id)}"
-
 
 def _session_meta_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
     user_id = int(row["user_id"])
     session_id = int(row["id"])
     return {
-        "key": _session_key(user_id, session_id),
+        "key": build_session_key(user_id, session_id),
         "created_at": _ts(row["created_at"]) or _now_iso(),
         "updated_at": _ts(row["updated_at"]) or _now_iso(),
         "last_consolidated": int(row["last_consolidated"] or 0),
@@ -428,7 +366,7 @@ def _session_row(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "session_id": session_id,
         "user_id": user_id,
-        "session_key": _session_key(user_id, session_id),
+        "session_key": build_session_key(user_id, session_id),
         "title": row["title"],
         "metadata": dict(row["metadata"] or {}),
         "last_consolidated": int(row["last_consolidated"] or 0),
@@ -441,12 +379,11 @@ def _message_row(row: Mapping[str, Any]) -> dict[str, Any]:
     user_id = int(row["user_id"])
     session_id = int(row["session_id"])
     extra = dict(row["extra_json"] or {})
-    session_key = str(extra.pop("session_key", "") or _session_key(user_id, session_id))
     return {
         "id": str(row["id"]),
         "user_id": user_id,
         "session_id": session_id,
-        "session_key": session_key,
+        "session_key": build_session_key(user_id, session_id),
         "seq": int(row["seq"]),
         "role": str(row["role"]),
         "content": str(row["content"]),

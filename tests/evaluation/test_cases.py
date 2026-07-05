@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from amadeus.evaluation.cases import (
     load_memory_quality_cases,
     load_memory_recall_cases,

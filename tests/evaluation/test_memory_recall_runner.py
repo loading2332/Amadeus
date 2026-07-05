@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from amadeus.app.bootstrap import build_passive_app
 from amadeus.evaluation.cases import (
     MemoryRecallCase,
@@ -17,18 +16,19 @@ from amadeus.evaluation.memory_recall_runner import (
     run_memory_recall_case,
     run_memory_recall_evaluation,
 )
+from tests.db.pgvector_helpers import pad_embedding
 
 
 class StableEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
         lowered = text.lower()
         if "中文" in text:
-            return [1.0, 0.0, 0.0]
+            return pad_embedding([1.0, 0.0, 0.0])
         if "面试项目" in text or "interview" in lowered:
-            return [0.0, 1.0, 0.0]
+            return pad_embedding([0.0, 1.0, 0.0])
         if "evaluation" in lowered:
-            return [0.0, 0.0, 1.0]
-        return [0.5, 0.5, 0.5]
+            return pad_embedding([0.0, 0.0, 1.0])
+        return pad_embedding([0.5, 0.5, 0.5])
 
 
 class FakeCompletions:

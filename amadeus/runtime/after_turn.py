@@ -62,11 +62,10 @@ class _RunPostResponseMemoryModule:
     async def run(self, frame: AfterTurnFrame) -> AfterTurnFrame:
         if self._memory_engine is None:
             return frame
-        session_key = frame.input.context.session_key
-        session = self._session_manager.get_or_create(session_key)
+        session = self._session_manager.get_or_create(frame.input.context.session)
         try:
             trace = await self._memory_engine.run_post_response(
-                session_key=session_key,
+                session=frame.input.context.session,
                 messages=list(session.messages),
                 explicit_memory_ids=list(
                     frame.input.context.memory_trace.get("explicit_memory_ids", [])

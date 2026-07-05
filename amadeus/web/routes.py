@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from amadeus.session import PostgresSessionStore
+from amadeus.turns import PostgresTurnStore
 from amadeus.web.dependencies import get_session_store, get_turn_store
 from amadeus.web.schemas import (
     HealthResponse,
@@ -28,7 +30,7 @@ async def health() -> HealthResponse:
 @api_router.post("/sessions", response_model=SessionResponse)
 async def create_session(
     payload: SessionCreateRequest,
-    session_store: Annotated[Any, Depends(get_session_store)],
+    session_store: Annotated[PostgresSessionStore, Depends(get_session_store)],
 ) -> SessionResponse:
     row = session_store.create_session(
         user_id=payload.user_id,
@@ -41,7 +43,7 @@ async def create_session(
 @api_router.get("/sessions", response_model=list[SessionResponse])
 async def list_sessions(
     user_id: int,
-    session_store: Annotated[Any, Depends(get_session_store)],
+    session_store: Annotated[PostgresSessionStore, Depends(get_session_store)],
 ) -> list[SessionResponse]:
     return [SessionResponse(**row) for row in session_store.list_sessions(user_id=user_id)]
 
@@ -53,7 +55,7 @@ async def list_sessions(
 async def list_messages(
     session_id: int,
     user_id: int,
-    session_store: Annotated[Any, Depends(get_session_store)],
+    session_store: Annotated[PostgresSessionStore, Depends(get_session_store)],
 ) -> list[MessageResponse]:
     return [
         MessageResponse(**row)
@@ -64,29 +66,21 @@ async def list_messages(
 @api_router.post("/messages", response_model=TurnResponse)
 async def create_message(
     payload: MessageRequest,
-    store: Annotated[Any, Depends(get_turn_store)],
+    store: Annotated[PostgresTurnStore, Depends(get_turn_store)],
 ) -> TurnResponse:
-    if payload.user_id is not None and payload.session_id is not None:
-        turn = store.create_turn(
-            user_id=payload.user_id,
-            session_id=payload.session_id,
-            content=payload.message,
-            metadata={"channel": "web", **payload.metadata},
-        )
-    else:
-        session_key = (payload.session_key or "web:default").strip() or "web:default"
-        turn = store.create_turn(
-            session_key=session_key,
-            content=payload.message,
-            metadata={"channel": "web", **payload.metadata},
-        )
+    turn = store.create_turn(
+        user_id=payload.user_id,
+        session_id=payload.session_id,
+        content=payload.message,
+        metadata={"channel": "web", **payload.metadata},
+    )
     return turn_response(turn)
 
 
 @api_router.get("/turns/{turn_id}", response_model=TurnResponse)
 async def get_turn(
     turn_id: str,
-    store: Annotated[Any, Depends(get_turn_store)],
+    store: Annotated[PostgresTurnStore, Depends(get_turn_store)],
 ) -> TurnResponse:
     turn = store.get_turn(turn_id)
     if turn is None:
@@ -97,7 +91,7 @@ async def get_turn(
 @api_router.get("/turns/{turn_id}/events")
 async def turn_events(
     turn_id: str,
-    store: Annotated[Any, Depends(get_turn_store)],
+    store: Annotated[PostgresTurnStore, Depends(get_turn_store)],
 ) -> StreamingResponse:
     if store.get_turn(turn_id) is None:
         raise HTTPException(status_code=404, detail="Turn not found")

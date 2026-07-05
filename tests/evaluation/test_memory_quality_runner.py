@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from amadeus.app.bootstrap import build_passive_app
 from amadeus.evaluation.cases import (
     MemoryQualityCase,
@@ -17,16 +16,18 @@ from amadeus.evaluation.memory_quality_runner import (
     run_memory_quality_case,
     run_memory_quality_evaluation,
 )
+from amadeus.session.identity import SessionRef
+from tests.db.pgvector_helpers import pad_embedding
 
 
 class StableEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
         lowered = text.lower()
         if "中文" in text:
-            return [1.0, 0.0, 0.0]
+            return pad_embedding([1.0, 0.0, 0.0])
         if "英文" in text or "english" in lowered:
-            return [0.0, 1.0, 0.0]
-        return [0.5, 0.5, 0.5]
+            return pad_embedding([0.0, 1.0, 0.0])
+        return pad_embedding([0.5, 0.5, 0.5])
 
 
 class FakeCompletions:
@@ -53,15 +54,15 @@ class RuleBasedExtractor:
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        del session_key
+        del session
         transcript = "\n".join(str(message.get("content") or "") for message in messages)
         if "短期在线" in transcript:
             return []
         if "中文" in transcript:
-            source_message_id = str(messages[0].get("id") or "eval-turn:0")
+            source_message_id = str(messages[0].get("id") or "session:1:1:0")
             return [
                 {
                     "summary": "用户默认偏好中文回复。",

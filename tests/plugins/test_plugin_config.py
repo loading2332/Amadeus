@@ -10,7 +10,7 @@ from amadeus.events import EventBus
 from amadeus.memory.engine import MemoryEngine
 from amadeus.plugin.config import PluginConfig
 from amadeus.plugin.context import PluginContext, PluginKVStore
-from amadeus.session.store import SessionManager
+from amadeus.session.store import InMemorySessionStore, SessionManager
 from amadeus.tools.registry import ToolRegistry
 
 
@@ -76,17 +76,18 @@ def test_plugin_config_missing_attribute_raises_attribute_error() -> None:
 def test_plugin_kv_store_persists_mutations_across_instances(tmp_path: Path) -> None:
     path = tmp_path / ".kv.json"
     first = PluginKVStore(path)
+    session_key = "user:1:session:1"
 
     assert first.get("turn_count", 0) == 0
     assert first.increment("turn_count") == 1
-    first.set("last_session", "cli:default")
+    first.set("last_session", session_key)
 
     second = PluginKVStore(path)
     assert second.get("turn_count") == 1
-    assert second.get("last_session") == "cli:default"
+    assert second.get("last_session") == session_key
 
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved == {"turn_count": 1, "last_session": "cli:default"}
+    assert saved == {"turn_count": 1, "last_session": session_key}
 
 
 def test_plugin_kv_store_rejects_non_object_json(tmp_path: Path) -> None:
@@ -115,7 +116,7 @@ def test_plugin_context_carries_approved_dependencies(tmp_path: Path) -> None:
     kv_store = PluginKVStore(plugin_dir / ".kv.json")
     config = PluginConfig({"greeting": "hello"})
     workspace = tmp_path / "workspace"
-    session_manager = SessionManager(workspace)
+    session_manager = SessionManager(workspace, store=InMemorySessionStore())
     memory_engine = cast(MemoryEngine, object())
 
     context = PluginContext(
@@ -164,3 +165,4 @@ def test_plugin_context_preserves_absent_config(tmp_path: Path) -> None:
 
     assert absent.config is None
     assert isinstance(empty.config, PluginConfig)
+

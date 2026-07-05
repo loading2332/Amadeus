@@ -13,9 +13,8 @@ class HealthResponse(BaseModel):
 
 class MessageRequest(BaseModel):
     message: str = Field(min_length=1)
-    session_key: str | None = None
-    user_id: int | None = None
-    session_id: int | None = None
+    user_id: int
+    session_id: int
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

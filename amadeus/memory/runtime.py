@@ -15,6 +15,7 @@ from amadeus.memory.engine import (
 from amadeus.memory.memorizer import MemoryMemorizer
 from amadeus.memory.post_response_worker import PostResponseMemoryWorker
 from amadeus.memory.retriever import MemoryRetriever
+from amadeus.session.identity import SessionRef
 
 
 @dataclass
@@ -42,12 +43,12 @@ class LongTermMemoryEngine:
     async def run_post_response(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, Any]],
         explicit_memory_ids: list[str],
     ) -> dict[str, Any]:
         return await self.worker.run(
-            session_key=session_key,
+            session=session,
             messages=messages,
             explicit_memory_ids=explicit_memory_ids,
         )

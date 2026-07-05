@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from amadeus.memory.engine import MemoryWriteRequest
 from amadeus.memory.memorizer import MemoryMemorizer
 from amadeus.memory.post_response_worker import (
@@ -9,23 +10,28 @@ from amadeus.memory.post_response_worker import (
     MemoryDecision,
     PostResponseMemoryWorker,
 )
-from amadeus.memory.store import MemoryStore
+from amadeus.memory.postgres import PostgresMemoryStore
+from amadeus.session.identity import SessionRef
+
+from tests.db.pgvector_helpers import pad_embedding
+from tests.db.postgres_helpers import clean_postgres
 
 
 class StableEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
         if "中文" in text:
-            return [1.0, 0.0, 0.0]
-        return [0.8, 0.2, 0.0]
+            return pad_embedding([1.0, 0.0, 0.0])
+        return pad_embedding([0.8, 0.2, 0.0])
 
 
 class FakeExtractor:
-    async def extract(self, *, session_key: str, messages: list[dict[str, str]]):
+    async def extract(self, *, session: SessionRef, messages: list[dict[str, str]]):
+        del session, messages
         return [
             {
                 "summary": "用户明确要求长期记住：默认用中文",
                 "memory_type": "preference",
-                "source_ref": '["chat:1:0"]#h:extract',
+                "source_ref": '["session:1:1:0"]#h:extract',
             }
         ]
 
@@ -34,7 +40,8 @@ class CandidateExtractor:
     def __init__(self, candidates):
         self.candidates = candidates
 
-    async def extract(self, *, session_key: str, messages: list[dict[str, str]]):
+    async def extract(self, *, session: SessionRef, messages: list[dict[str, str]]):
+        del session, messages
         return list(self.candidates)
 
 
@@ -65,10 +72,23 @@ class FakeDecisionLLM:
         )
 
 
-def test_post_response_worker_writes_implicit_memory_once(tmp_path) -> None:
+@pytest.fixture
+def memory_store():
+    db = clean_postgres()
+    try:
+        yield PostgresMemoryStore(user_id=1, db=db)
+    finally:
+        db.close()
+
+
+def _session(session_id: int = 1, *, user_id: int = 1) -> SessionRef:
+    return SessionRef(user_id=user_id, session_id=session_id)
+
+
+def test_post_response_worker_writes_implicit_memory_once(memory_store) -> None:
     worker = PostResponseMemoryWorker(
         memorizer=MemoryMemorizer(
-            store=MemoryStore(tmp_path / "long_term_memory.db"),
+            store=memory_store,
             embedding_provider=StableEmbeddingProvider(),
         ),
         extractor=FakeExtractor(),
@@ -76,7 +96,7 @@ def test_post_response_worker_writes_implicit_memory_once(tmp_path) -> None:
 
     result = asyncio.run(
         worker.run(
-            session_key="chat:1",
+            session=_session(),
             messages=[{"role": "user", "content": "以后默认中文回复"}],
             explicit_memory_ids=[],
         )
@@ -87,8 +107,8 @@ def test_post_response_worker_writes_implicit_memory_once(tmp_path) -> None:
     assert result["written_ids"]
 
 
-def test_post_response_worker_builds_source_ref_from_user_message_id(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_post_response_worker_builds_source_ref_from_user_message_id(memory_store) -> None:
+    store = memory_store
     worker = PostResponseMemoryWorker(
         memorizer=MemoryMemorizer(
             store=store,
@@ -99,7 +119,7 @@ def test_post_response_worker_builds_source_ref_from_user_message_id(tmp_path) -
                 {
                     "summary": "用户默认偏好中文回复。",
                     "memory_type": "preference",
-                    "source_message_ids": ["chat:1:0"],
+                    "source_message_ids": ["session:1:1:0"],
                     "extra": {"category": "response_language"},
                 }
             ]
@@ -108,10 +128,10 @@ def test_post_response_worker_builds_source_ref_from_user_message_id(tmp_path) -
 
     result = asyncio.run(
         worker.run(
-            session_key="chat:1",
+            session=_session(),
             messages=[
-                {"id": "chat:1:0", "role": "user", "content": "以后默认中文回复"},
-                {"id": "chat:1:1", "role": "assistant", "content": "好的"},
+                {"id": "session:1:1:0", "role": "user", "content": "以后默认中文回复"},
+                {"id": "session:1:1:1", "role": "assistant", "content": "好的"},
             ],
             explicit_memory_ids=[],
         )
@@ -119,14 +139,14 @@ def test_post_response_worker_builds_source_ref_from_user_message_id(tmp_path) -
 
     item = store.get_items_by_ids(result["written_ids"])[0]
     assert result["written_count"] == 1
-    assert item["source_ref"].startswith('["chat:1:0"]')
+    assert item["source_ref"].startswith('["session:1:1:0"]')
     assert item["extra"]["category"] == "response_language"
 
 
-def test_post_response_worker_rejects_assistant_only_evidence(tmp_path) -> None:
+def test_post_response_worker_rejects_assistant_only_evidence(memory_store) -> None:
     worker = PostResponseMemoryWorker(
         memorizer=MemoryMemorizer(
-            store=MemoryStore(tmp_path / "long_term_memory.db"),
+            store=memory_store,
             embedding_provider=StableEmbeddingProvider(),
         ),
         extractor=CandidateExtractor(
@@ -134,7 +154,7 @@ def test_post_response_worker_rejects_assistant_only_evidence(tmp_path) -> None:
                 {
                     "summary": "用户默认偏好中文回复。",
                     "memory_type": "preference",
-                    "source_message_ids": ["chat:1:1"],
+                    "source_message_ids": ["session:1:1:1"],
                 }
             ]
         ),
@@ -142,10 +162,10 @@ def test_post_response_worker_rejects_assistant_only_evidence(tmp_path) -> None:
 
     result = asyncio.run(
         worker.run(
-            session_key="chat:1",
+            session=_session(),
             messages=[
-                {"id": "chat:1:0", "role": "user", "content": "你好"},
-                {"id": "chat:1:1", "role": "assistant", "content": "用户偏好中文"},
+                {"id": "session:1:1:0", "role": "user", "content": "你好"},
+                {"id": "session:1:1:1", "role": "assistant", "content": "用户偏好中文"},
             ],
             explicit_memory_ids=[],
         )
@@ -156,8 +176,8 @@ def test_post_response_worker_rejects_assistant_only_evidence(tmp_path) -> None:
     assert result["candidate_decisions"][0]["reason"] == "source_ref_must_resolve_to_user_message"
 
 
-def test_post_response_worker_replaces_conflicting_preference(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_post_response_worker_replaces_conflicting_preference(memory_store) -> None:
+    store = memory_store
     memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
     old = asyncio.run(
         memorizer.memorize(
@@ -176,7 +196,7 @@ def test_post_response_worker_replaces_conflicting_preference(tmp_path) -> None:
                 {
                     "summary": "用户现在默认偏好中文回复。",
                     "memory_type": "preference",
-                    "source_message_ids": ["chat:1:0"],
+                    "source_message_ids": ["session:1:1:0"],
                     "extra": {"category": "response_language"},
                 }
             ]
@@ -192,9 +212,9 @@ def test_post_response_worker_replaces_conflicting_preference(tmp_path) -> None:
 
     result = asyncio.run(
         worker.run(
-            session_key="chat:1",
+            session=_session(),
             messages=[
-                {"id": "chat:1:0", "role": "user", "content": "我现在改了，以后默认中文回复。"}
+                {"id": "session:1:1:0", "role": "user", "content": "我现在改了，以后默认中文回复。"}
             ],
             explicit_memory_ids=[],
         )
@@ -209,8 +229,8 @@ def test_post_response_worker_replaces_conflicting_preference(tmp_path) -> None:
     assert any("中文" in item["summary"] for item in active)
 
 
-def test_llm_decision_provider_replaces_similar_memory_from_llm_json(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_llm_decision_provider_replaces_similar_memory_from_llm_json(memory_store) -> None:
+    store = memory_store
     memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
     old = asyncio.run(
         memorizer.memorize(
@@ -230,7 +250,7 @@ def test_llm_decision_provider_replaces_similar_memory_from_llm_json(tmp_path) -
                 {
                     "summary": "用户现在默认偏好中文回复。",
                     "memory_type": "preference",
-                    "source_message_ids": ["chat:1:0"],
+                    "source_message_ids": ["session:1:1:0"],
                 }
             ]
         ),
@@ -243,9 +263,9 @@ def test_llm_decision_provider_replaces_similar_memory_from_llm_json(tmp_path) -
 
     result = asyncio.run(
         worker.run(
-            session_key="chat:1",
+            session=_session(),
             messages=[
-                {"id": "chat:1:0", "role": "user", "content": "我现在改了，以后默认中文回复。"}
+                {"id": "session:1:1:0", "role": "user", "content": "我现在改了，以后默认中文回复。"}
             ],
             explicit_memory_ids=[],
         )
@@ -260,8 +280,8 @@ def test_llm_decision_provider_replaces_similar_memory_from_llm_json(tmp_path) -
     assert old_item["status"] == "superseded"
 
 
-def test_post_response_worker_skips_duplicate_candidate(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_post_response_worker_skips_duplicate_candidate(memory_store) -> None:
+    store = memory_store
     memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
     asyncio.run(
         memorizer.memorize(
@@ -280,7 +300,7 @@ def test_post_response_worker_skips_duplicate_candidate(tmp_path) -> None:
                 {
                     "summary": "用户默认偏好中文回复。",
                     "memory_type": "preference",
-                    "source_message_ids": ["chat:1:0"],
+                    "source_message_ids": ["session:1:1:0"],
                     "extra": {"category": "response_language"},
                 }
             ]
@@ -296,8 +316,8 @@ def test_post_response_worker_skips_duplicate_candidate(tmp_path) -> None:
 
     result = asyncio.run(
         worker.run(
-            session_key="chat:1",
-            messages=[{"id": "chat:1:0", "role": "user", "content": "还是默认中文回复。"}],
+            session=_session(),
+            messages=[{"id": "session:1:1:0", "role": "user", "content": "还是默认中文回复。"}],
             explicit_memory_ids=[],
         )
     )
@@ -307,8 +327,8 @@ def test_post_response_worker_skips_duplicate_candidate(tmp_path) -> None:
     assert result["candidate_decisions"][0]["action"] == "skip"
 
 
-def test_post_response_worker_writes_explicit_procedure(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_post_response_worker_writes_explicit_procedure(memory_store) -> None:
+    store = memory_store
     worker = PostResponseMemoryWorker(
         memorizer=MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider()),
         extractor=CandidateExtractor(
@@ -316,7 +336,7 @@ def test_post_response_worker_writes_explicit_procedure(tmp_path) -> None:
                 {
                     "summary": "以后修改代码前先写测试。",
                     "memory_type": "procedure",
-                    "source_message_ids": ["chat:1:0"],
+                    "source_message_ids": ["session:1:1:0"],
                     "extra": {"category": "development_rule"},
                 }
             ]
@@ -325,8 +345,8 @@ def test_post_response_worker_writes_explicit_procedure(tmp_path) -> None:
 
     result = asyncio.run(
         worker.run(
-            session_key="chat:1",
-            messages=[{"id": "chat:1:0", "role": "user", "content": "以后修改代码前先写测试。"}],
+            session=_session(),
+            messages=[{"id": "session:1:1:0", "role": "user", "content": "以后修改代码前先写测试。"}],
             explicit_memory_ids=[],
         )
     )
@@ -334,3 +354,4 @@ def test_post_response_worker_writes_explicit_procedure(tmp_path) -> None:
     item = store.get_items_by_ids(result["written_ids"])[0]
     assert result["written_count"] == 1
     assert item["memory_type"] == "procedure"
+

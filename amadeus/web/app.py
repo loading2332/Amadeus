@@ -1,22 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from amadeus.app.bootstrap import default_workspace_root, load_runtime_config
 from amadeus.session import PostgresSessionStore
-from amadeus.turns import PostgresTurnStore, TurnStore
+from amadeus.turns import PostgresTurnStore
 from amadeus.web.routes import api_router
 from amadeus.web.static_routes import static_router
 
 
 def create_app(
     *,
-    store: TurnStore | PostgresTurnStore | None = None,
-    session_store: object | None = None,
+    store: PostgresTurnStore | None = None,
+    session_store: PostgresSessionStore | None = None,
     workspace_root: str | Path | None = None,
     env_path: str | Path = ".env",
     static_dir: str | Path | None = None,
@@ -26,7 +25,6 @@ def create_app(
         if workspace_root is not None
         else default_workspace_root()
     )
-    turn_store: Any
     if store is None:
         config = load_runtime_config(env_path=env_path, workspace_root=root)
         turn_store = PostgresTurnStore(config.postgres_dsn)

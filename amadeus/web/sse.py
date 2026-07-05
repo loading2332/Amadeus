@@ -5,12 +5,12 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from amadeus.turns import TERMINAL_TURN_STATUSES, TurnStore
+from amadeus.turns import TERMINAL_TURN_STATUSES, PostgresTurnStore
 from amadeus.web.schemas import turn_response
 
 
 async def turn_event_stream(
-    store: TurnStore,
+    store: PostgresTurnStore,
     turn_id: str,
     *,
     poll_interval: float = 0.75,

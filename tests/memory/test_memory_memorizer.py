@@ -2,19 +2,32 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from amadeus.memory.engine import MemoryScope, MemoryWriteRequest
 from amadeus.memory.memorizer import MemoryMemorizer
-from amadeus.memory.store import MemoryStore
+from amadeus.memory.postgres import PostgresMemoryStore
+
+from tests.db.pgvector_helpers import pad_embedding
+from tests.db.postgres_helpers import clean_postgres
 
 
 class StableEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
-        return [1.0, 0.0, 0.0]
+        return pad_embedding([1.0, 0.0, 0.0])
 
 
-def test_memorizer_reinforces_same_content(tmp_path):
+@pytest.fixture
+def memory_store():
+    db = clean_postgres()
+    try:
+        yield PostgresMemoryStore(user_id=1, db=db)
+    finally:
+        db.close()
+
+
+def test_memorizer_reinforces_same_content(memory_store):
     memorizer = MemoryMemorizer(
-        store=MemoryStore(tmp_path / "long_term_memory.db"),
+        store=memory_store,
         embedding_provider=StableEmbeddingProvider(),
     )
 
@@ -23,7 +36,7 @@ def test_memorizer_reinforces_same_content(tmp_path):
             MemoryWriteRequest(
                 summary="用户偏好中文输出",
                 memory_type="preference",
-                source_ref='["chat:1:0"]#h:a',
+                source_ref='["session:1:1:0"]#h:a',
                 scope=MemoryScope(channel="telegram", chat_id="100"),
             )
         )
@@ -33,7 +46,7 @@ def test_memorizer_reinforces_same_content(tmp_path):
             MemoryWriteRequest(
                 summary="用户偏好中文输出",
                 memory_type="preference",
-                source_ref='["chat:1:1"]#h:b',
+                source_ref='["session:1:1:1"]#h:b',
                 scope=MemoryScope(channel="telegram", chat_id="100"),
             )
         )
@@ -44,9 +57,9 @@ def test_memorizer_reinforces_same_content(tmp_path):
     assert first.item_id == second.item_id
 
 
-def test_memorizer_can_replace_and_undo_by_source(tmp_path):
+def test_memorizer_can_replace_and_undo_by_source(memory_store):
     memorizer = MemoryMemorizer(
-        store=MemoryStore(tmp_path / "long_term_memory.db"),
+        store=memory_store,
         embedding_provider=StableEmbeddingProvider(),
     )
 
@@ -55,7 +68,7 @@ def test_memorizer_can_replace_and_undo_by_source(tmp_path):
             MemoryWriteRequest(
                 summary="用户现在住在上海",
                 memory_type="fact",
-                source_ref='["chat:1:0"]#h:old',
+                source_ref='["session:1:1:0"]#h:old',
             )
         )
     )
@@ -65,20 +78,20 @@ def test_memorizer_can_replace_and_undo_by_source(tmp_path):
             request=MemoryWriteRequest(
                 summary="用户现在住在杭州",
                 memory_type="fact",
-                source_ref='["chat:1:1"]#h:new',
+                source_ref='["session:1:1:1"]#h:new',
             ),
         )
     )
 
-    undone = memorizer.undo_by_source('["chat:1:1"]#h:new')
+    undone = memorizer.undo_by_source('["session:1:1:1"]#h:new')
 
     assert replacement.accepted is True
     assert undone.accepted is True
     assert undone.affected_ids == [original.item_id, replacement.affected_ids[-1]]
 
 
-def test_memorizer_supersede_many_marks_items_and_records_replacements(tmp_path):
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_memorizer_supersede_many_marks_items_and_records_replacements(memory_store):
+    store = memory_store
     memorizer = MemoryMemorizer(
         store=store,
         embedding_provider=StableEmbeddingProvider(),
@@ -88,7 +101,7 @@ def test_memorizer_supersede_many_marks_items_and_records_replacements(tmp_path)
             MemoryWriteRequest(
                 summary="旧偏好一",
                 memory_type="preference",
-                source_ref='["chat:1:0"]#h:old-a',
+                source_ref='["session:1:1:0"]#h:old-a',
             )
         )
     )
@@ -97,7 +110,7 @@ def test_memorizer_supersede_many_marks_items_and_records_replacements(tmp_path)
             MemoryWriteRequest(
                 summary="旧偏好二",
                 memory_type="preference",
-                source_ref='["chat:1:1"]#h:old-b',
+                source_ref='["session:1:1:1"]#h:old-b',
             )
         )
     )
@@ -106,7 +119,7 @@ def test_memorizer_supersede_many_marks_items_and_records_replacements(tmp_path)
             MemoryWriteRequest(
                 summary="新偏好",
                 memory_type="preference",
-                source_ref='["chat:1:2"]#h:new',
+                source_ref='["session:1:1:2"]#h:new',
             )
         )
     )
@@ -118,7 +131,7 @@ def test_memorizer_supersede_many_marks_items_and_records_replacements(tmp_path)
         target_ids=[first.item_id, second.item_id, "missing-id", first.item_id],
         reason="user correction",
         replacement_id=replacement.item_id,
-        replacement_source_ref='["chat:1:2"]#h:new',
+        replacement_source_ref='["session:1:1:2"]#h:new',
     )
 
     first_item, second_item = store.get_items_by_ids([first.item_id, second.item_id])
@@ -143,9 +156,9 @@ def test_memorizer_supersede_many_marks_items_and_records_replacements(tmp_path)
     ]
 
 
-def test_memorizer_supersede_many_reports_missing_without_mutation(tmp_path):
+def test_memorizer_supersede_many_reports_missing_without_mutation(memory_store):
     memorizer = MemoryMemorizer(
-        store=MemoryStore(tmp_path / "long_term_memory.db"),
+        store=memory_store,
         embedding_provider=StableEmbeddingProvider(),
     )
 
@@ -153,10 +166,11 @@ def test_memorizer_supersede_many_reports_missing_without_mutation(tmp_path):
         target_ids=["missing-a", "missing-b"],
         reason="user correction",
         replacement_id="mem_new",
-        replacement_source_ref='["chat:1:2"]#h:new',
+        replacement_source_ref='["session:1:1:2"]#h:new',
     )
 
     assert mutation.accepted is False
     assert mutation.status == "missing"
     assert mutation.affected_ids == []
     assert mutation.missing_ids == ["missing-a", "missing-b"]
+

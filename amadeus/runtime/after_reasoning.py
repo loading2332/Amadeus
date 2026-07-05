@@ -9,6 +9,7 @@ from amadeus.events import EventBus, TurnCommitted
 from amadeus.response_parser import parse_response
 from amadeus.runtime.lifecycle import AfterReasoningContext, TurnLifecycle
 from amadeus.runtime.phase import PhaseFrame, PhaseModule, topo_sort_modules
+from amadeus.session.identity import SessionRef
 from amadeus.session.store import SessionManager
 
 _CTX_SLOT = "reasoning:after_ctx"
@@ -18,7 +19,7 @@ _ASSISTANT_METADATA_PREFIX = "outbound:metadata:"
 
 @dataclass
 class AfterReasoningInput:
-    session_key: str
+    session: SessionRef
     user_message: str
     assistant_content: str
     rendered: ContextRenderResult
@@ -30,7 +31,7 @@ class AfterReasoningInput:
 
 @dataclass(frozen=True)
 class AfterReasoningResult:
-    session_key: str
+    session: SessionRef
     user_message_id: str
     assistant_message_id: str
     assistant_response: str
@@ -38,6 +39,10 @@ class AfterReasoningResult:
     provider_raw: Any
     tool_chain: list[dict[str, Any]]
     context_retry: dict[str, Any]
+
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
 
 
 @dataclass
@@ -54,7 +59,7 @@ class _BuildAfterReasoningCtxModule:
 
     async def run(self, frame: AfterReasoningFrame) -> AfterReasoningFrame:
         frame.slots[_CTX_SLOT] = AfterReasoningContext(
-            session_key=frame.input.session_key,
+            session=frame.input.session,
             user_message=frame.input.user_message,
             assistant_content=frame.input.assistant_content,
             tool_chain=list(frame.input.tool_chain),
@@ -112,7 +117,7 @@ class _PersistAfterReasoningModule:
         parsed_response = parse_response(context.assistant_content, tool_chain=[])
         assistant_response = parsed_response.clean_text
 
-        session = self._session_manager.get_or_create(context.session_key)
+        session = self._session_manager.get_or_create(context.session)
         user_record = session.add_message(
             "user",
             context.user_message,
@@ -143,7 +148,7 @@ class _PersistAfterReasoningModule:
             )
         )
         frame.slots[_RESULT_SLOT] = AfterReasoningResult(
-            session_key=context.session_key,
+            session=context.session,
             user_message_id=str(user_record["id"]),
             assistant_message_id=str(assistant_record["id"]),
             assistant_response=assistant_response,

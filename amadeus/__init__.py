@@ -125,7 +125,6 @@ from amadeus.runtime.step_phases import (
 from amadeus.session.store import (
     Session,
     SessionManager,
-    SessionStore,
     fetch_messages,
     search_messages,
 )
@@ -214,7 +213,6 @@ __all__ = [
     "ResponseMetadata",
     "Session",
     "SessionManager",
-    "SessionStore",
     "SelfModelPromptBlock",
     "SystemPromptBuilder",
     "SystemPromptResult",

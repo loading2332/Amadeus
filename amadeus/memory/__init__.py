@@ -43,7 +43,6 @@ from amadeus.memory.source_refs import (
     build_entry_source_ref,
     parse_history_entry_happened_at,
 )
-from amadeus.memory.store import MemoryStore
 
 __all__ = [
     "ConsolidateRequest",
@@ -71,7 +70,6 @@ __all__ = [
     "MemoryRecallRequest",
     "MemoryRecord",
     "MemoryScope",
-    "MemoryStore",
     "MemoryWriteRequest",
     "OpenAIEmbeddingConfig",
     "OpenAIEmbeddingProvider",

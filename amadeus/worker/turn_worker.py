@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from amadeus.app.bootstrap import PassiveApp, build_passive_app, default_workspace_root
+from amadeus.session.identity import SessionRef, require_session_ref
 from amadeus.turns import PostgresTurnStore, Turn
 
 logger = logging.getLogger(__name__)
@@ -37,8 +38,13 @@ class PassiveAppTurnRunner:
         self.app = app
 
     async def run(self, turn: Turn) -> str:
+        session = (
+            SessionRef(user_id=turn.user_id, session_id=turn.session_id)
+            if turn.user_id is not None and turn.session_id is not None
+            else require_session_ref(turn.session_key)
+        )
         result = await self.app.runtime.run_turn(
-            session_key=turn.session_key,
+            session=session,
             user_message=turn.content,
             runtime_metadata={
                 "channel": str(turn.metadata.get("channel") or "web"),

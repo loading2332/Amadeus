@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import tempfile
 import time
@@ -30,6 +31,7 @@ from amadeus.evaluation.langsmith_sync import (
     sync_memory_recall_dataset,
 )
 from amadeus.memory.engine import MemoryWriteRequest
+from amadeus.session.identity import SessionRef
 
 
 @dataclass(frozen=True)
@@ -189,10 +191,10 @@ async def _run_memory_recall_case_async(
             raise TypeError("evaluation app_builder must return PassiveApp")
         try:
             await app.start()
-            source_session_key = f"eval-source:{case.id}"
+            source_session = _eval_session_ref(case.id, kind="source")
             source_message_ids = _seed_session_messages(
                 app,
-                session_key=source_session_key,
+                session=source_session,
                 case=case,
             )
             await _seed_long_term_memories(app, case, source_message_ids)
@@ -214,17 +216,17 @@ async def _run_memory_recall_case_async(
 def _seed_session_messages(
     app: PassiveApp,
     *,
-    session_key: str,
+    session: SessionRef,
     case: MemoryRecallCase,
 ) -> list[str]:
-    session = app.session_manager.get_or_create(session_key)
+    turn_session = app.session_manager.get_or_create(session)
     for message in case.seed_session_messages:
         extra: dict[str, Any] = {}
         if message.timestamp is not None:
             extra["timestamp"] = message.timestamp
-        session.add_message(message.role, message.content, **extra)
-    app.session_manager.save(session)
-    return [str(message.get("id") or "") for message in session.messages]
+        turn_session.add_message(message.role, message.content, **extra)
+    app.session_manager.save(turn_session)
+    return [str(message.get("id") or "") for message in turn_session.messages]
 
 
 async def _seed_long_term_memories(
@@ -263,7 +265,7 @@ async def _run_runtime_turn_case(
     case: MemoryRecallCase,
 ) -> dict[str, Any]:
     result = await app.runtime.run_turn(
-        session_key=f"eval-turn:{case.id}",
+        session=_eval_session_ref(case.id, kind="turn"),
         user_message=str(case.input_payload["user_message"]),
     )
     rendered_context = "\n".join(
@@ -279,6 +281,12 @@ async def _run_runtime_turn_case(
         "rendered_context": rendered_context,
         "error": None,
     }
+
+
+def _eval_session_ref(case_id: str, *, kind: str) -> SessionRef:
+    digest = hashlib.blake2b(f"{kind}:{case_id}".encode(), digest_size=8).digest()
+    session_id = int.from_bytes(digest, "big") & ((1 << 31) - 1)
+    return SessionRef(user_id=1, session_id=max(1, session_id))
 
 
 async def _run_recall_tool_case(

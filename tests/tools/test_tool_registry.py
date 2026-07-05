@@ -10,18 +10,18 @@ from amadeus.tools.registry import ToolRegistry
 def test_tool_result_exposes_structured_output():
     result = ToolResult(
         tool_name="fetch_messages",
-        output={"messages": [{"id": "chat:1:0"}]},
+        output={"messages": [{"id": "session:1:1:0"}]},
         is_error=False,
         metadata={"source": "session"},
     )
     request = ToolExecutionRequest(
         tool_name="fetch_messages",
-        arguments={"source_ref": '["chat:1:0"]'},
+        arguments={"source_ref": '["session:1:1:0"]'},
     )
 
     assert result.tool_name == "fetch_messages"
-    assert result.output["messages"][0]["id"] == "chat:1:0"
-    assert request.arguments["source_ref"] == '["chat:1:0"]'
+    assert result.output["messages"][0]["id"] == "session:1:1:0"
+    assert request.arguments["source_ref"] == '["session:1:1:0"]'
 
 
 @dataclass
@@ -72,3 +72,4 @@ def test_registry_exports_openai_tool_schema():
             },
         }
     ]
+

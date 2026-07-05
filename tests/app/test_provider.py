@@ -86,7 +86,7 @@ def test_llm_provider_parses_tool_calls_without_assistant_content():
                             id="call_1",
                             function=SimpleNamespace(
                                 name="fetch_messages",
-                                arguments=json.dumps({"source_ref": '["chat:1:0"]'}),
+                                arguments=json.dumps({"source_ref": '["session:1:1:0"]'}),
                             ),
                         )
                     ],
@@ -106,7 +106,7 @@ def test_llm_provider_parses_tool_calls_without_assistant_content():
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].id == "call_1"
     assert result.tool_calls[0].name == "fetch_messages"
-    assert result.tool_calls[0].arguments == {"source_ref": '["chat:1:0"]'}
+    assert result.tool_calls[0].arguments == {"source_ref": '["session:1:1:0"]'}
 
 
 def test_llm_provider_rejects_response_without_content_or_tool_calls():
@@ -120,3 +120,4 @@ def test_llm_provider_rejects_response_without_content_or_tool_calls():
 
     with pytest.raises(ValueError, match="assistant content"):
         asyncio.run(provider.chat([{"role": "user", "content": "hi"}]))
+

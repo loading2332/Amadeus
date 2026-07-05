@@ -6,11 +6,12 @@ from typing import Any
 
 from amadeus.context import Message, RuntimeContext
 from amadeus.events import EventBus
+from amadeus.session.identity import SessionRef
 
 
 @dataclass
 class BeforeTurnContext:
-    session_key: str
+    session: SessionRef
     user_message: str
     history: list[Message]
     retrieved_memory: str | None
@@ -19,11 +20,15 @@ class BeforeTurnContext:
     runtime_metadata: dict[str, str] = field(default_factory=dict)
     extra_hints: list[str] = field(default_factory=list)
     abort_reply: str | None = None
+
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
 
 
 @dataclass
 class BeforeReasoningContext:
-    session_key: str
+    session: SessionRef
     user_message: str
     history: list[Message]
     retrieved_memory: str | None
@@ -33,30 +38,42 @@ class BeforeReasoningContext:
     extra_hints: list[str] = field(default_factory=list)
     abort_reply: str | None = None
 
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
+
 
 @dataclass
 class BeforeStepContext:
-    session_key: str
+    session: SessionRef
     iteration: int
     messages: list[dict[str, Any]]
     tool_schemas: list[dict[str, Any]] | None
     extra_hints: list[str] = field(default_factory=list)
     early_stop_reply: str | None = None
 
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
+
 
 @dataclass
 class AfterStepContext:
-    session_key: str
+    session: SessionRef
     iteration: int
     messages: list[dict[str, Any]]
     tool_chain: list[dict[str, Any]]
     telemetry: dict[str, Any] = field(default_factory=dict)
     early_stop_reply: str | None = None
 
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
+
 
 @dataclass
 class AfterReasoningContext:
-    session_key: str
+    session: SessionRef
     user_message: str
     assistant_content: str
     tool_chain: list[dict[str, Any]]
@@ -64,24 +81,36 @@ class AfterReasoningContext:
     extra: dict[str, Any] = field(default_factory=dict)
     assistant_metadata: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
+
 
 @dataclass
 class PromptRenderContext:
-    session_key: str
+    session: SessionRef
     attempt_index: int
     attempt_name: str
     runtime_context: RuntimeContext
 
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
+
 
 @dataclass(frozen=True)
 class AfterTurnContext:
-    session_key: str
+    session: SessionRef
     user_message_id: str
     assistant_message_id: str
     assistant_response: str
     tool_chain: tuple[dict[str, Any], ...]
     context_retry: dict[str, Any]
     memory_trace: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def session_key(self) -> str:
+        return self.session.session_key
 
 
 class TurnLifecycle:

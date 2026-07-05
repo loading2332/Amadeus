@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import pytest
 from amadeus.session import PostgresSessionStore, SessionManager, fetch_messages
+from amadeus.session.identity import SessionRef
 from tests.db.postgres_helpers import clean_postgres
 
 
@@ -57,19 +59,27 @@ def test_postgres_session_store_user_isolation_and_message_round_trip() -> None:
         db.close()
 
 
-def test_postgres_session_store_supports_legacy_runtime_session_keys() -> None:
+def test_postgres_session_store_rejects_noncanonical_session_keys() -> None:
     db = clean_postgres()
     try:
         store = PostgresSessionStore(db=db)
         manager = SessionManager(".", store=store)
-        session = manager.get_or_create("chat:1")
-        session.add_message("user", "legacy hello")
-        manager.save(session)
-        manager._cache.clear()
-
-        reloaded = manager.get_or_create("chat:1")
-
-        assert reloaded.key == "chat:1"
-        assert reloaded.messages[0]["id"] == "chat:1:0"
+        with pytest.raises(ValueError, match="user/session shape"):
+            manager.get_or_create("session:1:1")
     finally:
         db.close()
+
+
+def test_postgres_session_store_advances_sequence_after_explicit_session_id() -> None:
+    db = clean_postgres()
+    try:
+        store = PostgresSessionStore(db=db)
+        manager = SessionManager(".", store=store)
+
+        manager.get_or_create(SessionRef(user_id=1, session_id=9))
+        created = store.create_session(user_id=1, title="next")
+
+        assert created["session_id"] > 9
+    finally:
+        db.close()
+

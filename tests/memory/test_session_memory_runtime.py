@@ -14,14 +14,25 @@ from amadeus.memory import (
     MemoryMemorizer,
     MemoryOptimizer,
     MemoryRetriever,
-    MemoryStore,
     PostResponseMemoryWorker,
     RefreshRecentTurnsRequest,
 )
 from amadeus.memory.engine import MemoryRecallRequest
-from amadeus.session.store import SessionManager, fetch_messages, search_messages
+from amadeus.memory.postgres import PostgresMemoryStore
+from amadeus.session.identity import SessionRef
+from amadeus.session.store import (
+    InMemorySessionStore,
+    SessionManager,
+    fetch_messages,
+    search_messages,
+)
 
+from tests.db.pgvector_helpers import pad_embedding
 from tests.db.postgres_helpers import clean_postgres
+
+
+def _session(session_id: int = 1, *, user_id: int = 1) -> SessionRef:
+    return SessionRef(user_id=user_id, session_id=session_id)
 
 
 class FakeProvider:
@@ -38,22 +49,32 @@ class StableEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
         lowered = text.lower()
         if "面试项目" in text:
-            return [1.0, 0.0, 0.0]
+            return pad_embedding([1.0, 0.0, 0.0])
         if "中文解释" in text:
-            return [0.0, 1.0, 0.0]
+            return pad_embedding([0.0, 1.0, 0.0])
         if "phase 2" in lowered or "phase 2" in text:
-            return [0.0, 0.0, 1.0]
-        return [0.5, 0.5, 0.5]
+            return pad_embedding([0.0, 0.0, 1.0])
+        return pad_embedding([0.5, 0.5, 0.5])
 
 
 class FakeExtractor:
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, object]],
     ) -> list[dict[str, object]]:
+        del session, messages
         return []
+
+
+@pytest.fixture
+def memory_store_db():
+    db = clean_postgres()
+    try:
+        yield PostgresMemoryStore(user_id=1, db=db)
+    finally:
+        db.close()
 
 
 @pytest.fixture
@@ -66,29 +87,46 @@ def markdown_store(tmp_path):
 
 
 def test_session_store_persists_stable_message_ids_and_fetches_source_ref(tmp_path):
-    manager = SessionManager(tmp_path)
-    session = manager.get_or_create("chat:1")
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    session = manager.get_or_create(_session())
     session.add_message("user", "hello")
     session.add_message("assistant", "hi")
     manager.save(session)
 
-    assert session.messages[0]["id"] == "chat:1:0"
-    assert session.messages[1]["id"] == "chat:1:1"
+    assert session.messages[0]["id"] == "session:1:1:0"
+    assert session.messages[1]["id"] == "session:1:1:1"
 
-    rows = fetch_messages(manager.store, source_ref='["chat:1:0","chat:1:1"]')
+    rows = fetch_messages(manager.store, source_ref='["session:1:1:0","session:1:1:1"]')
     assert [row["content"] for row in rows] == ["hello", "hi"]
 
-    result = search_messages(manager.store, "hell", session_key="chat:1")
+    result = search_messages(manager.store, "hell", session_key="user:1:session:1")
     assert result["count"] == 1
-    assert result["messages"][0]["id"] == "chat:1:0"
+    assert result["messages"][0]["id"] == "session:1:1:0"
+
+
+def test_in_memory_session_store_uses_canonical_message_ids_for_session_ref(tmp_path):
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    session = manager.get_or_create(SessionRef(user_id=2, session_id=4))
+    session.add_message("user", "hello")
+    session.add_message("assistant", "hi")
+    manager.save(session)
+
+    assert session.key == "user:2:session:4"
+    assert [message["id"] for message in session.messages] == [
+        "session:2:4:0",
+        "session:2:4:1",
+    ]
+
+    rows = fetch_messages(manager.store, source_ref='["session:2:4:0","session:2:4:1"]')
+    assert [row["content"] for row in rows] == ["hello", "hi"]
 
 
 def test_turn_committed_refreshes_recent_turns_when_window_not_ready(
     tmp_path,
     markdown_store,
 ):
-    manager = SessionManager(tmp_path)
-    session = manager.get_or_create("chat:1")
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    session = manager.get_or_create(_session())
     session.add_message("user", "not enough yet")
     session.add_message("assistant", "short reply")
     manager.save(session)
@@ -107,7 +145,7 @@ def test_turn_committed_refreshes_recent_turns_when_window_not_ready(
     asyncio.run(
         bus.emit(
             TurnCommitted(
-                session_key="chat:1",
+                session_key="user:1:session:1",
                 input_message="not enough yet",
                 persisted_user_message="not enough yet",
                 assistant_response="short reply",
@@ -125,8 +163,8 @@ def test_consolidation_writes_history_pending_recent_context_and_updates_cursor(
     tmp_path,
     markdown_store,
 ):
-    manager = SessionManager(tmp_path)
-    session = manager.get_or_create("chat:1")
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    session = manager.get_or_create(_session())
     for index in range(8):
         session.add_message("user", f"user fact {index}")
         session.add_message("assistant", f"assistant reply {index}")
@@ -170,9 +208,10 @@ def test_consolidation_writes_history_pending_recent_context_and_updates_cursor(
 def test_consolidation_ingests_pending_profile_preference_and_correction_into_memory_engine(
     tmp_path,
     markdown_store,
+    memory_store_db,
 ):
-    manager = SessionManager(tmp_path)
-    session = manager.get_or_create("chat:1")
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    session = manager.get_or_create(_session())
     for index in range(8):
         session.add_message("user", f"user fact {index}")
         session.add_message("assistant", f"assistant reply {index}")
@@ -199,7 +238,7 @@ def test_consolidation_ingests_pending_profile_preference_and_correction_into_me
         }
         """,
     )
-    store_db = MemoryStore(tmp_path / "long_term_memory.db")
+    store_db = memory_store_db
     memorizer = MemoryMemorizer(store=store_db, embedding_provider=StableEmbeddingProvider())
     memory_engine = LongTermMemoryEngine(
         store=store_db,
@@ -245,12 +284,12 @@ def test_append_once_deduplicates_same_source_ref(tmp_path, markdown_store):
 
     first = store.append_pending_once(
         "- [identity] first",
-        source_ref='["chat:1:0"]',
+        source_ref='["session:1:1:0"]',
         kind="pending_items",
     )
     second = store.append_pending_once(
         "- [identity] first",
-        source_ref='["chat:1:0"]',
+        source_ref='["session:1:1:0"]',
         kind="pending_items",
     )
 
@@ -293,8 +332,8 @@ def test_refresh_recent_turns_ignores_context_frame_and_tool_messages(
     markdown_store,
 ):
     store = markdown_store
-    manager = SessionManager(tmp_path)
-    session = manager.get_or_create("chat:1")
+    manager = SessionManager(tmp_path, store=InMemorySessionStore())
+    session = manager.get_or_create(_session())
     session.add_message("user", "<system-reminder data-system-context-frame=\"true\">x</system-reminder>")
     session.add_message("tool", "tool result")
     session.add_message("user", "real user")
@@ -314,3 +353,5 @@ def test_refresh_recent_turns_ignores_context_frame_and_tool_messages(
     assert "real assistant" in recent
     assert "tool result" not in recent
     assert "system-reminder" not in recent
+
+

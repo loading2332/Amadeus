@@ -15,12 +15,17 @@ from amadeus.prompt_render import (
 from amadeus.prompting import PromptSectionRender
 from amadeus.runtime.lifecycle import PromptRenderContext, TurnLifecycle
 from amadeus.runtime.phase import Phase, inspect_phase
+from amadeus.session.identity import SessionRef
+
+
+def _session(session_id: int = 1) -> SessionRef:
+    return SessionRef(user_id=1, session_id=session_id)
 
 
 def _input(
     tmp_path: Path,
     *,
-    session_key: str = "chat:1",
+    session: SessionRef | None = None,
     attempt_index: int = 0,
     attempt_name: str = "full",
     runtime_context: RuntimeContext | None = None,
@@ -32,7 +37,7 @@ def _input(
         retrieved_memory="remember this",
     )
     return PromptRenderInput(
-        session_key=session_key,
+        session=session or _session(),
         attempt_index=attempt_index,
         attempt_name=attempt_name,
         runtime_context=runtime_context or context,

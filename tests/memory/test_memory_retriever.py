@@ -2,34 +2,38 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
 from amadeus.memory.engine import MemoryRecallRequest, MemoryScope, MemoryWriteRequest
 from amadeus.memory.memorizer import MemoryMemorizer
+from amadeus.memory.postgres import PostgresMemoryStore
 from amadeus.memory.retriever import MemoryRetriever
-from amadeus.memory.store import MemoryStore
+
+from tests.db.pgvector_helpers import pad_embedding
+from tests.db.postgres_helpers import clean_postgres
 
 
 class StableEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
         lowered = text.lower()
         if "部署" in text or "smoke" in lowered or "测试" in text:
-            return [1.0, 0.0, 0.0]
+            return pad_embedding([1.0, 0.0, 0.0])
         if "中文" in text or "偏好" in text:
-            return [0.95, 0.05, 0.0]
-        return [1.0, 0.02, 0.0]
+            return pad_embedding([0.95, 0.05, 0.0])
+        return pad_embedding([1.0, 0.02, 0.0])
 
 
 class QueryAwareEmbeddingProvider:
     async def embed(self, text: str) -> list[float]:
         lowered = text.lower()
         if "event-hypothesis" in lowered:
-            return [0.0, 1.0, 0.0]
+            return pad_embedding([0.0, 1.0, 0.0])
         if "general-hypothesis" in lowered:
-            return [0.0, 0.95, 0.0]
+            return pad_embedding([0.0, 0.95, 0.0])
         if "rarelexical" in lowered:
-            return [0.0, 0.0, 1.0]
+            return pad_embedding([0.0, 0.0, 1.0])
         if "raw" in lowered:
-            return [1.0, 0.0, 0.0]
-        return [0.0, 1.0, 0.0]
+            return pad_embedding([1.0, 0.0, 0.0])
+        return pad_embedding([0.0, 1.0, 0.0])
 
 
 class FakeHypothesisProvider:
@@ -62,8 +66,17 @@ class SlowHypothesisProvider:
         return f"{style}-too-late"
 
 
-def test_retriever_prefers_scope_matched_procedure_then_preference(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+@pytest.fixture
+def memory_store():
+    db = clean_postgres()
+    try:
+        yield PostgresMemoryStore(user_id=1, db=db)
+    finally:
+        db.close()
+
+
+def test_retriever_prefers_scope_matched_procedure_then_preference(memory_store) -> None:
+    store = memory_store
     memorizer = MemoryMemorizer(
         store=store,
         embedding_provider=StableEmbeddingProvider(),
@@ -73,7 +86,7 @@ def test_retriever_prefers_scope_matched_procedure_then_preference(tmp_path) -> 
             MemoryWriteRequest(
                 summary="部署前先运行 smoke tests",
                 memory_type="procedure",
-                source_ref='["chat:1:0"]#h:p',
+                source_ref='["session:1:1:0"]#h:p',
                 scope=MemoryScope(channel="telegram", chat_id="100"),
             )
         )
@@ -83,7 +96,7 @@ def test_retriever_prefers_scope_matched_procedure_then_preference(tmp_path) -> 
             MemoryWriteRequest(
                 summary="用户偏好中文输出",
                 memory_type="preference",
-                source_ref='["chat:1:1"]#h:f',
+                source_ref='["session:1:1:1"]#h:f',
                 scope=MemoryScope(channel="telegram", chat_id="100"),
             )
         )
@@ -112,13 +125,13 @@ def test_retriever_prefers_scope_matched_procedure_then_preference(tmp_path) -> 
 
 
 def test_answer_retrieval_uses_event_and_general_hypotheses_as_vector_lanes(
-    tmp_path,
+    memory_store,
 ) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+    store = memory_store
     store.upsert_item(
         memory_type="event",
         summary="用户曾经记录过目标事实",
-        embedding=[0.0, 1.0, 0.0],
+        embedding=pad_embedding([0.0, 1.0, 0.0]),
         source_ref='["chat:2:0"]#h:event',
     )
     provider = FakeHypothesisProvider()
@@ -149,8 +162,8 @@ def test_answer_retrieval_uses_event_and_general_hypotheses_as_vector_lanes(
     assert result.records[0].signals["matched_query_indexes"] == ["1", "2"]
 
 
-def test_context_retrieval_does_not_call_hypothesis_provider(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_context_retrieval_does_not_call_hypothesis_provider(memory_store) -> None:
+    store = memory_store
     provider = FakeHypothesisProvider()
     retriever = MemoryRetriever(
         store=store,
@@ -168,12 +181,12 @@ def test_context_retrieval_does_not_call_hypothesis_provider(tmp_path) -> None:
     assert result.trace["hypothesis_retrieval"]["reason"] == "intent_context"
 
 
-def test_generated_hypotheses_do_not_create_lexical_hits(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_generated_hypotheses_do_not_create_lexical_hits(memory_store) -> None:
+    store = memory_store
     store.upsert_item(
         memory_type="event",
         summary="rarelexical phrase exists only in generated hypothesis text",
-        embedding=[0.0, 1.0, 0.0],
+        embedding=pad_embedding([0.0, 1.0, 0.0]),
         source_ref='["chat:2:1"]#h:lexical',
     )
     provider = FakeHypothesisProvider(
@@ -198,12 +211,12 @@ def test_generated_hypotheses_do_not_create_lexical_hits(tmp_path) -> None:
     }
 
 
-def test_hypothesis_failures_fall_back_to_raw_query(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_hypothesis_failures_fall_back_to_raw_query(memory_store) -> None:
+    store = memory_store
     store.upsert_item(
         memory_type="event",
         summary="raw fallback memory",
-        embedding=[1.0, 0.0, 0.0],
+        embedding=pad_embedding([1.0, 0.0, 0.0]),
         source_ref='["chat:2:2"]#h:raw',
     )
     retriever = MemoryRetriever(
@@ -227,12 +240,12 @@ def test_hypothesis_failures_fall_back_to_raw_query(tmp_path) -> None:
     assert len(result.trace["hypothesis_retrieval"]["errors"]) == 2
 
 
-def test_hypothesis_timeout_falls_back_to_raw_query(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_hypothesis_timeout_falls_back_to_raw_query(memory_store) -> None:
+    store = memory_store
     store.upsert_item(
         memory_type="event",
         summary="raw timeout memory",
-        embedding=[1.0, 0.0, 0.0],
+        embedding=pad_embedding([1.0, 0.0, 0.0]),
         source_ref='["chat:2:3"]#h:timeout',
     )
     provider = SlowHypothesisProvider()
@@ -256,12 +269,12 @@ def test_hypothesis_timeout_falls_back_to_raw_query(tmp_path) -> None:
     ]
 
 
-def test_empty_hypotheses_fall_back_and_are_not_persisted(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_empty_hypotheses_fall_back_and_are_not_persisted(memory_store) -> None:
+    store = memory_store
     store.upsert_item(
         memory_type="event",
         summary="raw persisted memory",
-        embedding=[1.0, 0.0, 0.0],
+        embedding=pad_embedding([1.0, 0.0, 0.0]),
         source_ref='["chat:2:5"]#h:empty',
     )
     retriever = MemoryRetriever(
@@ -287,12 +300,12 @@ def test_empty_hypotheses_fall_back_and_are_not_persisted(tmp_path) -> None:
     ]
 
 
-def test_hypothesis_trace_does_not_render_into_context_text(tmp_path) -> None:
-    store = MemoryStore(tmp_path / "long_term_memory.db")
+def test_hypothesis_trace_does_not_render_into_context_text(memory_store) -> None:
+    store = memory_store
     store.upsert_item(
         memory_type="event",
         summary="用户真正存储的事实",
-        embedding=[0.0, 1.0, 0.0],
+        embedding=pad_embedding([0.0, 1.0, 0.0]),
         source_ref='["chat:2:4"]#h:render',
     )
     hypothesis = "event-hypothesis text must stay out of rendered memory"
@@ -312,3 +325,4 @@ def test_hypothesis_trace_does_not_render_into_context_text(tmp_path) -> None:
     assert "用户真正存储的事实" in result.text
     assert hypothesis not in result.text
     assert result.trace["hypothesis_retrieval"]["queries"]["event"] == hypothesis
+

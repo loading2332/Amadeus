@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from amadeus.memory.engine import EvidenceRef, MemoryRecord
+from amadeus.memory.engine import MemoryRecord
+from amadeus.memory.source_refs import evidence_from_source_ref
 
 _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 0.5
@@ -491,37 +491,6 @@ def cosine(left: list[float], right: list[float]) -> float:
     if left_norm == 0 or right_norm == 0:
         return 0.0
     return dot / left_norm / right_norm
-
-
-def evidence_from_source_ref(source_ref: str) -> list[EvidenceRef]:
-    refs = source_ref_message_ids(source_ref)
-    if not refs:
-        return []
-    return [
-        EvidenceRef(
-            kind="session_messages",
-            refs=refs,
-            resolver="amadeus.session.fetch_messages",
-            source_ref=source_ref,
-            metadata={},
-        )
-    ]
-
-
-def source_ref_message_ids(source_ref: str) -> list[str]:
-    base = source_ref.split("#", 1)[0].strip()
-    if not base:
-        return []
-    try:
-        loaded = json.loads(base)
-    except json.JSONDecodeError:
-        return [base]
-    if isinstance(loaded, list):
-        return [str(item).strip() for item in loaded if str(item).strip()]
-    text = str(loaded).strip()
-    return [text] if text else []
-
-
 def content_hash(summary: str, memory_type: str) -> str:
     normalized = " ".join(summary.lower().split())
     return hashlib.sha256(f"{memory_type}:{normalized}".encode()).hexdigest()[:16]

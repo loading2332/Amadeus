@@ -6,7 +6,6 @@ from amadeus.turns.store import (
     TURN_PENDING,
     TURN_PROCESSING,
     Turn,
-    TurnStore,
 )
 
 __all__ = [
@@ -16,6 +15,5 @@ __all__ = [
     "TURN_PENDING",
     "TURN_PROCESSING",
     "Turn",
-    "TurnStore",
     "PostgresTurnStore",
 ]

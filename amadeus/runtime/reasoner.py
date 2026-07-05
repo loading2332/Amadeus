@@ -20,6 +20,7 @@ from amadeus.runtime.tool_runtime import (
     append_tool_result,
     tool_call_batch_snapshot,
 )
+from amadeus.session.identity import SessionRef
 from amadeus.tools.executor import ToolExecutor
 from amadeus.types import ReasonerResult
 
@@ -76,7 +77,7 @@ class Reasoner:
         self,
         messages: Sequence[dict[str, Any]],
         tool_schemas: Sequence[dict[str, Any]] | None = None,
-        session_key: str = "",
+        session: SessionRef | None = None,
     ) -> ReasonerResult:
         """Run a reasoning turn: provider call → optional tool loop → result."""
         response = await self.provider.chat(
@@ -103,7 +104,7 @@ class Reasoner:
             messages=list(messages),
             response=response,
             tool_schemas=list(tool_schemas) if tool_schemas is not None else None,
-            session_key=session_key,
+            session=session,
         )
 
     async def _run_tool_loop(
@@ -112,7 +113,7 @@ class Reasoner:
         messages: list[dict[str, Any]],
         response: LLMResponse,
         tool_schemas: list[dict[str, Any]] | None,
-        session_key: str = "",
+        session: SessionRef | None = None,
     ) -> ReasonerResult:
         if self.tool_executor is None:
             raise ValueError("LLM requested tools but no tool executor is configured")
@@ -132,9 +133,11 @@ class Reasoner:
 
             # ── before_step lifecycle gate ──────────────────────────────
             if self.before_step is not None:
+                if session is None:  # pragma: no cover - defensive invariant
+                    raise RuntimeError("reasoner before_step requires a structured session")
                 before_step = await self.before_step.run(
                     BeforeStepInput(
-                        session_key=session_key,
+                        session=session,
                         iteration=iterations,
                         messages=loop_messages,
                         tool_schemas=tool_schemas,
@@ -180,10 +183,10 @@ class Reasoner:
                 "calls": [],
             }
             for batch_index, tool_call in enumerate(current_response.tool_calls):
-                if session_key:
+                if session is not None:
                     await self.event_bus.emit(
                         ToolCallStarted(
-                            session_key=session_key,
+                            session_key=session.session_key,
                             iteration=iterations,
                             call_id=tool_call.id,
                             tool_name=tool_call.name,
@@ -200,10 +203,10 @@ class Reasoner:
                 )
 
                 result_preview = self._preview_tool_result(result)
-                if session_key:
+                if session is not None:
                     await self.event_bus.emit(
                         ToolCallCompleted(
-                            session_key=session_key,
+                            session_key=session.session_key,
                             iteration=iterations,
                             call_id=tool_call.id,
                             tool_name=tool_call.name,
@@ -257,9 +260,11 @@ class Reasoner:
 
             # ── after_step lifecycle gate ───────────────────────────────
             if self.after_step is not None:
+                if session is None:  # pragma: no cover - defensive invariant
+                    raise RuntimeError("reasoner after_step requires a structured session")
                 after_step = await self.after_step.run(
                     AfterStepInput(
-                        session_key=session_key,
+                        session=session,
                         iteration=iterations,
                         messages=loop_messages,
                         tool_chain=tool_chain,

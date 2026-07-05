@@ -14,9 +14,8 @@ from amadeus.memory.store import _content_hash, _normalize_datetime
 class PostgresMemoryStore:
     """PostgreSQL + pgvector-backed long-term memory store.
 
-    Mirrors :class:`amadeus.memory.store.MemoryStore` public methods but scopes
-    every read/write by ``user_id``. Semantic candidate retrieval uses the
-    pgvector distance operator ``<=>`` instead of a Python full-table scan.
+    Scopes every read/write by ``user_id``. Semantic candidate retrieval uses
+    the pgvector distance operator ``<=>`` instead of a Python full-table scan.
 
     Embeddings are passed as Python ``list[float]`` parameters through the
     pgvector psycopg adapter (registered on the shared connection pool) — no

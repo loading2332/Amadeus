@@ -4,11 +4,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
+from amadeus.session.identity import SessionRef
+
 
 @dataclass(frozen=True)
 class MemoryScope:
     channel: str | None = None
     chat_id: str | None = None
+    session: SessionRef | None = None
 
 
 @dataclass(frozen=True)
@@ -168,7 +171,7 @@ class MemoryEngine(Protocol):
     async def run_post_response(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, Any]],
         explicit_memory_ids: list[str],
     ) -> dict[str, Any]: ...
