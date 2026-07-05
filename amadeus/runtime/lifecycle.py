@@ -21,10 +21,6 @@ class BeforeTurnContext:
     extra_hints: list[str] = field(default_factory=list)
     abort_reply: str | None = None
 
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
-
 
 @dataclass
 class BeforeReasoningContext:
@@ -38,10 +34,6 @@ class BeforeReasoningContext:
     extra_hints: list[str] = field(default_factory=list)
     abort_reply: str | None = None
 
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
-
 
 @dataclass
 class BeforeStepContext:
@@ -52,10 +44,6 @@ class BeforeStepContext:
     extra_hints: list[str] = field(default_factory=list)
     early_stop_reply: str | None = None
 
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
-
 
 @dataclass
 class AfterStepContext:
@@ -65,10 +53,6 @@ class AfterStepContext:
     tool_chain: list[dict[str, Any]]
     telemetry: dict[str, Any] = field(default_factory=dict)
     early_stop_reply: str | None = None
-
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
 
 
 @dataclass
@@ -81,10 +65,6 @@ class AfterReasoningContext:
     extra: dict[str, Any] = field(default_factory=dict)
     assistant_metadata: dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
-
 
 @dataclass
 class PromptRenderContext:
@@ -92,10 +72,6 @@ class PromptRenderContext:
     attempt_index: int
     attempt_name: str
     runtime_context: RuntimeContext
-
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
 
 
 @dataclass(frozen=True)
@@ -107,10 +83,6 @@ class AfterTurnContext:
     tool_chain: tuple[dict[str, Any], ...]
     context_retry: dict[str, Any]
     memory_trace: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
 
 
 class TurnLifecycle:

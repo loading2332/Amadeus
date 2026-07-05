@@ -186,7 +186,7 @@ class Reasoner:
                 if session is not None:
                     await self.event_bus.emit(
                         ToolCallStarted(
-                            session_key=session.session_key,
+                            session=session,
                             iteration=iterations,
                             call_id=tool_call.id,
                             tool_name=tool_call.name,
@@ -206,7 +206,7 @@ class Reasoner:
                 if session is not None:
                     await self.event_bus.emit(
                         ToolCallCompleted(
-                            session_key=session.session_key,
+                            session=session,
                             iteration=iterations,
                             call_id=tool_call.id,
                             tool_name=tool_call.name,

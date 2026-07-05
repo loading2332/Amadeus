@@ -11,6 +11,7 @@ from amadeus.memory import (
     PostResponseMemoryWorker,
 )
 from amadeus.memory.postgres import PostgresMemoryStore
+from amadeus.session.identity import SessionRef
 from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.undo_memory_by_source import UndoMemoryBySourceTool
 
@@ -31,9 +32,10 @@ class FakeExtractor:
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, object]],
     ) -> list[dict[str, object]]:
+        del session, messages
         return []
 
 

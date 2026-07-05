@@ -6,7 +6,10 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
+
+if TYPE_CHECKING:
+    from amadeus.session.identity import SessionRef
 
 E = TypeVar("E")
 EventHandler = Callable[[E], Awaitable[E | None] | E | None]
@@ -24,7 +27,7 @@ class _HandlerRegistration:
 @dataclass(frozen=True)
 class ToolCallStarted:
     """Emitted before a tool call is executed within the reasoner loop."""
-    session_key: str
+    session: SessionRef
     iteration: int
     call_id: str
     tool_name: str
@@ -34,7 +37,7 @@ class ToolCallStarted:
 @dataclass(frozen=True)
 class ToolCallCompleted:
     """Emitted after a tool call has been executed within the reasoner loop."""
-    session_key: str
+    session: SessionRef
     iteration: int
     call_id: str
     tool_name: str
@@ -46,7 +49,7 @@ class ToolCallCompleted:
 
 @dataclass(frozen=True)
 class TurnCommitted:
-    session_key: str
+    session: SessionRef
     input_message: str
     assistant_response: str
     persisted_user_message: str | None = None

@@ -28,10 +28,6 @@ class PromptRenderCtx:
     system_sections_bottom: list[PromptSectionRender] = field(default_factory=list)
     extra_hints: list[str] = field(default_factory=list)
 
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
-
 
 @dataclass(frozen=True)
 class PromptRenderResult:

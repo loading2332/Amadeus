@@ -40,10 +40,6 @@ class AfterReasoningResult:
     tool_chain: list[dict[str, Any]]
     context_retry: dict[str, Any]
 
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
-
 
 @dataclass
 class AfterReasoningFrame(PhaseFrame[AfterReasoningInput, AfterReasoningResult]):
@@ -136,7 +132,7 @@ class _PersistAfterReasoningModule:
         self._session_manager.save(session)
         await self._event_bus.emit(
             TurnCommitted(
-                session_key=context.session_key,
+                session=context.session,
                 input_message=context.user_message,
                 persisted_user_message=context.user_message,
                 assistant_response=assistant_response,

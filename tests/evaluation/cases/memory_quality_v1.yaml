@@ -44,7 +44,7 @@ cases:
     seed_long_term_memories:
       - summary: 用户以前默认偏好英文回复。
         memory_type: preference
-        source_ref: '["seed:0"]#h:old-pref'
+        source_ref: '["session:1:1:10"]#h:old-pref'
     turn_messages:
       - role: user
         content: 我现在改了，以后默认中文回复。
@@ -73,7 +73,7 @@ cases:
     seed_long_term_memories:
       - summary: 用户的公司是上一家创业公司。
         memory_type: profile
-        source_ref: '["seed:1"]#h:old-company'
+        source_ref: '["session:1:1:11"]#h:old-company'
     turn_messages:
       - role: user
         content: 我现在在阿里云百炼这边做 agent 相关项目，不在上一家了。
@@ -146,7 +146,7 @@ cases:
     seed_long_term_memories:
       - summary: 以后修改代码可以先实现再补测试。
         memory_type: procedure
-        source_ref: '["seed:2"]#h:old-procedure'
+        source_ref: '["session:1:1:12"]#h:old-procedure'
         extra:
           category: development_rule
     turn_messages:
@@ -179,7 +179,7 @@ cases:
     seed_long_term_memories:
       - summary: 用户默认偏好中文回复。
         memory_type: preference
-        source_ref: '["seed:3"]#h:existing-pref'
+        source_ref: '["session:1:1:13"]#h:existing-pref'
         extra:
           category: response_language
     turn_messages:

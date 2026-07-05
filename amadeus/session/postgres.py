@@ -6,11 +6,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
-from amadeus.session.identity import (
-    build_message_id,
-    build_session_key,
-    require_session_key,
-)
+from amadeus.session.identity import SessionRef, build_message_id
 from amadeus.session.store import Session, _now_iso
 
 
@@ -91,8 +87,8 @@ class PostgresSessionStore:
                 rows = cursor.fetchall()
         return [_session_row(row) for row in rows]
 
-    def get_session_meta(self, key: str) -> dict[str, Any] | None:
-        user_id, session_id = require_session_key(key)
+    def get_session_meta(self, session: SessionRef) -> dict[str, Any] | None:
+        user_id, session_id = session.identity
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -110,7 +106,7 @@ class PostgresSessionStore:
         return _session_meta_from_row(row)
 
     def upsert_session(self, session: Session) -> None:
-        user_id, session_id = require_session_key(session.key)
+        user_id, session_id = session.identity
         self.ensure_user(user_id)
         metadata = dict(session.metadata)
         with self.db.connection() as conn:
@@ -149,8 +145,8 @@ class PostgresSessionStore:
                 )
             conn.commit()
 
-    def next_seq(self, session_key: str) -> int:
-        user_id, session_id = require_session_key(session_key)
+    def next_seq(self, session: SessionRef) -> int:
+        user_id, session_id = session.identity
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -166,7 +162,7 @@ class PostgresSessionStore:
 
     def insert_message(
         self,
-        session_key: str,
+        session: SessionRef,
         *,
         role: str,
         content: str,
@@ -174,7 +170,7 @@ class PostgresSessionStore:
         seq: int,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        user_id, session_id = require_session_key(session_key)
+        user_id, session_id = session.identity
         message_id = build_message_id(user_id, session_id, seq)
         payload = dict(extra or {})
         with self.db.connection() as conn:
@@ -212,7 +208,8 @@ class PostgresSessionStore:
             conn.commit()
         return {
             "id": message_id,
-            "session_key": session_key,
+            "user_id": user_id,
+            "session_id": session_id,
             "seq": int(seq),
             "role": role,
             "content": content,
@@ -220,8 +217,8 @@ class PostgresSessionStore:
             **payload,
         }
 
-    def fetch_session_messages(self, session_key: str) -> list[dict[str, Any]]:
-        user_id, session_id = require_session_key(session_key)
+    def fetch_session_messages(self, session: SessionRef) -> list[dict[str, Any]]:
+        user_id, session_id = session.identity
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -237,10 +234,10 @@ class PostgresSessionStore:
         return [_message_row(row) for row in rows]
 
     def list_messages(self, *, user_id: int, session_id: int) -> list[dict[str, Any]]:
-        return self.fetch_session_messages(build_session_key(user_id, session_id))
+        return self.fetch_session_messages(SessionRef(user_id, session_id))
 
-    def update_last_consolidated(self, session_key: str, value: int) -> None:
-        user_id, session_id = require_session_key(session_key)
+    def update_last_consolidated(self, session: SessionRef, value: int) -> None:
+        user_id, session_id = session.identity
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -309,17 +306,20 @@ class PostgresSessionStore:
         self,
         query: str,
         *,
-        session_key: str | None = None,
+        user_id: int | None = None,
+        session_id: int | None = None,
         role: str | None = None,
         limit: int = 10,
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         clauses = ["content ILIKE %s"]
         params: list[Any] = [f"%{query}%"]
-        if session_key:
-            user_id, session_id = require_session_key(session_key)
-            clauses.extend(["user_id = %s", "session_id = %s"])
-            params.extend([user_id, session_id])
+        if user_id is not None:
+            clauses.append("user_id = %s")
+            params.append(int(user_id))
+        if session_id is not None:
+            clauses.append("session_id = %s")
+            params.append(int(session_id))
         if role:
             clauses.append("role = %s")
             params.append(role)
@@ -349,14 +349,13 @@ def _session_meta_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
     user_id = int(row["user_id"])
     session_id = int(row["id"])
     return {
-        "key": build_session_key(user_id, session_id),
+        "user_id": user_id,
+        "session_id": session_id,
         "created_at": _ts(row["created_at"]) or _now_iso(),
         "updated_at": _ts(row["updated_at"]) or _now_iso(),
         "last_consolidated": int(row["last_consolidated"] or 0),
         "metadata": dict(row["metadata"] or {}),
         "next_seq": 0,
-        "user_id": user_id,
-        "session_id": session_id,
     }
 
 
@@ -366,7 +365,6 @@ def _session_row(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "session_id": session_id,
         "user_id": user_id,
-        "session_key": build_session_key(user_id, session_id),
         "title": row["title"],
         "metadata": dict(row["metadata"] or {}),
         "last_consolidated": int(row["last_consolidated"] or 0),
@@ -383,7 +381,6 @@ def _message_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "id": str(row["id"]),
         "user_id": user_id,
         "session_id": session_id,
-        "session_key": build_session_key(user_id, session_id),
         "seq": int(row["seq"]),
         "role": str(row["role"]),
         "content": str(row["content"]),

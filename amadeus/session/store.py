@@ -13,8 +13,6 @@ from amadeus.prompting import is_context_frame
 from amadeus.session.identity import (
     SessionRef,
     build_message_id,
-    parse_session_ref,
-    session_key_for,
 )
 
 
@@ -24,12 +22,16 @@ def _now_iso() -> str:
 
 @dataclass
 class Session:
-    key: str
+    ref: SessionRef
     messages: list[dict[str, Any]] = field(default_factory=list)
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)
     last_consolidated: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def identity(self) -> tuple[int, int]:
+        return self.ref.identity
 
     def add_message(self, role: str, content: str, **extra: Any) -> dict[str, Any]:
         message = {
@@ -109,15 +111,15 @@ class Session:
 class SessionStoreProtocol(Protocol):
     def close(self) -> None: ...
 
-    def get_session_meta(self, key: str) -> dict[str, Any] | None: ...
+    def get_session_meta(self, session: SessionRef) -> dict[str, Any] | None: ...
 
     def upsert_session(self, session: Session) -> None: ...
 
-    def next_seq(self, session_key: str) -> int: ...
+    def next_seq(self, session: SessionRef) -> int: ...
 
     def insert_message(
         self,
-        session_key: str,
+        session: SessionRef,
         *,
         role: str,
         content: str,
@@ -126,9 +128,9 @@ class SessionStoreProtocol(Protocol):
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]: ...
 
-    def fetch_session_messages(self, session_key: str) -> list[dict[str, Any]]: ...
+    def fetch_session_messages(self, session: SessionRef) -> list[dict[str, Any]]: ...
 
-    def update_last_consolidated(self, session_key: str, value: int) -> None: ...
+    def update_last_consolidated(self, session: SessionRef, value: int) -> None: ...
 
     def fetch_by_ids(self, ids: list[str]) -> list[dict[str, Any]]: ...
 
@@ -142,7 +144,8 @@ class SessionStoreProtocol(Protocol):
         self,
         query: str,
         *,
-        session_key: str | None = None,
+        user_id: int | None = None,
+        session_id: int | None = None,
         role: str | None = None,
         limit: int = 10,
         offset: int = 0,
@@ -153,20 +156,21 @@ class InMemorySessionStore:
     """Non-persistent session store for tests and isolated local flows."""
 
     def __init__(self) -> None:
-        self._sessions: dict[str, dict[str, Any]] = {}
-        self._messages: dict[str, list[dict[str, Any]]] = {}
+        self._sessions: dict[tuple[int, int], dict[str, Any]] = {}
+        self._messages: dict[tuple[int, int], list[dict[str, Any]]] = {}
         self._lock = threading.RLock()
 
     def close(self) -> None:
         return None
 
-    def get_session_meta(self, key: str) -> dict[str, Any] | None:
+    def get_session_meta(self, session: SessionRef) -> dict[str, Any] | None:
         with self._lock:
-            meta = self._sessions.get(key)
+            meta = self._sessions.get(session.identity)
             if meta is None:
                 return None
             return {
-                "key": str(meta["key"]),
+                "user_id": int(meta["user_id"]),
+                "session_id": int(meta["session_id"]),
                 "created_at": str(meta["created_at"]),
                 "updated_at": str(meta["updated_at"]),
                 "last_consolidated": int(meta["last_consolidated"] or 0),
@@ -176,28 +180,30 @@ class InMemorySessionStore:
 
     def upsert_session(self, session: Session) -> None:
         with self._lock:
-            current = self._sessions.get(session.key)
+            identity = session.identity
+            current = self._sessions.get(identity)
             next_seq = int((current or {}).get("next_seq") or 0)
-            self._sessions[session.key] = {
-                "key": session.key,
+            self._sessions[identity] = {
+                "user_id": int(session.ref.user_id),
+                "session_id": int(session.ref.session_id),
                 "created_at": current["created_at"] if current is not None else session.created_at,
                 "updated_at": session.updated_at,
                 "last_consolidated": int(session.last_consolidated),
                 "metadata": dict(session.metadata),
                 "next_seq": next_seq,
             }
-            self._messages.setdefault(session.key, [])
+            self._messages.setdefault(identity, [])
 
-    def next_seq(self, session_key: str) -> int:
+    def next_seq(self, session: SessionRef) -> int:
         with self._lock:
-            messages = self._messages.get(session_key, [])
+            messages = self._messages.get(session.identity, [])
             from_messages = max((int(item["seq"]) for item in messages), default=-1) + 1
-            from_meta = int(self._sessions.get(session_key, {}).get("next_seq") or 0)
+            from_meta = int(self._sessions.get(session.identity, {}).get("next_seq") or 0)
             return max(from_messages, from_meta)
 
     def insert_message(
         self,
-        session_key: str,
+        session: SessionRef,
         *,
         role: str,
         content: str,
@@ -205,14 +211,11 @@ class InMemorySessionStore:
         seq: int,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        session = parse_session_ref(session_key)
-        if session is None:
-            message_id = f"{session_key}:{seq}"
-        else:
-            message_id = build_message_id(session.user_id, session.session_id, seq)
+        message_id = build_message_id(session.user_id, session.session_id, seq)
         row = {
             "id": message_id,
-            "session_key": session_key,
+            "user_id": int(session.user_id),
+            "session_id": int(session.session_id),
             "seq": int(seq),
             "role": role,
             "content": content,
@@ -220,11 +223,13 @@ class InMemorySessionStore:
             **(extra or {}),
         }
         with self._lock:
-            self._messages.setdefault(session_key, []).append(dict(row))
+            identity = session.identity
+            self._messages.setdefault(identity, []).append(dict(row))
             meta = self._sessions.setdefault(
-                session_key,
+                identity,
                 {
-                    "key": session_key,
+                    "user_id": int(session.user_id),
+                    "session_id": int(session.session_id),
                     "created_at": ts,
                     "updated_at": ts,
                     "last_consolidated": 0,
@@ -236,17 +241,18 @@ class InMemorySessionStore:
             meta["next_seq"] = max(int(meta.get("next_seq") or 0), int(seq) + 1)
         return row
 
-    def fetch_session_messages(self, session_key: str) -> list[dict[str, Any]]:
+    def fetch_session_messages(self, session: SessionRef) -> list[dict[str, Any]]:
         with self._lock:
-            rows = self._messages.get(session_key, [])
+            rows = self._messages.get(session.identity, [])
             return [dict(row) for row in sorted(rows, key=lambda item: int(item["seq"]))]
 
-    def update_last_consolidated(self, session_key: str, value: int) -> None:
+    def update_last_consolidated(self, session: SessionRef, value: int) -> None:
         with self._lock:
             meta = self._sessions.setdefault(
-                session_key,
+                session.identity,
                 {
-                    "key": session_key,
+                    "user_id": int(session.user_id),
+                    "session_id": int(session.session_id),
                     "created_at": _now_iso(),
                     "updated_at": _now_iso(),
                     "last_consolidated": 0,
@@ -280,9 +286,9 @@ class InMemorySessionStore:
         seen: set[str] = set()
         with self._lock:
             for item in targets:
-                session_key = str(item["session_key"])
+                identity = (int(item["user_id"]), int(item["session_id"]))
                 seq = int(item["seq"])
-                for message in self._messages.get(session_key, []):
+                for message in self._messages.get(identity, []):
                     message_seq = int(message["seq"])
                     if message_seq < max(0, seq - context) or message_seq > seq + context:
                         continue
@@ -293,14 +299,15 @@ class InMemorySessionStore:
                     row = dict(message)
                     row["in_source_ref"] = message_id in ids
                     rows.append(row)
-        rows.sort(key=lambda item: (str(item["session_key"]), int(item["seq"])))
+        rows.sort(key=lambda item: (int(item["user_id"]), int(item["session_id"]), int(item["seq"])))
         return rows
 
     def search_messages(
         self,
         query: str,
         *,
-        session_key: str | None = None,
+        user_id: int | None = None,
+        session_id: int | None = None,
         role: str | None = None,
         limit: int = 10,
         offset: int = 0,
@@ -308,8 +315,10 @@ class InMemorySessionStore:
         lowered = query.lower()
         with self._lock:
             rows = [dict(row) for items in self._messages.values() for row in items]
-        if session_key is not None:
-            rows = [row for row in rows if str(row["session_key"]) == session_key]
+        if user_id is not None:
+            rows = [row for row in rows if int(row["user_id"]) == int(user_id)]
+        if session_id is not None:
+            rows = [row for row in rows if int(row["session_id"]) == int(session_id)]
         if role is not None:
             rows = [row for row in rows if str(row["role"]) == role]
         rows = [row for row in rows if lowered in str(row["content"]).lower()]
@@ -327,31 +336,31 @@ class SessionManager:
     ) -> None:
         self.workspace_root = Path(workspace_root)
         self.store: SessionStoreProtocol = store
-        self._cache: dict[str, Session] = {}
+        self._cache: dict[tuple[int, int], Session] = {}
 
-    def get_or_create(self, key: str | SessionRef) -> Session:
-        resolved_key = session_key_for(key)
-        if resolved_key in self._cache:
-            return self._cache[resolved_key]
-        meta = self.store.get_session_meta(resolved_key)
+    def get_or_create(self, session_ref: SessionRef) -> Session:
+        identity = session_ref.identity
+        if identity in self._cache:
+            return self._cache[identity]
+        meta = self.store.get_session_meta(session_ref)
         if meta is None:
-            session = Session(key=resolved_key)
+            session = Session(ref=session_ref)
             self.store.upsert_session(session)
         else:
             session = Session(
-                key=resolved_key,
+                ref=SessionRef(int(meta["user_id"]), int(meta["session_id"])),
                 created_at=meta["created_at"],
                 updated_at=meta["updated_at"],
                 last_consolidated=meta["last_consolidated"],
                 metadata=meta["metadata"],
-                messages=self.store.fetch_session_messages(resolved_key),
+                messages=self.store.fetch_session_messages(session_ref),
             )
-        self._cache[resolved_key] = session
+        self._cache[identity] = session
         return session
 
     def save(self, session: Session) -> None:
         self.store.upsert_session(session)
-        next_seq = self.store.next_seq(session.key)
+        next_seq = self.store.next_seq(session.ref)
         for message in session.messages:
             if message.get("id"):
                 continue
@@ -360,7 +369,7 @@ class SessionManager:
             if not isinstance(content, str):
                 content = json.dumps(content, ensure_ascii=False)
             row = self.store.insert_message(
-                session.key,
+                session.ref,
                 role=str(message.get("role") or "assistant"),
                 content=content,
                 ts=ts,
@@ -370,7 +379,7 @@ class SessionManager:
             message.update(row)
             next_seq += 1
         self.store.upsert_session(session)
-        self._cache[session.key] = session
+        self._cache[session.identity] = session
 
     def append_messages(self, session: Session, messages: list[dict[str, Any]]) -> None:
         for message in messages:
@@ -380,8 +389,8 @@ class SessionManager:
 
     def update_last_consolidated(self, session: Session, value: int) -> None:
         session.last_consolidated = int(value)
-        self.store.update_last_consolidated(session.key, int(value))
-        self._cache[session.key] = session
+        self.store.update_last_consolidated(session.ref, int(value))
+        self._cache[session.identity] = session
 
 
 def fetch_messages(
@@ -410,14 +419,16 @@ def search_messages(
     store: SessionStoreProtocol,
     query: str,
     *,
-    session_key: str | None = None,
+    user_id: int | None = None,
+    session_id: int | None = None,
     role: str | None = None,
     limit: int = 10,
     offset: int = 0,
 ) -> dict[str, Any]:
     rows, total = store.search_messages(
         query,
-        session_key=session_key,
+        user_id=user_id,
+        session_id=session_id,
         role=role,
         limit=limit,
         offset=offset,
@@ -434,7 +445,7 @@ def search_messages(
 
 
 def _extra_fields(message: dict[str, Any]) -> dict[str, Any]:
-    reserved = {"id", "session_key", "seq", "role", "content", "timestamp"}
+    reserved = {"id", "user_id", "session_id", "seq", "role", "content", "timestamp"}
     return {key: value for key, value in message.items() if key not in reserved}
 
 

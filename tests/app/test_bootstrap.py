@@ -134,7 +134,6 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
                 "OPENAI_API_KEY=file-key",
                 "OPENAI_MODEL=file-model",
                 "OPENAI_MAX_TOKENS=333",
-                "AMADEUS_SESSION_KEY=user:7:session:9",
                 "AMADEUS_MEMORY_USER_ID=7",
                 "AMADEUS_MEMORY_KEEP_COUNT=8",
             ]
@@ -151,8 +150,7 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
     assert config.provider.model == "env-model"
     assert config.provider.max_tokens == 333
     assert config.postgres_dsn == "postgresql://amadeus:amadeus@localhost:5432/amadeus"
-    assert config.default_session == SessionRef(7, 9)
-    assert config.default_session_key == "user:7:session:9"
+    assert config.default_memory_user_id == 7
     assert config.memory_keep_count == 8
 
 
@@ -203,43 +201,6 @@ def test_load_runtime_config_requires_postgres_dsn(tmp_path, monkeypatch):
         load_runtime_config(env_path=env_path, workspace_root=tmp_path)
 
 
-def test_load_runtime_config_requires_canonical_session_key(tmp_path):
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "\n".join(
-            [
-                "OPENAI_BASE_URL=https://llm.example.test/v1",
-                "OPENAI_API_KEY=secret",
-                "OPENAI_MODEL=fake-model",
-                "AMADEUS_SESSION_KEY=chat:file",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="canonical user/session shape"):
-        load_runtime_config(env_path=env_path, workspace_root=tmp_path)
-
-
-def test_load_runtime_config_requires_session_user_to_match_memory_user(tmp_path):
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "\n".join(
-            [
-                "OPENAI_BASE_URL=https://llm.example.test/v1",
-                "OPENAI_API_KEY=secret",
-                "OPENAI_MODEL=fake-model",
-                "AMADEUS_SESSION_KEY=user:7:session:9",
-                "AMADEUS_MEMORY_USER_ID=1",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ValueError, match="must match AMADEUS_MEMORY_USER_ID"):
-        load_runtime_config(env_path=env_path, workspace_root=tmp_path)
-
-
 def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
     clean_postgres().close()
     env_path = tmp_path / ".env"
@@ -265,7 +226,7 @@ def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
         await app.start()
         try:
             return await app.runtime.run_turn(
-                session=app.config.default_session,
+                session=_session(),
                 user_message="hello",
             )
         finally:
@@ -273,7 +234,7 @@ def test_build_passive_app_runs_real_runtime_and_refreshes_memory(tmp_path):
 
     result = asyncio.run(scenario())
 
-    session = app.session_manager.get_or_create(app.config.default_session)
+    session = app.session_manager.get_or_create(_session())
     recent = app.memory.store.read_recent_context()
     assert result.assistant_response == "assistant reply"
     assert [message["id"] for message in session.messages] == [
@@ -360,7 +321,7 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
 
     async def scenario():
         result = await app.runtime.run_turn(
-            session=app.config.default_session,
+            session=_session(),
             user_message="以后默认中文回复",
         )
         assert app.runtime.memory_engine is not None
@@ -502,7 +463,7 @@ def test_memory_enabled_runtime_recall_forget_and_undo_flow(tmp_path, monkeypatc
                 query="中文输出"
             )
             turn = await app.runtime.run_turn(
-                session=app.config.default_session,
+                session=_session(),
                 user_message="继续这个任务",
             )
             forgotten = ForgetMemoryTool(memory_engine=engine).execute(

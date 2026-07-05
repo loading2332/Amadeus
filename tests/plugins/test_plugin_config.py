@@ -76,18 +76,18 @@ def test_plugin_config_missing_attribute_raises_attribute_error() -> None:
 def test_plugin_kv_store_persists_mutations_across_instances(tmp_path: Path) -> None:
     path = tmp_path / ".kv.json"
     first = PluginKVStore(path)
-    session_key = "user:1:session:1"
+    session_identity = {"user_id": 1, "session_id": 1}
 
     assert first.get("turn_count", 0) == 0
     assert first.increment("turn_count") == 1
-    first.set("last_session", session_key)
+    first.set("last_session", session_identity)
 
     second = PluginKVStore(path)
     assert second.get("turn_count") == 1
-    assert second.get("last_session") == session_key
+    assert second.get("last_session") == session_identity
 
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved == {"turn_count": 1, "last_session": session_key}
+    assert saved == {"turn_count": 1, "last_session": session_identity}
 
 
 def test_plugin_kv_store_rejects_non_object_json(tmp_path: Path) -> None:

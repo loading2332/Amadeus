@@ -7,7 +7,6 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
-from amadeus.session.identity import build_session_key
 from amadeus.turns.store import (
     TURN_DONE,
     TURN_FAILED,
@@ -166,7 +165,8 @@ def _row_to_turn(row: Mapping[str, Any]) -> Turn:
     session_id = int(row["session_id"])
     return Turn(
         id=str(row["id"]),
-        session_key=build_session_key(user_id, session_id),
+        user_id=user_id,
+        session_id=session_id,
         content=str(row["content"]),
         status=str(row["status"]),
         answer=row["answer"],
@@ -177,8 +177,6 @@ def _row_to_turn(row: Mapping[str, Any]) -> Turn:
         updated_at=_ts(row["updated_at"]),
         started_at=_ts(row["started_at"]),
         finished_at=_ts(row["completed_at"]),
-        user_id=user_id,
-        session_id=session_id,
     )
 
 

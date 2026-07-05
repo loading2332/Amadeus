@@ -44,6 +44,16 @@ def _optional_string_list(name: str, value: object) -> list[str] | None:
     return value
 
 
+def _optional_int(name: str, value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer")
+    if isinstance(value, int):
+        return value
+    raise TypeError(f"{name} must be an integer")
+
+
 def _optional_dict_list(name: str, value: object) -> list[dict[str, Any]] | None:
     if value is None:
         return None
@@ -215,7 +225,8 @@ class SearchMessagesTool:
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
-                "session_key": {"type": "string"},
+                "user_id": {"type": "integer"},
+                "session_id": {"type": "integer"},
                 "role": {"type": "string"},
                 "limit": {"type": "integer"},
                 "offset": {"type": "integer"},
@@ -228,7 +239,8 @@ class SearchMessagesTool:
         payload = search_messages(
             self.store,
             query=_required_string("query", kwargs.get("query")),
-            session_key=_optional_string("session_key", kwargs.get("session_key")),
+            user_id=_optional_int("user_id", kwargs.get("user_id")),
+            session_id=_optional_int("session_id", kwargs.get("session_id")),
             role=_optional_string("role", kwargs.get("role")),
             limit=_int_arg("limit", kwargs.get("limit"), 10),
             offset=_int_arg("offset", kwargs.get("offset"), 0),

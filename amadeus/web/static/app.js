@@ -1,6 +1,10 @@
+const DEFAULT_USER_ID = 1;
+const SESSION_STORAGE = "amadeus_session";
+
 const state = {
-  sessionKey: getOrCreateSessionKey(),
-  busy: false,
+  userId: DEFAULT_USER_ID,
+  sessionId: null,
+  busy: true,
 };
 
 const nodes = {
@@ -12,16 +16,60 @@ const nodes = {
   statusBadge: document.querySelector("#statusBadge"),
 };
 
-function getOrCreateSessionKey() {
-  const existing = window.localStorage.getItem("amadeus_session_key");
+function readStoredSession() {
+  const raw = window.localStorage.getItem(SESSION_STORAGE);
+  if (!raw) {
+    return null;
+  }
+  try {
+    const value = JSON.parse(raw);
+    const userId = Number.parseInt(value.user_id, 10);
+    const sessionId = Number.parseInt(value.session_id, 10);
+    if (Number.isInteger(userId) && userId > 0 && Number.isInteger(sessionId) && sessionId > 0) {
+      return {
+        user_id: userId,
+        session_id: sessionId,
+      };
+    }
+  } catch {
+    // Fall through to create a fresh server-owned session.
+  }
+  window.localStorage.removeItem(SESSION_STORAGE);
+  return null;
+}
+
+async function getOrCreateSession() {
+  const existing = readStoredSession();
   if (existing) {
     return existing;
   }
-  const created = `web:${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
-  window.localStorage.setItem("amadeus_session_key", created);
+  const response = await fetch("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_id: DEFAULT_USER_ID,
+      title: "Web chat",
+      metadata: { channel: "web" },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const created = await response.json();
+  window.localStorage.setItem(
+    SESSION_STORAGE,
+    JSON.stringify({
+      user_id: created.user_id,
+      session_id: created.session_id,
+    }),
+  );
   return created;
+}
+
+function applySession(session) {
+  state.userId = session.user_id;
+  state.sessionId = session.session_id;
+  nodes.sessionLabel.textContent = `user ${state.userId} / session ${state.sessionId}`;
 }
 
 function setStatus(status) {
@@ -48,21 +96,36 @@ function appendMessage(role, content) {
 }
 
 async function sendMessage(message) {
+  if (state.sessionId === null) {
+    throw new Error("Session is not ready");
+  }
   appendMessage("user", message);
   setBusy(true, "pending");
-  const response = await fetch("/api/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message,
-      session_key: state.sessionKey,
-    }),
-  });
+  let response = await createTurn(message);
+  if (!response.ok) {
+    window.localStorage.removeItem(SESSION_STORAGE);
+    const session = await getOrCreateSession();
+    applySession(session);
+    response = await createTurn(message);
+  }
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
   const payload = await response.json();
   await waitForTurn(payload.turn_id);
+}
+
+async function createTurn(message) {
+  const response = await fetch("/api/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      user_id: state.userId,
+      session_id: state.sessionId,
+    }),
+  });
+  return response;
 }
 
 async function waitForTurn(turnId) {
@@ -162,5 +225,14 @@ nodes.input.addEventListener("keydown", (event) => {
   }
 });
 
-nodes.sessionLabel.textContent = state.sessionKey;
 nodes.messages.innerHTML = '<div class="empty">开始对话</div>';
+setBusy(true, "initializing");
+getOrCreateSession()
+  .then((session) => {
+    applySession(session);
+    setBusy(false);
+    nodes.input.focus();
+  })
+  .catch((error) => {
+    setStatus(error instanceof Error ? error.message : "session failed");
+  });

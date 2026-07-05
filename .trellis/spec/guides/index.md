@@ -36,6 +36,7 @@ These guides help you **ask the right questions before coding**.
 - [ ] You're not sure where to put some logic
 - [ ] You are adding an event kind, JSONL record, RPC payload, or config field
 - [ ] UI / command code starts casting raw payload fields directly
+- [ ] You are touching session identity OR something that carries a session/user id → see `backend/quality-guidelines.md` "Scenario: Structured Session Identity"
 
 → Read [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md)
 

@@ -103,7 +103,7 @@ def test_search_source_ref_can_fetch_full_original_message(tmp_path, memory_stor
     manager, _, _ = _memory_fixture(tmp_path, memory_store)
 
     searched = SearchMessagesTool(store=manager.store).execute(
-        query="memory evidence", session_key="user:1:session:1"
+        query="memory evidence", user_id=1, session_id=1
     )
     source_ref = searched.output["messages"][0]["source_ref"]
     fetched = FetchMessagesTool(store=manager.store).execute(source_ref=source_ref)

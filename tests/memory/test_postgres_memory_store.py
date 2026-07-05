@@ -247,7 +247,7 @@ def test_user_isolation_blocks_cross_user_reads_and_writes() -> None:
             memory_type="fact",
             summary="user2 secret fact",
             embedding=_pad([1.0, 0.0, 0.0]),
-            source_ref='["chat:2:0"]#h:u2',
+            source_ref='["session:2:1:0"]#h:u2',
         )
 
         u1_ids = [item["id"] for item in store_user1.list_active_items()]
@@ -259,7 +259,7 @@ def test_user_isolation_blocks_cross_user_reads_and_writes() -> None:
         assert store_user1.get_item_by_id(u2_ids[0]) is None
         # Cross-user source_ref lookups do not leak rows.
         assert store_user2.find_items_by_source_ref('["session:1:1:0"]#h:u1') == []
-        assert store_user1.find_items_by_source_ref('["chat:2:0"]#h:u2') == []
+        assert store_user1.find_items_by_source_ref('["session:2:1:0"]#h:u2') == []
 
         # Search must stay within user scope.
         u1_search = store_user1.search_active_items(

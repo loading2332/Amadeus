@@ -21,7 +21,6 @@ async def turn_event_stream(
         if turn is None:
             payload: dict[str, Any] = {
                 "turn_id": turn_id,
-                "session_key": "",
                 "user_id": None,
                 "session_id": None,
                 "status": "failed",

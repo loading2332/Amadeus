@@ -275,7 +275,6 @@ def test_passive_runtime_accepts_structured_session_ref(tmp_path: Path) -> None:
 
     session = manager.get_or_create(SessionRef(user_id=7, session_id=9))
     assert result.session == SessionRef(user_id=7, session_id=9)
-    assert result.session_key == "user:7:session:9"
     assert result.user_message_id == "session:7:9:0"
     assert result.assistant_message_id == "session:7:9:1"
     assert [message["id"] for message in session.messages] == [

@@ -184,7 +184,7 @@ def test_post_response_worker_replaces_conflicting_preference(memory_store) -> N
             MemoryWriteRequest(
                 summary="用户以前默认偏好英文回复。",
                 memory_type="preference",
-                source_ref='["seed:0"]#h:old',
+                source_ref='["session:1:1:10"]#h:old',
                 extra={"category": "response_language"},
             )
         )
@@ -237,7 +237,7 @@ def test_llm_decision_provider_replaces_similar_memory_from_llm_json(memory_stor
             MemoryWriteRequest(
                 summary="用户以前默认偏好英文回复。",
                 memory_type="preference",
-                source_ref='["seed:0"]#h:old',
+                source_ref='["session:1:1:10"]#h:old',
                 extra={},
             )
         )
@@ -288,7 +288,7 @@ def test_post_response_worker_skips_duplicate_candidate(memory_store) -> None:
             MemoryWriteRequest(
                 summary="用户默认偏好中文回复。",
                 memory_type="preference",
-                source_ref='["seed:0"]#h:old',
+                source_ref='["session:1:1:10"]#h:old',
                 extra={"category": "response_language"},
             )
         )

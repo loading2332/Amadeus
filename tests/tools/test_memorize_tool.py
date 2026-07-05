@@ -10,6 +10,7 @@ from amadeus.memory import (
     PostResponseMemoryWorker,
 )
 from amadeus.memory.postgres import PostgresMemoryStore
+from amadeus.session.identity import SessionRef
 from amadeus.tools.memorize import MemorizeTool
 
 from tests.db.pgvector_helpers import pad_embedding
@@ -27,9 +28,10 @@ class FakeExtractor:
     async def extract(
         self,
         *,
-        session_key: str,
+        session: SessionRef,
         messages: list[dict[str, object]],
     ) -> list[dict[str, object]]:
+        del session, messages
         return []
 
 

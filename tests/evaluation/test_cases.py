@@ -80,7 +80,7 @@ cases:
     seed_long_term_memories:
       - summary: 用户以前偏好英文
         memory_type: preference
-        source_ref: '["seed:0"]#h:old'
+        source_ref: '["session:1:1:10"]#h:old'
     turn_messages:
       - role: user
         content: 以后默认用中文回复

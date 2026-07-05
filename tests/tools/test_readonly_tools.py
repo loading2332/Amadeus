@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from amadeus.session.identity import SessionRef
 from amadeus.session.store import InMemorySessionStore, SessionManager
 from amadeus.tools.defaults import FetchMessagesTool, ReadFileTool, SearchMessagesTool
 
 
 def test_fetch_messages_tool_reads_session_messages(tmp_path):
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
-    session = manager.get_or_create("user:1:session:1")
+    session = manager.get_or_create(SessionRef(user_id=1, session_id=1))
     session.add_message("user", "hello")
     session.add_message("assistant", "hi")
     manager.save(session)
@@ -22,7 +23,7 @@ def test_fetch_messages_tool_reads_session_messages(tmp_path):
 
 def test_fetch_messages_tool_reads_recall_evidence(tmp_path):
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
-    session = manager.get_or_create("user:1:session:1")
+    session = manager.get_or_create(SessionRef(user_id=1, session_id=1))
     session.add_message("user", "I am learning memory evidence")
     session.add_message("assistant", "Use fetch_messages to verify source text")
     session.add_message("user", "The source_ref should keep this traceable")
@@ -57,13 +58,13 @@ def test_fetch_messages_tool_reads_recall_evidence(tmp_path):
 
 def test_search_messages_tool_returns_matches(tmp_path):
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
-    session = manager.get_or_create("user:1:session:1")
+    session = manager.get_or_create(SessionRef(user_id=1, session_id=1))
     session.add_message("user", "tool runtime")
     session.add_message("assistant", "copy that")
     manager.save(session)
 
     tool = SearchMessagesTool(store=manager.store)
-    result = tool.execute(query="tool", session_key="user:1:session:1")
+    result = tool.execute(query="tool", user_id=1, session_id=1)
 
     assert result.is_error is False
     assert result.output["count"] == 1
@@ -75,14 +76,14 @@ def test_search_messages_tool_returns_matches(tmp_path):
 
 def test_search_messages_tool_returns_preview_metadata(tmp_path):
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
-    session = manager.get_or_create("user:1:session:1")
+    session = manager.get_or_create(SessionRef(user_id=1, session_id=1))
     long_content = "\n".join(f"line-{index}" for index in range(55))
     session.add_message("user", f"benchmark recall\n{long_content}")
     session.add_message("assistant", "copy that")
     manager.save(session)
 
     tool = SearchMessagesTool(store=manager.store)
-    result = tool.execute(query="benchmark recall", session_key="user:1:session:1", limit=1)
+    result = tool.execute(query="benchmark recall", user_id=1, session_id=1, limit=1)
 
     assert result.is_error is False
     assert result.output["count"] == 1

@@ -112,9 +112,14 @@ def test_memory_runtime_config_targets_postgres_memory_user(tmp_path, monkeypatc
 
 
 def test_memory_protocol_dataclasses_match_task1_plan_shape():
-    assert [field.name for field in fields(MemoryScope)] == ["channel", "chat_id"]
+    assert [field.name for field in fields(MemoryScope)] == [
+        "channel",
+        "chat_id",
+        "session",
+    ]
     assert MemoryScope().channel is None
     assert MemoryScope().chat_id is None
+    assert MemoryScope().session is None
     assert [field.name for field in fields(MemoryRecallRequest)] == [
         "text",
         "intent",

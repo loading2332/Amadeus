@@ -27,7 +27,6 @@ class SessionCreateRequest(BaseModel):
 class SessionResponse(BaseModel):
     session_id: int
     user_id: int
-    session_key: str
     title: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str | None = None
@@ -38,7 +37,6 @@ class MessageResponse(BaseModel):
     id: str
     user_id: int | None = None
     session_id: int | None = None
-    session_key: str
     seq: int
     role: str
     content: str
@@ -47,9 +45,8 @@ class MessageResponse(BaseModel):
 
 class TurnResponse(BaseModel):
     turn_id: str
-    session_key: str
-    user_id: int | None = None
-    session_id: int | None = None
+    user_id: int
+    session_id: int
     status: str
     answer: str | None = None
     error: str | None = None
@@ -63,7 +60,6 @@ class TurnResponse(BaseModel):
 def turn_response(turn: Turn) -> TurnResponse:
     return TurnResponse(
         turn_id=turn.id,
-        session_key=turn.session_key,
         user_id=turn.user_id,
         session_id=turn.session_id,
         status=turn.status,

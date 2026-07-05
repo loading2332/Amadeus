@@ -206,6 +206,88 @@ if semantic_score >= threshold:
     vector_scored.append((item_id, final))
 ```
 
+## Scenario: Structured Session Identity
+
+### 1. Scope / Trigger
+
+- Trigger: any code that creates, carries, stores, sends, or parses a session identity across runtime, lifecycle, events, memory, worker, turn queue, web API, frontend, CLI, config, or tools.
+- This requires code-spec depth because the identity crosses every layer and the previous design leaked string keys (`web:*`, `cli:default`, `user:1:session:1`) through runtime, stores, events, and browser state.
+
+### 2. Signatures
+
+- `amadeus.session.identity.SessionRef(user_id: int, session_id: int)` — the only complete internal session identity. `identity -> tuple[int, int]` is the cache-key form.
+- `Session(ref: SessionRef, ...)` in `amadeus/session/store.py` — `Session` holds a `SessionRef`, never a string key.
+- `SessionStoreProtocol` / `InMemorySessionStore` / `PostgresSessionStore` methods take `SessionRef` or explicit `user_id`/`session_id`, never a session key string.
+- `amadeus.events.ToolCallStarted`, `ToolCallCompleted`, `TurnCommitted` carry `session: SessionRef`.
+- `Turn(user_id, session_id, ...)` in `amadeus/turns/store.py` — no `session_key` field; worker rebuilds `SessionRef(turn.user_id, turn.session_id)`.
+- `build_message_id(user_id: int, session_id: int, seq: int) -> str` in `amadeus/session/identity.py` — evidence locator only.
+- Web schemas expose `user_id` and `session_id`; response models have no `session_key` field.
+
+### 3. Contracts
+
+- A bare `session_id` is NOT a complete boundary identity; the pair `(user_id, session_id)` is the identity, represented as `SessionRef`.
+- Runtime, lifecycle, prompt rendering, memory, worker, event, and tool contexts pass `SessionRef` (Python boundary) or `user_id` + `session_id` (JSON/DB boundary); never a string session key.
+- No production layer parses a session identity string to recover ids. The only string form allowed is `build_message_id`-shaped source refs (`session:<user_id>:<session_id>:<seq>`), consumed ONLY by fetch-by-source-ref flows as message evidence, not as session identity, cache key, or store input.
+- Source refs must encode session scope BEFORE message scope, so a referenced message cannot be confused with the same seq in another session.
+- PostgreSQL queries use the existing `user_id` and `session_id` columns directly; no schema migration was needed.
+- CLI/config no longer expose `amadeus chat`, `--session-key`, `RuntimeConfig.default_session`, `default_session_key`, or `AMADEUS_SESSION_KEY`. Eval runners construct their own `SessionRef` values.
+- Frontend localStorage and UI state store numeric `user_id` and `session_id`; the legacy `amadeus_session_key` cleanup is gone.
+
+### 4. Validation & Error Matrix
+
+- Code receives a bare `session_id` or a string session key at a boundary -> reject / fix the caller; do not parse it into identity.
+- Worker loads a stored `Turn` -> reconstruct `SessionRef(turn.user_id, turn.session_id)` directly; no fallback string parsing.
+- Source-ref string lacks session scope (e.g. legacy `chat:*` or `seed:*`) -> treat as a fixture bug, replace with session-scoped `session:<user_id>:<session_id>:<seq>`.
+- Tool search/filter called with a `session_key` argument -> reject; tool schemas accept `user_id` and optional `session_id` only.
+
+### 5. Good/Base/Bad Cases
+
+- Good: web posts `{user_id, session_id, message}` -> `PostgresTurnStore.create_turn(user_id, session_id)` -> worker claims `Turn` -> `SessionRef(user_id, session_id)` -> `runtime.run_turn(session=SessionRef(...))` -> `SessionManager.get_or_create(SessionRef)` -> Postgres filters on `user_id/session_id` columns.
+- Base: eval runner builds a generated `SessionRef` per case and drives runtime/tools directly, no CLI chat flag.
+- Bad: a store method accepts a `web:*` string and parses it. Bad: events carry `session_key: str` instead of `session: SessionRef`. Bad: frontend stores `sessionKey` and posts it back. Bad: source ref `chat:<seq>` without user/session scope leaks into fingerprint or cache key.
+
+### 6. Tests Required
+
+- Session store unit/integration tests prove messages persist, reload, search, and fetch through `SessionRef` / structured ids.
+- Runtime tests prove `PassiveTurnResult`, lifecycle events, worker turn handling, and memory write/read paths carry `SessionRef` or structured ids (see `tests/runtime/test_before_turn.py` asserting `MemoryScope.session == SessionRef(...)` and `chat_id is None`).
+- Tool tests prove session filtering uses structured `user_id`/`session_id` fields.
+- Web tests prove responses have no `session_key`; frontend stores/sends only `user_id`/`session_id`.
+- CLI tests cover eval only and prove `amadeus chat` / `--session-key` are gone.
+- Search gate: `rg -n "session_key|sessionKey|AMADEUS_SESSION_KEY|--session-key|parse_session_key|require_session_key|build_session_key|SessionRefLike|session_key_for" amadeus tests .env.example docs` returns no hits.
+- Source-ref gate: `rg -n "seed:|\[\"chat:" tests amadeus` returns no legacy fixture hits.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+event = ToolCallStarted(session_key=f"web:{user_id}:{session_id}", ...)
+store.get(session_key=request.session_key)
+turn = Turn(session_key=f"user:{user_id}:session:{session_id}", ...)
+# frontend
+localStorage.setItem("amadeus_session_key", key)
+```
+
+#### Correct
+
+```python
+event = ToolCallStarted(session=SessionRef(user_id, session_id), ...)
+store.get(SessionRef(user_id, session_id))
+turn = Turn(user_id=user_id, session_id=session_id, ...)
+# frontend
+localStorage.setItem("amadeus_user_id", String(user_id))
+localStorage.setItem("amadeus_session_id", String(session_id))
+```
+
+> **Gotcha — source refs are not identity.** `session:<user_id>:<session_id>:<seq>` strings look like session identity but are evidence/message locators. They may be parsed ONLY by fetch-by-source-ref code. Runtime, store, cache, event, tool-filter, and API identity must use `SessionRef` / `user_id`+`session_id`, never the source-ref string.
+
+---
+
+## Reference Branch Notes
+
+- This task intentionally diverges from Akashic's `session_key` mechanism. Akashic uses string session keys across bus/lifecycle/passive/turn/tests; Amadeus expresses the same "explicit identity at lifecycle/memory boundary" idea through `SessionRef` / `user_id + session_id`. Akashic is treated as a cautionary map of where identity leaks, not a model to copy.
+- Closer structural reference: `redrumY/telegram-bot@codex/web-agent-architecture` for structured web/turn contracts around `user_id`/`session_id`. Note its `MemoryScope.session_key` field is NOT copied — Amadeus keeps memory scope structured.
+
 ## Scenario: Dual-Hypothesis Memory Retrieval
 
 ### 1. Scope / Trigger

@@ -82,7 +82,7 @@ class _PrepareContextModule:
                     MemoryRecallRequest(
                         text=frame.input.user_message,
                         intent="context",
-                        scope=MemoryScope(chat_id=session_ref.session_key, session=session_ref),
+                        scope=MemoryScope(session=session_ref),
                         context={
                             "history": history,
                             "session": session_ref,

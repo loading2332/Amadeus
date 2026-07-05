@@ -13,7 +13,8 @@ TERMINAL_TURN_STATUSES = {TURN_DONE, TURN_FAILED}
 @dataclass(frozen=True)
 class Turn:
     id: str
-    session_key: str
+    user_id: int
+    session_id: int
     content: str
     status: str
     answer: str | None
@@ -24,5 +25,3 @@ class Turn:
     updated_at: str | None
     started_at: str | None
     finished_at: str | None
-    user_id: int | None = None
-    session_id: int | None = None

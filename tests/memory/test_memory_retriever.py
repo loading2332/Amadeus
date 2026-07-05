@@ -132,7 +132,7 @@ def test_answer_retrieval_uses_event_and_general_hypotheses_as_vector_lanes(
         memory_type="event",
         summary="用户曾经记录过目标事实",
         embedding=pad_embedding([0.0, 1.0, 0.0]),
-        source_ref='["chat:2:0"]#h:event',
+        source_ref='["session:2:1:0"]#h:event',
     )
     provider = FakeHypothesisProvider()
 
@@ -187,7 +187,7 @@ def test_generated_hypotheses_do_not_create_lexical_hits(memory_store) -> None:
         memory_type="event",
         summary="rarelexical phrase exists only in generated hypothesis text",
         embedding=pad_embedding([0.0, 1.0, 0.0]),
-        source_ref='["chat:2:1"]#h:lexical',
+        source_ref='["session:2:1:1"]#h:lexical',
     )
     provider = FakeHypothesisProvider(
         event="rarelexical generated phrase",
@@ -217,7 +217,7 @@ def test_hypothesis_failures_fall_back_to_raw_query(memory_store) -> None:
         memory_type="event",
         summary="raw fallback memory",
         embedding=pad_embedding([1.0, 0.0, 0.0]),
-        source_ref='["chat:2:2"]#h:raw',
+        source_ref='["session:2:1:2"]#h:raw',
     )
     retriever = MemoryRetriever(
         store=store,
@@ -246,7 +246,7 @@ def test_hypothesis_timeout_falls_back_to_raw_query(memory_store) -> None:
         memory_type="event",
         summary="raw timeout memory",
         embedding=pad_embedding([1.0, 0.0, 0.0]),
-        source_ref='["chat:2:3"]#h:timeout',
+        source_ref='["session:2:1:3"]#h:timeout',
     )
     provider = SlowHypothesisProvider()
     retriever = MemoryRetriever(
@@ -275,7 +275,7 @@ def test_empty_hypotheses_fall_back_and_are_not_persisted(memory_store) -> None:
         memory_type="event",
         summary="raw persisted memory",
         embedding=pad_embedding([1.0, 0.0, 0.0]),
-        source_ref='["chat:2:5"]#h:empty',
+        source_ref='["session:2:1:5"]#h:empty',
     )
     retriever = MemoryRetriever(
         store=store,
@@ -306,7 +306,7 @@ def test_hypothesis_trace_does_not_render_into_context_text(memory_store) -> Non
         memory_type="event",
         summary="用户真正存储的事实",
         embedding=pad_embedding([0.0, 1.0, 0.0]),
-        source_ref='["chat:2:4"]#h:render',
+        source_ref='["session:2:1:4"]#h:render',
     )
     hypothesis = "event-hypothesis text must stay out of rendered memory"
     retriever = MemoryRetriever(

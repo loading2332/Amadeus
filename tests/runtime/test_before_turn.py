@@ -103,7 +103,8 @@ def test_before_turn_uses_build_context_when_caller_did_not_supply_it(
     assert result.retrieved_memory == "memory from build_context"
     assert memory.requests[0].text == "remember"
     assert memory.requests[0].intent == "context"
-    assert memory.requests[0].scope.chat_id == "user:1:session:1"
+    assert memory.requests[0].scope.chat_id is None
+    assert memory.requests[0].scope.session == _session()
     assert memory.requests[0].context["session"] == _session()
     assert result.memory_trace["injected_ids"] == ["mem_1"]
     assert result.memory_trace["record_count"] == 1

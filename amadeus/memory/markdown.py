@@ -341,7 +341,7 @@ class MarkdownMemoryMaintenance:
             return
         if self.session_manager is None:
             return
-        session = self.session_manager.get_or_create(event.session_key)
+        session = self.session_manager.get_or_create(event.session)
         if self._should_consolidate(session):
             result = await self.consolidate(ConsolidateRequest(session=session))
             if result.trace.get("mode") != "skipped":

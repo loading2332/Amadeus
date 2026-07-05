@@ -22,7 +22,7 @@
 
 - 代码：`amadeus/app/`
 - 简历 claim：runtime 不是测试拼装，而是可通过 CLI 启动的真实应用边界。
-- 公共行为：`build_passive_app()` 连接 provider、session、memory、tools、plugins；`amadeus chat --trace` 输出可解释 trace。
+- 公共行为：`build_passive_app()` 连接 provider、session、memory、tools、plugins；web turn worker 处理结构化会话请求并持久化 trace。
 - 验证：`uv run pytest tests/app`
 - Akashic 参考：`../akashic-agent/bootstrap`
 

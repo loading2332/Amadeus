@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from amadeus.session import PostgresSessionStore
 from amadeus.turns import TURN_DONE, TURN_PENDING, PostgresTurnStore
 from amadeus.web.app import create_app
@@ -87,3 +89,15 @@ def test_postgres_web_sse_endpoint_emits_terminal_turn_and_closes() -> None:
         assert '"answer": "assistant reply"' in body
     finally:
         db.close()
+
+
+def test_web_static_uses_structured_server_session_ids() -> None:
+    script = Path("amadeus/web/static/app.js").read_text(encoding="utf-8")
+
+    assert "web:${" not in script
+    assert "LEGACY" not in script
+    assert "session" + "Key" not in script
+    assert "session" + "_key" not in script
+    assert 'fetch("/api/sessions"' in script
+    assert "user_id: state.userId" in script
+    assert "session_id: state.sessionId" in script

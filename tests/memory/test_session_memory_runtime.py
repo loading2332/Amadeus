@@ -99,7 +99,7 @@ def test_session_store_persists_stable_message_ids_and_fetches_source_ref(tmp_pa
     rows = fetch_messages(manager.store, source_ref='["session:1:1:0","session:1:1:1"]')
     assert [row["content"] for row in rows] == ["hello", "hi"]
 
-    result = search_messages(manager.store, "hell", session_key="user:1:session:1")
+    result = search_messages(manager.store, "hell", user_id=1, session_id=1)
     assert result["count"] == 1
     assert result["messages"][0]["id"] == "session:1:1:0"
 
@@ -111,7 +111,7 @@ def test_in_memory_session_store_uses_canonical_message_ids_for_session_ref(tmp_
     session.add_message("assistant", "hi")
     manager.save(session)
 
-    assert session.key == "user:2:session:4"
+    assert session.ref == SessionRef(user_id=2, session_id=4)
     assert [message["id"] for message in session.messages] == [
         "session:2:4:0",
         "session:2:4:1",
@@ -145,7 +145,7 @@ def test_turn_committed_refreshes_recent_turns_when_window_not_ready(
     asyncio.run(
         bus.emit(
             TurnCommitted(
-                session_key="user:1:session:1",
+                session=_session(),
                 input_message="not enough yet",
                 persisted_user_message="not enough yet",
                 assistant_response="short reply",

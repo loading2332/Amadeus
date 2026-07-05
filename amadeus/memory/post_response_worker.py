@@ -198,7 +198,11 @@ class LLMMemoryExtractor:
                 },
                 {
                     "role": "user",
-                    "content": f"session_key={session.session_key}\n{transcript}",
+                    "content": (
+                        f"user_id={session.user_id}\n"
+                        f"session_id={session.session_id}\n"
+                        f"{transcript}"
+                    ),
                 },
             ],
             model=self.model,

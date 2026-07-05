@@ -80,10 +80,6 @@ class PassiveTurnResult:
     context_retry: dict[str, Any] = field(default_factory=dict)
     memory_trace: dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def session_key(self) -> str:
-        return self.session.session_key
-
 
 @dataclass
 class PassiveRuntime:

@@ -198,7 +198,7 @@ def test_run_memory_quality_case_returns_write_then_recall_shape(
             SeedLongTermMemory(
                 summary="用户以前偏好英文回复。",
                 memory_type="preference",
-                source_ref='["seed:0"]#h:old',
+                source_ref='["session:1:1:10"]#h:old',
             ),
         ),
         turn_messages=(
