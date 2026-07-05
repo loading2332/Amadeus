@@ -208,3 +208,36 @@ Completed PostgreSQL foundation, Postgres web turn/session runtime, pgvector mem
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Remove SQLite Runtime Stores
+
+**Date**: 2026-07-05
+**Task**: Remove SQLite Runtime Stores
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+Removed SQLite-backed runtime store paths, tightened structured session contracts around SessionRef, ported coverage to PostgreSQL-backed tests, and documented breaking surface for CLI/web/memory APIs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5836e63` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

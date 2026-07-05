@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
-- **Last Active**: 2026-07-04
+- **Total Sessions**: 7
+- **Last Active**: 2026-07-05
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~210 | Active |
+| `journal-1.md` | ~243 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-07-05 | Remove SQLite Runtime Stores | `5836e63` | `codex/delivery-runtime` |
 | 6 | 2026-07-04 | PostgreSQL worker runtime migration | `9e4cad0`, `2f75ab8`, `198f587`, `a5f8424`, `2e9155d` | `codex/delivery-runtime` |
 | 5 | 2026-07-04 | FastAPI web turn runtime | `8fd146c` | `codex/delivery-runtime` |
 | 4 | 2026-07-03 | Akashic-style hypothesis retrieval | `d977565` | `main` |
