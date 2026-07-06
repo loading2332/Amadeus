@@ -67,6 +67,7 @@ def test_build_passive_app_exposes_readonly_tool_runtime(tmp_path):
         "read_file",
         "recall_memory",
         "search_messages",
+        "tool_search",
         "undo_memory_by_source",
         "write_file",
     ]
@@ -100,13 +101,17 @@ def test_build_passive_app_uses_unscoped_file_tools(tmp_path):
         client=FakeClient(),
     )
 
-    read_result, read_trace = app.tool_executor.execute(
-        "read_file",
-        {"path": str(source)},
+    read_result, read_trace = asyncio.run(
+        app.tool_executor.execute_async(
+            "read_file",
+            {"path": str(source)},
+        )
     )
-    list_result, list_trace = app.tool_executor.execute(
-        "list_dir",
-        {"path": str(outside)},
+    list_result, list_trace = asyncio.run(
+        app.tool_executor.execute_async(
+            "list_dir",
+            {"path": str(outside)},
+        )
     )
     write_result, write_trace = asyncio.run(
         app.tool_executor.execute_async(
@@ -121,14 +126,15 @@ def test_build_passive_app_uses_unscoped_file_tools(tmp_path):
         )
     )
 
-    assert read_trace.status == "success"
-    assert read_result.output["content"] == "outside read"
-    assert list_trace.status == "success"
-    assert any(entry["name"] == "source.txt" for entry in list_result.output["entries"])
-    assert write_trace.status == "success"
-    assert write_result.output["path"] == str(target.resolve())
-    assert edit_trace.status == "success"
-    assert target.read_text(encoding="utf-8") == "after"
+    # P2: ReadOnlyFilesystemHook 在 bootstrap 装配后生效——workspace 之外的
+    # read/list/write/edit 都应被 deny（PRD A2 验收：hook 装配生效）。
+    assert read_trace.status == "denied"
+    assert "escapes allowed directory" in str(read_result.output)
+    assert list_trace.status == "denied"
+    assert write_trace.status == "denied"
+    assert edit_trace.status == "denied"
+    # 越界写未实际落盘
+    assert not target.exists()
 
 
 def test_build_passive_app_composes_store_retriever_memorizer_and_worker(

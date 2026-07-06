@@ -316,7 +316,7 @@ async def _run_write_case(
         memory_trace = dict(recall_output.get("trace", {}))
         source_refs = _collect_source_refs(recall_items)
         if source_refs:
-            fetch_result, _fetch_trace = app.tool_executor.execute(
+            fetch_result, _fetch_trace = await app.tool_executor.execute_async(
                 "fetch_messages",
                 {"source_refs": source_refs},
             )

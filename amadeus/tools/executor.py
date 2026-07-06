@@ -7,7 +7,6 @@ from typing import Any
 
 from amadeus.tools.base import (
     HookContext,
-    HookOutcome,
     HookTraceItem,
     ToolExecutionRequest,
     ToolExecutionResult,
@@ -248,15 +247,37 @@ class ToolExecutor:
             tool_batch_index=tool_batch_index,
         )
         result = await self.execute(request)
-        tool_result = ToolResult(
-            tool_name=tool_name,
-            output=result.output,
-            is_error=result.status != "success",
-            metadata={
-                "pre_hook_trace": [dict(t.__dict__) for t in result.pre_hook_trace],
-                "post_hook_trace": [dict(t.__dict__) for t in result.post_hook_trace],
-            },
-        )
+        # invoker（registry.execute）返回的就是 ToolResult；若已是 ToolResult 直接用，
+        # 否则包一层。避免嵌套 ToolResult(ToolResult(...))。
+        if isinstance(result.output, ToolResult):
+            tool_result = ToolResult(
+                tool_name=result.output.tool_name or tool_name,
+                output=result.output.output,
+                is_error=result.output.is_error or result.status != "success",
+                metadata={
+                    **result.output.metadata,
+                    "pre_hook_trace": [
+                        dict(t.__dict__) for t in result.pre_hook_trace
+                    ],
+                    "post_hook_trace": [
+                        dict(t.__dict__) for t in result.post_hook_trace
+                    ],
+                },
+            )
+        else:
+            tool_result = ToolResult(
+                tool_name=tool_name,
+                output=result.output,
+                is_error=result.status != "success",
+                metadata={
+                    "pre_hook_trace": [
+                        dict(t.__dict__) for t in result.pre_hook_trace
+                    ],
+                    "post_hook_trace": [
+                        dict(t.__dict__) for t in result.post_hook_trace
+                    ],
+                },
+            )
         trace = ToolTrace(
             tool_name=tool_name,
             arguments=result.final_arguments,

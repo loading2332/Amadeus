@@ -147,7 +147,7 @@ def test_second_turn_reuses_rebuilt_tool_chain_history_for_provider_messages(tmp
     )
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
-    registry.register(EchoTool())
+    registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,

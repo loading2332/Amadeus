@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from amadeus.tools.base import ToolExecutionRequest, ToolResult
+from amadeus.tools.base import ToolResult
 from amadeus.tools.registry import ToolRegistry
 
 

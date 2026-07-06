@@ -457,7 +457,7 @@ def test_before_step_early_stop_skips_tool_batch(tmp_path: Path) -> None:
         ),
     ]
     registry = ToolRegistry()
-    registry.register(EchoTool())
+    registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=LLMProvider(
@@ -505,7 +505,7 @@ def test_after_step_early_stop_skips_followup_llm_round(tmp_path: Path) -> None:
         ),
     ]
     registry = ToolRegistry()
-    registry.register(EchoTool())
+    registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=LLMProvider(
@@ -793,7 +793,7 @@ def test_passive_runtime_executes_single_tool_call_before_persisting_final_reply
     )
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
-    registry.register(EchoTool())
+    registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
@@ -890,7 +890,7 @@ def test_passive_runtime_continues_when_followup_response_requests_another_tool(
     )
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
-    registry.register(EchoTool())
+    registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
@@ -955,7 +955,7 @@ def test_passive_runtime_returns_progress_summary_when_tool_loop_hits_iteration_
     )
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
-    registry.register(EchoTool())
+    registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
@@ -1003,7 +1003,7 @@ def test_tool_chain_is_persisted_in_assistant_message_extra(tmp_path):
     provider = LLMProvider(LLMProviderConfig(api_key="secret", model="fake-model"), client=client)
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
-    registry.register(EchoTool())
+    registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path, provider=provider, session_manager=manager,
         tool_registry=registry, tool_executor=ToolExecutor(registry=registry),
@@ -1052,7 +1052,7 @@ def test_tool_messages_are_not_in_session_history(tmp_path):
     provider = LLMProvider(LLMProviderConfig(api_key="secret", model="fake-model"), client=client)
     manager = SessionManager(tmp_path, store=InMemorySessionStore())
     registry = ToolRegistry()
-    registry.register(EchoTool())
+    registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path, provider=provider, session_manager=manager,
         tool_registry=registry, tool_executor=ToolExecutor(registry=registry),

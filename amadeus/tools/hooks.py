@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from amadeus.tools.base import HookContext, HookOutcome, ToolExecutionRequest, ToolResult
+from amadeus.tools.base import (
+    HookContext,
+    HookOutcome,
+)
 
 _FILE_TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir"})
 

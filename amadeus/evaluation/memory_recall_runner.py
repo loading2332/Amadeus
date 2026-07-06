@@ -302,7 +302,7 @@ async def _run_recall_tool_case(
     source_refs = _collect_source_refs(recall_items if isinstance(recall_items, list) else [])
     fetched_messages: list[dict[str, Any]] = []
     if source_refs:
-        fetch_result, _fetch_trace = app.tool_executor.execute(
+        fetch_result, _fetch_trace = await app.tool_executor.execute_async(
             "fetch_messages",
             {"source_refs": source_refs},
         )

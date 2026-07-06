@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from amadeus.tools.base import HookContext, ToolExecutionRequest
 from amadeus.tools.hooks import ReadOnlyFilesystemHook
-from amadeus.tools.registry import ToolRegistry
 
 
 def _make_ctx(tool_name: str, args: dict) -> HookContext:

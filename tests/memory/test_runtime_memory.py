@@ -307,7 +307,7 @@ def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path, memory_e
         LLMProviderConfig(api_key="secret", model="fake"), client=client
     )
     registry = ToolRegistry()
-    registry.register(RecallMemoryTool(memory_engine=engine))
+    registry.register(RecallMemoryTool(memory_engine=engine), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,

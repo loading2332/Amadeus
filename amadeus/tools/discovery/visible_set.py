@@ -14,7 +14,7 @@ class TurnVisibleSet:
     def __init__(
         self,
         always_on: set[str],
-        discovery_state: "ToolDiscoveryState",
+        discovery_state: ToolDiscoveryState,
     ) -> None:
         self._always_on = set(always_on)
         self._discovery = discovery_state
