@@ -21,10 +21,18 @@ from amadeus.runtime.tool_runtime import (
     tool_call_batch_snapshot,
 )
 from amadeus.session.identity import SessionRef
+from amadeus.tools.base import ToolResult
+from amadeus.tools.discovery import ToolDiscoveryState, TurnVisibleSet
 from amadeus.tools.executor import ToolExecutor
+from amadeus.tools.registry import ToolRegistry
 from amadeus.types import ReasonerResult
 
 _REPEAT_GUARD_WINDOW = 4
+_TOOL_SEARCH_NAME = "tool_search"
+_UNLOCK_GUIDE_TEMPLATE = (
+    "工具 '{name}' 当前未加载（schema 不可见）。请先调用 "
+    "tool_search(query=\"select:{name}\") 加载，然后再调用该工具。"
+)
 
 
 @dataclass
@@ -45,6 +53,10 @@ class Reasoner:
     tool_executor: ToolExecutor | None = None
     max_tool_iterations: int = 10
     event_bus: EventBus = field(default_factory=EventBus)
+
+    # 按需解锁：注入 tool_registry 后启用 deferred loading + tool_search 解锁链路。
+    # 为 None 时回退到入参 tool_schemas 固定的旧行为（兼容期）。
+    tool_registry: ToolRegistry | None = None
 
     # Step lifecycle phases — injected by PassiveRuntime / PassiveApp.
     # Executed by Reasoner during the tool loop.
@@ -127,6 +139,24 @@ class Reasoner:
         step_telemetry: list[dict[str, Any]] = []
         repeat_history: list[tuple[str, str]] = []
 
+        # ── 按需解锁：构造本轮可见集（TD3a/TD3b/TD4）──────────────
+        # tool_registry 为空时回退到入参 tool_schemas 固定旧行为。
+        discovery_state: ToolDiscoveryState | None = None
+        visible_set: TurnVisibleSet | None = None
+        if self.tool_registry is not None:
+            discovery_state = ToolDiscoveryState()
+            visible_set = TurnVisibleSet(
+                always_on=self.tool_registry.get_always_on_names(),
+                discovery_state=discovery_state,
+            )
+
+        def _current_schemas() -> list[dict[str, Any]] | None:
+            if self.tool_registry is not None and visible_set is not None:
+                return self.tool_registry.get_schemas(
+                    names=visible_set.visible_names()
+                )
+            return tool_schemas
+
         while current_response.tool_calls:
             if iterations >= self.max_tool_iterations:
                 break
@@ -183,6 +213,57 @@ class Reasoner:
                 "calls": [],
             }
             for batch_index, tool_call in enumerate(current_response.tool_calls):
+                # ── 按需解锁：未解锁工具走 preflight + 引导回填（TD4 a 风格）──
+                if (
+                    visible_set is not None
+                    and not visible_set.is_visible(tool_call.name)
+                ):
+                    if session is not None:
+                        await self.event_bus.emit(
+                            ToolCallStarted(
+                                session=session,
+                                iteration=iterations,
+                                call_id=tool_call.id,
+                                tool_name=tool_call.name,
+                                arguments=tool_call.arguments,
+                            )
+                        )
+                    guide = _UNLOCK_GUIDE_TEMPLATE.format(name=tool_call.name)
+                    guide_result = ToolResult(
+                        tool_name=tool_call.name,
+                        output=guide,
+                        is_error=True,
+                        metadata={"unlock_required": tool_call.name},
+                    )
+                    append_tool_result(
+                        loop_messages,
+                        tool_call_id=tool_call.id,
+                        result=guide_result,
+                    )
+                    if session is not None:
+                        await self.event_bus.emit(
+                            ToolCallCompleted(
+                                session=session,
+                                iteration=iterations,
+                                call_id=tool_call.id,
+                                tool_name=tool_call.name,
+                                arguments=tool_call.arguments,
+                                final_arguments=tool_call.arguments,
+                                status="deferred",
+                                result_preview=guide,
+                            )
+                        )
+                    current_step["calls"].append(
+                        {
+                            "call_id": tool_call.id,
+                            "name": tool_call.name,
+                            "arguments": tool_call.arguments,
+                            "status": "deferred",
+                            "result": guide,
+                        }
+                    )
+                    continue
+
                 if session is not None:
                     await self.event_bus.emit(
                         ToolCallStarted(
@@ -222,6 +303,15 @@ class Reasoner:
                     tool_call_id=tool_call.id,
                     result=result,
                 )
+                # ── tool_search 解锁消费（TD3a/TD3b）──────────────────────
+                if (
+                    visible_set is not None
+                    and tool_call.name == _TOOL_SEARCH_NAME
+                    and trace.status == "success"
+                ):
+                    unlock_text = self._extract_unlock_text(result)
+                    if unlock_text:
+                        visible_set.consume_unlock_targets(unlock_text)
                 if trace.status == "success":
                     tools_used.append(tool_call.name)
                 invocations.append(tool_call)
@@ -294,7 +384,9 @@ class Reasoner:
                 break
 
             # ── Next LLM round ─────────────────────────────────────────
-            current_response = await self.provider.chat(loop_messages, tools=tool_schemas)
+            current_response = await self.provider.chat(
+                loop_messages, tools=_current_schemas()
+            )
 
         # ── Incomplete: model still wants tools ─────────────────────────
         if current_response.tool_calls:
@@ -344,6 +436,25 @@ class Reasoner:
             return json.dumps(output, ensure_ascii=False, sort_keys=True)
         except TypeError:
             return str(output)
+
+    @staticmethod
+    def _extract_unlock_text(result: Any) -> str:
+        """从 tool_search 的 ToolResult 取出供 TurnVisibleSet 解锁的 JSON 文本。
+
+        tool_search 把候选列表 JSON 塞在 result.metadata['as_text']；
+        若取不到则回退用 output 的 JSON 序列化。
+        """
+        metadata = getattr(result, "metadata", None) or {}
+        as_text = metadata.get("as_text") if isinstance(metadata, dict) else None
+        if isinstance(as_text, str) and as_text:
+            return as_text
+        output = getattr(result, "output", None)
+        if isinstance(output, list):
+            try:
+                return json.dumps(output, ensure_ascii=False)
+            except TypeError:
+                return ""
+        return ""
 
     @staticmethod
     def _render_incomplete_tool_loop_summary(

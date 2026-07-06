@@ -38,6 +38,7 @@ from amadeus.tools.defaults import (
     SearchMessagesTool,
     WriteFileTool,
 )
+from amadeus.tools.discovery import ToolSearchTool
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.forget_memory import ForgetMemoryTool
 from amadeus.tools.hooks import ReadOnlyFilesystemHook
@@ -332,15 +333,19 @@ def build_passive_app(
     event_bus = EventBus()
     tool_registry = ToolRegistry()
     tool_registry.register(
-        FetchMessagesTool(store=session_manager.store), risk="read-only"
+        FetchMessagesTool(store=session_manager.store),
+        risk="read-only",
+        always_on=True,
     )
     tool_registry.register(
-        SearchMessagesTool(store=session_manager.store), risk="read-only"
+        SearchMessagesTool(store=session_manager.store),
+        risk="read-only",
+        always_on=True,
     )
-    tool_registry.register(ReadFileTool(), risk="read-only")
-    tool_registry.register(WriteFileTool(), risk="write")
-    tool_registry.register(EditFileTool(), risk="write")
-    tool_registry.register(ListDirTool(), risk="read-only")
+    tool_registry.register(ReadFileTool(), risk="read-only", always_on=True)
+    tool_registry.register(WriteFileTool(), risk="write", always_on=True)
+    tool_registry.register(EditFileTool(), risk="write", always_on=True)
+    tool_registry.register(ListDirTool(), risk="read-only", always_on=True)
 
     async def _tool_invoker(name: str, arguments: dict[str, Any]) -> Any:
         # 意图字段 purpose 在 invoker 层硬编码 pop（不走 hook 链）。
@@ -411,16 +416,30 @@ def build_passive_app(
         db=postgres_db,
     )
     tool_registry.register(
-        RecallMemoryTool(memory_engine=long_term_memory), risk="read-only"
+        RecallMemoryTool(memory_engine=long_term_memory),
+        risk="read-only",
+        always_on=True,
     )
     tool_registry.register(
-        RuntimeMemorizeTool(memory_engine=long_term_memory), risk="write"
+        RuntimeMemorizeTool(memory_engine=long_term_memory),
+        risk="write",
+        always_on=True,
     )
     tool_registry.register(
-        ForgetMemoryTool(memory_engine=long_term_memory), risk="write"
+        ForgetMemoryTool(memory_engine=long_term_memory),
+        risk="write",
+        always_on=True,
     )
     tool_registry.register(
-        RuntimeUndoMemoryBySourceTool(memory_engine=long_term_memory), risk="write"
+        RuntimeUndoMemoryBySourceTool(memory_engine=long_term_memory),
+        risk="write",
+        always_on=True,
+    )
+    tool_registry.register(
+        ToolSearchTool(registry=tool_registry),
+        risk="read-only",
+        always_on=True,
+        search_hint="发现 搜索 加载 工具 tool",
     )
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,

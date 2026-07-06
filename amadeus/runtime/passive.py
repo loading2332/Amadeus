@@ -192,6 +192,7 @@ class PassiveRuntime:
             event_bus=self.event_bus,
             before_step=self._before_step,
             after_step=self._after_step,
+            tool_registry=self.tool_registry,
         )
 
     def set_before_turn_plugin_modules(self, modules: list[object]) -> None:
