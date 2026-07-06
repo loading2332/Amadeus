@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from amadeus.tools.base import ToolExecutionRequest, ToolResult
-from amadeus.tools.executor import ToolExecutionDenied
+from amadeus.tools.base import HookContext, HookOutcome, ToolExecutionRequest, ToolResult
 
 _FILE_TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir"})
 
@@ -23,9 +23,16 @@ class ReadOnlyFilesystemHook:
       ``workspace_root / runtime-artifacts/``.
     - Relative paths are resolved against *workspace_root*.
     - Absolute paths must reside under the allowed scope.
+
+    返回 HookOutcome：
+    - 路径越界（写工具写到 artifacts 之外）→ decision="deny" + reason
+    - 路径解析成功 → updated_input 含 resolved 绝对路径、decision="pass"（改参放行）
+    - 非文件工具 → 默认 pass 不动参
     """
 
-    workspace_root: Path
+    name: str = "readonly_filesystem"
+    event: str = "pre_tool_use"
+    workspace_root: Path = None  # type: ignore[assignment]
 
     def _resolve(self, raw_path: str) -> Path:
         candidate = Path(raw_path)
@@ -35,39 +42,33 @@ class ReadOnlyFilesystemHook:
             else (self.workspace_root / candidate).resolve()
         )
 
-    def _check_scope(self, resolved: Path, allowed_base: Path) -> None:
+    def _check_scope(self, resolved: Path, allowed_base: Path) -> str | None:
         try:
             resolved.relative_to(allowed_base.resolve())
-        except ValueError as error:
-            raise ToolExecutionDenied(
-                f"path escapes allowed directory: {resolved}"
-            ) from error
+        except ValueError:
+            return f"path escapes allowed directory: {resolved}"
+        return None
 
-    def before_execute(self, request: ToolExecutionRequest) -> ToolExecutionRequest:
-        if request.tool_name not in _FILE_TOOLS:
-            return request
+    def matches(self, ctx: HookContext) -> bool:
+        return ctx.request.tool_name in _FILE_TOOLS
 
+    def run(self, ctx: HookContext) -> HookOutcome:
+        request = ctx.request
         raw_path = str(request.arguments.get("path") or "").strip()
         if not raw_path:
-            return request
+            return HookOutcome(decision="pass")
 
         resolved = self._resolve(raw_path)
-
         if request.tool_name in _WRITE_TOOLS:
             artifacts_root = (self.workspace_root / _ARTIFACTS_SUBDIR).resolve()
-            self._check_scope(resolved, artifacts_root)
+            error = self._check_scope(resolved, artifacts_root)
         else:
-            # Read/list: allowed under workspace_root
-            self._check_scope(resolved, self.workspace_root)
+            error = self._check_scope(resolved, self.workspace_root)
 
-        return ToolExecutionRequest(
-            tool_name=request.tool_name,
-            arguments={**request.arguments, "path": str(resolved)},
+        if error is not None:
+            return HookOutcome(decision="deny", reason=error)
+
+        return HookOutcome(
+            decision="pass",
+            updated_input={**request.arguments, "path": str(resolved)},
         )
-
-    def after_execute(
-        self,
-        request: ToolExecutionRequest,
-        result: ToolResult,
-    ) -> ToolResult:
-        return result

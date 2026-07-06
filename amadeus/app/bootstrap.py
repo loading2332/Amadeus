@@ -40,6 +40,7 @@ from amadeus.tools.defaults import (
 )
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.forget_memory import ForgetMemoryTool
+from amadeus.tools.hooks import ReadOnlyFilesystemHook
 from amadeus.tools.memorize import MemorizeTool as RuntimeMemorizeTool
 from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.registry import ToolRegistry
@@ -330,13 +331,27 @@ def build_passive_app(
     )
     event_bus = EventBus()
     tool_registry = ToolRegistry()
-    tool_registry.register(FetchMessagesTool(store=session_manager.store))
-    tool_registry.register(SearchMessagesTool(store=session_manager.store))
-    tool_registry.register(ReadFileTool())
-    tool_registry.register(WriteFileTool())
-    tool_registry.register(EditFileTool())
-    tool_registry.register(ListDirTool())
-    tool_executor = ToolExecutor(registry=tool_registry)
+    tool_registry.register(
+        FetchMessagesTool(store=session_manager.store), risk="read-only"
+    )
+    tool_registry.register(
+        SearchMessagesTool(store=session_manager.store), risk="read-only"
+    )
+    tool_registry.register(ReadFileTool(), risk="read-only")
+    tool_registry.register(WriteFileTool(), risk="write")
+    tool_registry.register(EditFileTool(), risk="write")
+    tool_registry.register(ListDirTool(), risk="read-only")
+
+    async def _tool_invoker(name: str, arguments: dict[str, Any]) -> Any:
+        # 意图字段 purpose 在 invoker 层硬编码 pop（不走 hook 链）。
+        # ID3 决策：plumbing 归协议层，不进 hook trace。
+        arguments.pop("purpose", None)
+        return await tool_registry.execute(name, arguments)
+
+    tool_executor = ToolExecutor(
+        hooks=[ReadOnlyFilesystemHook(workspace_root=config.workspace_root)],
+        invoker=_tool_invoker,
+    )
     long_term_memory = None
     if config.long_term_memory_enabled and config.embedding_model:
         embedding_provider = OpenAIEmbeddingProvider(
@@ -395,11 +410,17 @@ def build_passive_app(
         user_id=config.default_memory_user_id,
         db=postgres_db,
     )
-    tool_registry.register(RecallMemoryTool(memory_engine=long_term_memory))
-    tool_registry.register(RuntimeMemorizeTool(memory_engine=long_term_memory))
-    tool_registry.register(ForgetMemoryTool(memory_engine=long_term_memory))
     tool_registry.register(
-        RuntimeUndoMemoryBySourceTool(memory_engine=long_term_memory)
+        RecallMemoryTool(memory_engine=long_term_memory), risk="read-only"
+    )
+    tool_registry.register(
+        RuntimeMemorizeTool(memory_engine=long_term_memory), risk="write"
+    )
+    tool_registry.register(
+        ForgetMemoryTool(memory_engine=long_term_memory), risk="write"
+    )
+    tool_registry.register(
+        RuntimeUndoMemoryBySourceTool(memory_engine=long_term_memory), risk="write"
     )
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
