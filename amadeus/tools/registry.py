@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from amadeus.tools.base import Tool
+from amadeus.tools.search.backend import KeywordSearchBackend, SearchResult
 from amadeus.tools.search.document import ToolDocument
 
 RiskLevel = Literal["read-only", "write", "external-side-effect"]
@@ -87,6 +88,7 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
         self._metadata: dict[str, ToolMeta] = {}
         self._documents: dict[str, ToolDocument] = {}
+        self._backend: KeywordSearchBackend = KeywordSearchBackend()
 
     def register(
         self,
@@ -105,14 +107,17 @@ class ToolRegistry:
             source_type=source_type,
             source_name=source_name,
         )
+        document = _build_document(tool, meta)
         self._tools[tool.name] = tool
         self._metadata[tool.name] = meta
-        self._documents[tool.name] = _build_document(tool, meta)
+        self._documents[tool.name] = document
+        self._backend.add(document)
 
     def unregister(self, name: str) -> None:
         self._tools.pop(name, None)
         self._metadata.pop(name, None)
         self._documents.pop(name, None)
+        self._backend.remove(name)
 
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
@@ -142,6 +147,41 @@ class ToolRegistry:
 
     def get_documents(self) -> list[ToolDocument]:
         return list(self._documents.values())
+
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        allowed_risk: set[str] | None = None,
+        excluded_names: set[str] | None = None,
+    ) -> list[SearchResult]:
+        return self._backend.search(
+            query,
+            top_k=top_k,
+            allowed_risk=allowed_risk,
+            excluded_names=excluded_names,
+        )
+
+    def get_schemas_as_doc_results(self, names: list[str]) -> list[SearchResult]:
+        """将工具名列表转为与 search() 相同格式的结果列表。
+
+        供 select:<工具名> 精确解锁路径使用，why_matched 固定为"名称:精确匹配"。
+        """
+        results: list[SearchResult] = []
+        for name in names:
+            doc = self._documents.get(name)
+            if doc:
+                results.append(
+                    SearchResult(
+                        name=doc.name,
+                        summary=doc.description[:120],
+                        why_matched=["名称:精确匹配"],
+                        risk=doc.risk,
+                        always_on=doc.always_on,
+                    )
+                )
+        return results
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> Any:
         """注册表的执行入口，作为 ToolExecutor 默认的 invoker provider。
