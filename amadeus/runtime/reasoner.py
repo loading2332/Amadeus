@@ -92,6 +92,12 @@ class Reasoner:
         session: SessionRef | None = None,
     ) -> ReasonerResult:
         """Run a reasoning turn: provider call → optional tool loop → result."""
+        # 按需解锁：tool_registry 注入时，第一轮用 always_on 集导出 schema
+        # （visible_set 在 _run_tool_loop 里构造，首轮还没解锁任何 deferred 工具）。
+        if self.tool_registry is not None and tool_schemas is None:
+            tool_schemas = self.tool_registry.get_schemas(
+                names=self.tool_registry.get_always_on_names()
+            )
         response = await self.provider.chat(
             list(messages),
             tools=list(tool_schemas) if tool_schemas is not None else None,
@@ -441,14 +447,19 @@ class Reasoner:
     def _extract_unlock_text(result: Any) -> str:
         """从 tool_search 的 ToolResult 取出供 TurnVisibleSet 解锁的 JSON 文本。
 
+        仅当 tool_search 走 select: 精确匹配路径（action=="select"）时才解锁——
+        普通 search 返回候选列表但不应自动解锁（design 4.1：候选不等于授权）。
         tool_search 把候选列表 JSON 塞在 result.metadata['as_text']；
-        若取不到则回退用 output 的 JSON 序列化。
+        action 塞在 result.output['action']。
         """
+        output = getattr(result, "output", None)
+        # 只对 select 路径解锁；普通 search 返回空
+        if isinstance(output, dict) and output.get("action") != "select":
+            return ""
         metadata = getattr(result, "metadata", None) or {}
         as_text = metadata.get("as_text") if isinstance(metadata, dict) else None
         if isinstance(as_text, str) and as_text:
             return as_text
-        output = getattr(result, "output", None)
         if isinstance(output, list):
             try:
                 return json.dumps(output, ensure_ascii=False)
