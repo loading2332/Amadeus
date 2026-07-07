@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# ruff: noqa: I001
+# bootstrap 是装配文件，import 顺序有语义：memory/session 必须在 mcp 前
+# 初始化，否则 amadeus.mcp.__init__ → tools.base → tools.defaults →
+# session.store 会与 memory 包形成预存在循环 import。
+
 import asyncio
 import os
 from collections.abc import Mapping
@@ -48,6 +53,15 @@ from amadeus.tools.registry import ToolRegistry
 from amadeus.tools.undo_memory_by_source import (
     UndoMemoryBySourceTool as RuntimeUndoMemoryBySourceTool,
 )
+# mcp imports 放在 memory/session/tools 之后，避免触发 amadeus.mcp.__init__
+# 时机过早导致 session/memory 循环 import（见文件顶部注释）
+from amadeus.db.mcp_servers import McpServersStore
+from amadeus.mcp import (
+    McpAddTool,
+    McpListTool,
+    McpRemoveTool,
+    McpServerRegistry,
+)
 
 
 def default_workspace_root() -> Path:
@@ -89,6 +103,7 @@ class PassiveApp:
     tool_registry: ToolRegistry
     tool_executor: ToolExecutor
     plugin_manager: PluginManager
+    mcp_server_registry: McpServerRegistry | None = None
     postgres_db: PostgresDatabase | None = None
     _state: AppState = field(default=AppState.NEW, init=False)
     _lifecycle_lock: asyncio.Lock = field(
@@ -130,6 +145,9 @@ class PassiveApp:
                 self.runtime.set_after_turn_plugin_modules(
                     self.plugin_manager.after_turn_modules
                 )
+                # 后台重连已持久化的 MCP server，失败不阻断启动
+                if self.mcp_server_registry is not None:
+                    self.mcp_server_registry.start_connect_all_background()
             except BaseException:
                 try:
                     self.runtime.set_before_turn_plugin_modules([])
@@ -178,7 +196,15 @@ class PassiveApp:
             try:
                 await self.plugin_manager.terminate_all()
             except BaseException as error:
-                first_error = error
+                if first_error is None:
+                    first_error = error
+            try:
+                # 断开所有 MCP server 子进程/HTTP 连接，须在 postgres 关闭前
+                if self.mcp_server_registry is not None:
+                    await self.mcp_server_registry.shutdown()
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
             try:
                 self.runtime.set_before_turn_plugin_modules([])
             except BaseException as error:
@@ -441,6 +467,33 @@ def build_passive_app(
         always_on=True,
         search_hint="发现 搜索 加载 工具 tool",
     )
+
+    # ── MCP 接入（MD1-MD7）─────────────────────────────────────────
+    # postgres 启用时持久化 mcp_servers 配置；后台重连已存 server 不阻塞主服务。
+    mcp_store = McpServersStore(db=postgres_db) if postgres_db is not None else None
+    mcp_server_registry = McpServerRegistry(
+        tool_registry=tool_registry,
+        store=mcp_store,
+    )
+    tool_registry.register(
+        McpAddTool(mcp_registry=mcp_server_registry),
+        risk="write",
+        always_on=True,
+        search_hint="添加 连接 MCP server",
+    )
+    tool_registry.register(
+        McpRemoveTool(mcp_registry=mcp_server_registry),
+        risk="write",
+        always_on=True,
+        search_hint="移除 断开 MCP server",
+    )
+    tool_registry.register(
+        McpListTool(mcp_registry=mcp_server_registry),
+        risk="read-only",
+        always_on=True,
+        search_hint="列出 MCP server",
+    )
+    # 后台重连已持久化的 server 在 app.start() 里启动（那时才有 event loop）
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
         provider=provider,
@@ -471,6 +524,7 @@ def build_passive_app(
         tool_registry=tool_registry,
         tool_executor=tool_executor,
         plugin_manager=plugin_manager,
+        mcp_server_registry=mcp_server_registry,
         postgres_db=postgres_db,
     )
 

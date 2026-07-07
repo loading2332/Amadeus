@@ -3,42 +3,32 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING
 
 from amadeus.mcp.client import McpClient
+from amadeus.mcp.config import McpServerConfig
 from amadeus.mcp.http_transport import StreamableHttpMcpTransport
 from amadeus.mcp.schema_validator import validate_openai_function_schema
 from amadeus.mcp.stdio_transport import StdioMcpTransport
 from amadeus.mcp.tool import McpToolWrapper
 from amadeus.tools.registry import ToolRegistry
 
+if TYPE_CHECKING:
+    from amadeus.db.mcp_servers import McpServersStore
+
 logger = logging.getLogger(__name__)
-
-TransportType = Literal["stdio", "http"]
-
-
-@dataclass
-class McpServerConfig:
-    """单个 MCP server 的连接配置（与 mcp_servers 表行对应）。"""
-
-    name: str
-    transport_type: TransportType
-    command: list[str] | None = None  # stdio
-    url: str | None = None  # http
-    env: dict[str, str] | None = None
-    cwd: str | None = None
-    headers: dict[str, str] | None = None  # http
 
 
 @dataclass
 class McpServerRegistry:
     """管理多个 MCP server 的连接生命周期 + 工具注册。
 
-    P6 阶段：内存跟踪 active servers（_clients / _configs）。
-    P7 阶段：加 db 持久化（mcp_servers 表），load_and_connect_all 从 db 加载。
+    P7：可选注入 McpServersStore 做 postgres 持久化。add/remove 同步落库；
+    load_all_from_db 从 db 加载所有 authorized server 并重连。
     """
 
     tool_registry: ToolRegistry
+    store: McpServersStore | None = None
     _clients: dict[str, McpClient] = field(default_factory=dict)
     _configs: dict[str, McpServerConfig] = field(default_factory=dict)
 
@@ -101,6 +91,8 @@ class McpServerRegistry:
 
         self._clients[config.name] = client
         self._configs[config.name] = config
+        if self.store is not None:
+            self.store.upsert(config, authorized=True)
         logger.info(
             "[mcp:%s] 已连接，注册 %d 工具，跳过 %d",
             config.name,
@@ -113,6 +105,11 @@ class McpServerRegistry:
         """按 source_name 反查 unregister 所有相关工具 + 断开 client。"""
         client = self._clients.pop(name, None)
         self._configs.pop(name, None)
+        if self.store is not None:
+            try:
+                self.store.delete(name)
+            except Exception as e:
+                logger.warning("[mcp:%s] 从 db 删除失败: %s", name, e)
         if client is None:
             return
         # 反查该 server 名下所有工具，unregister
@@ -134,11 +131,28 @@ class McpServerRegistry:
 
         await asyncio.gather(*[_connect_one(c) for c in configs])
 
-    def start_connect_all_background(self, configs: list[McpServerConfig]) -> asyncio.Task:
-        """后台重连，不阻塞主服务启动。"""
+    async def load_all_from_db(self) -> None:
+        """从 postgres 加载所有 authorized server 并重连。"""
+        if self.store is None:
+            return
+        try:
+            configs = self.store.list_authorized()
+        except Exception as e:
+            logger.warning("[mcp] 从 db 加载 mcp_servers 失败: %s", e)
+            return
+        await self.load_and_connect_all(configs)
+
+    def start_connect_all_background(self, configs: list[McpServerConfig] | None = None) -> asyncio.Task:
+        """后台重连，不阻塞主服务启动。
+
+        configs 为 None 时从 db 加载（需注入 store）。
+        """
 
         async def _bg() -> None:
-            await self.load_and_connect_all(configs)
+            if configs is not None:
+                await self.load_and_connect_all(configs)
+            else:
+                await self.load_all_from_db()
 
         return asyncio.create_task(_bg())
 
