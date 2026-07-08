@@ -166,3 +166,81 @@ def test_load_and_connect_all_parallel_does_not_block_on_failures():
     assert "ok2" in names
     # bad 因 connect 失败未进 _configs
     assert "bad" not in names
+
+
+class _FakeStore:
+    """内存 fake McpServersStore，模拟 db 里已存的 server 配置。"""
+
+    def __init__(self, configs: list[McpServerConfig]) -> None:
+        self._configs = configs
+
+    def list_authorized(self) -> list[McpServerConfig]:
+        return list(self._configs)
+
+    def list_all(self) -> list[McpServerConfig]:
+        return list(self._configs)
+
+    def upsert(self, config: McpServerConfig, *, authorized: bool = True) -> None:
+        pass
+
+    def delete(self, name: str) -> None:
+        pass
+
+
+def test_load_all_from_db_reconnects_persisted_servers():
+    """重启场景：从 db 加载 authorized server -> 重连 -> 工具重新注册。"""
+    registry = ToolRegistry()
+    fake_store = _FakeStore([_stdio_config(name="persisted")])
+    mcp_reg = McpServerRegistry(tool_registry=registry, store=fake_store)  # type: ignore[arg-type]
+
+    async def run():
+        try:
+            await mcp_reg.load_all_from_db()
+            return registry.get_registered_names()
+        finally:
+            await mcp_reg.shutdown()
+
+    names = asyncio.run(run())
+
+    # persisted server 的工具被重新注册
+    assert "mcp_persisted__echo" in names
+    assert "mcp_persisted__add" in names
+
+
+def test_load_all_from_db_skips_unauthorized():
+    """authorized=False 的 server 不被重连（MD5 留口子的语义验证）。"""
+    registry = ToolRegistry()
+    # list_authorized 只返回 authorized=True 的；fake_store 直接返回空模拟
+    fake_store = _FakeStore([])
+    mcp_reg = McpServerRegistry(tool_registry=registry, store=fake_store)  # type: ignore[arg-type]
+
+    async def run():
+        try:
+            await mcp_reg.load_all_from_db()
+            return mcp_reg.list_servers()
+        finally:
+            await mcp_reg.shutdown()
+
+    servers = asyncio.run(run())
+
+    assert servers == []
+
+
+def test_start_connect_all_background_does_not_block():
+    """后台重连立即返回 task，不阻塞调用方。"""
+    registry = ToolRegistry()
+    fake_store = _FakeStore([_stdio_config(name="bg")])
+    mcp_reg = McpServerRegistry(tool_registry=registry, store=fake_store)  # type: ignore[arg-type]
+
+    async def run():
+        task = mcp_reg.start_connect_all_background()
+        # 立即拿到 task，未阻塞
+        assert not task.done()
+        await task
+        names = registry.get_registered_names()
+        await mcp_reg.shutdown()
+        return names
+
+    names = asyncio.run(run())
+
+    assert "mcp_bg__echo" in names
