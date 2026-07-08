@@ -188,7 +188,7 @@ class ToolExecutor:
             if hook.event != event:
                 continue
             ctx = HookContext(
-                event=event,  # type: ignore[arg-type]
+                event=event,
                 request=request,
                 current_arguments=dict(current_arguments),
                 result=result,

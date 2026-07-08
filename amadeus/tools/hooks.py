@@ -5,6 +5,7 @@ from pathlib import Path
 
 from amadeus.tools.base import (
     HookContext,
+    HookEvent,
     HookOutcome,
 )
 
@@ -33,7 +34,7 @@ class ReadOnlyFilesystemHook:
     """
 
     name: str = "readonly_filesystem"
-    event: str = "pre_tool_use"
+    event: HookEvent = "pre_tool_use"
     workspace_root: Path = None  # type: ignore[assignment]
 
     def _resolve(self, raw_path: str) -> Path:

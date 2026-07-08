@@ -107,7 +107,7 @@ class McpServersStore:
         headers = row.get("headers")
         return McpServerConfig(
             name=row["name"],
-            transport_type=row["transport_type"],  # type: ignore[arg-type]
+            transport_type=row["transport_type"],
             command=json.loads(command) if isinstance(command, str) else command,
             url=row.get("url"),
             env=json.loads(env) if isinstance(env, str) else env,

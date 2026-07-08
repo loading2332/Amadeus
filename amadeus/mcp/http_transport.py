@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -117,7 +117,7 @@ class StreamableHttpMcpTransport:
                 f"MCP server {self.name!r} 阶段 {stage!r} 响应非合法 JSON: {e}; "
                 f"body={resp.text[:200]}"
             ) from e
-        return data
+        return cast("dict[str, Any]", data)
 
     async def _parse_sse_stream(
         self, resp: httpx.Response, expected_id: int | str, stage: str
@@ -169,7 +169,7 @@ class StreamableHttpMcpTransport:
         if not text:
             return None
         try:
-            return json.loads(text)
+            return cast("dict[str, Any]", json.loads(text))
         except json.JSONDecodeError:
             logger.debug("[mcp:%s] SSE data 非 JSON: %s", self.name, text[:200])
             return None

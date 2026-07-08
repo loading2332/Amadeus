@@ -7,7 +7,7 @@ import os
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ class StdioMcpTransport:
                 )
                 continue
             logger.debug("[mcp:%s] <- %s", self.name, text[:400])
-            return msg
+            return cast("dict[str, Any]", msg)
 
     async def _drain_stderr(self) -> None:
         assert self._process and self._process.stderr

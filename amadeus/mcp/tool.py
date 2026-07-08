@@ -46,20 +46,10 @@ class McpToolWrapper:
         self._client = client
         self._info = info
         self._server_name = server_name
-        self._name = _make_wrapper_name(server_name, info.name)
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def description(self) -> str:
-        desc = self._info.description or ""
-        return f"[MCP:{self._server_name}] {desc}".strip()
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return self._info.input_schema
+        self.name = _make_wrapper_name(server_name, info.name)
+        desc = info.description or ""
+        self.description = f"[MCP:{server_name}] {desc}".strip()
+        self.parameters = info.input_schema
 
     async def execute(self, **kwargs: Any) -> ToolResult:
         result_text = await self._client.call(
@@ -69,7 +59,7 @@ class McpToolWrapper:
         )
         is_error = result_text.startswith("MCP error")
         return ToolResult(
-            tool_name=self._name,
+            tool_name=self.name,
             output=result_text,
             is_error=is_error,
             metadata={"mcp_server": self._server_name, "mcp_tool": self._info.name},

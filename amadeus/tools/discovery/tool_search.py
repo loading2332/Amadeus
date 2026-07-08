@@ -68,7 +68,7 @@ class ToolSearchTool:
         return self._package(results, exact=False)
 
     def _package(
-        self, results: list, *, exact: bool
+        self, results: list[Any], *, exact: bool
     ) -> ToolResult:
         payload = [
             {

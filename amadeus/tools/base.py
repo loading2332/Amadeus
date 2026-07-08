@@ -7,7 +7,7 @@ from typing import Any, Literal, Protocol
 HookEvent = Literal["pre_tool_use", "post_tool_use", "post_tool_error"]
 ToolSource = Literal["passive", "proactive", "subagent"]
 HookDecision = Literal["pass", "deny"]
-ToolExecStatus = Literal["success", "denied", "error"]
+ToolExecStatus = Literal["success", "denied", "error", "pass"]
 
 
 @dataclass(frozen=True)

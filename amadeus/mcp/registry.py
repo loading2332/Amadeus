@@ -11,6 +11,7 @@ from amadeus.mcp.http_transport import StreamableHttpMcpTransport
 from amadeus.mcp.schema_validator import validate_openai_function_schema
 from amadeus.mcp.stdio_transport import StdioMcpTransport
 from amadeus.mcp.tool import McpToolWrapper
+from amadeus.mcp.transport import McpTransport
 from amadeus.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
@@ -32,7 +33,7 @@ class McpServerRegistry:
     _clients: dict[str, McpClient] = field(default_factory=dict)
     _configs: dict[str, McpServerConfig] = field(default_factory=dict)
 
-    def _build_transport(self, config: McpServerConfig):
+    def _build_transport(self, config: McpServerConfig) -> McpTransport:
         if config.transport_type == "stdio":
             if not config.command:
                 raise ValueError(f"stdio server {config.name!r} 缺少 command")
@@ -142,7 +143,7 @@ class McpServerRegistry:
             return
         await self.load_and_connect_all(configs)
 
-    def start_connect_all_background(self, configs: list[McpServerConfig] | None = None) -> asyncio.Task:
+    def start_connect_all_background(self, configs: list[McpServerConfig] | None = None) -> asyncio.Task[None]:
         """后台重连，不阻塞主服务启动。
 
         configs 为 None 时从 db 加载（需注入 store）。
