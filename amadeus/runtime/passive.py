@@ -420,9 +420,11 @@ class PassiveRuntime:
         resolved_runtime_metadata = before_reasoning_context.runtime_metadata
         resolved_extra_hints = before_reasoning_context.extra_hints
 
-        tool_schemas = (
-            self.tool_registry.export_openai_tools() if self.tool_registry is not None else None
-        )
+        # 按需解锁（A6）：tool_registry 注入时不再全量 dump schema 给 reasoner，
+        # 传 None 让 reasoner 自己按 always_on ∪ visible_names 取子集导出。
+        # 这避免了首轮把 deferred 工具（如启动时从 db 重连的 MCP 工具）的 schema
+        # 全部泄漏给模型，否则模型看到 schema 却调用被引导回填"请先解锁"，产生混乱。
+        tool_schemas = None
         tool_chain: list[dict[str, Any]] = []
         provider_raw: Any = None
         assistant_content: str

@@ -97,7 +97,11 @@ class HiddenTool:
         )
 
 
-def _make_reasoner_with_registry(client: _FakeClient) -> tuple[Reasoner, ToolRegistry]:
+def _make_reasoner_with_registry(
+    client: _FakeClient,
+    *,
+    hooks: list | None = None,
+) -> tuple[Reasoner, ToolRegistry]:
     registry = ToolRegistry()
     registry.register(
         ToolSearchTool(registry=registry),
@@ -110,7 +114,7 @@ def _make_reasoner_with_registry(client: _FakeClient) -> tuple[Reasoner, ToolReg
         arguments.pop("purpose", None)
         return await registry.execute(name, arguments)
 
-    executor = ToolExecutor(hooks=[], invoker=invoker)
+    executor = ToolExecutor(hooks=hooks or [], invoker=invoker)
     provider = LLMProvider(
         LLMProviderConfig(api_key="secret", model="fake-model"),
         client=client,
@@ -203,3 +207,42 @@ def test_tool_search_returns_matched_candidates():
     second_round_tools = client.completions.calls[1]["tools"]
     second_names = {t["function"]["name"] for t in second_round_tools}
     assert "hidden_tool" not in second_names
+
+
+class _DenyHiddenHook:
+    """pre hook：对 hidden_tool 的调用一律 deny（验 preflight 接入 deferred 分支）。"""
+
+    name = "deny_hidden"
+    event = "pre_tool_use"
+
+    def matches(self, ctx: Any) -> bool:
+        return ctx.request.tool_name == "hidden_tool"
+
+    def run(self, ctx: Any) -> Any:
+        from amadeus.tools.base import HookOutcome
+
+        return HookOutcome(decision="deny", reason="blocked by test hook")
+
+
+def test_deferred_tool_call_runs_preflight_and_respects_deny_hook():
+    """未解锁 tool_call 触发 preflight；pre hook deny 时 status=denied + hook reason（R3.8）。"""
+    from amadeus.tools.base import HookContext, HookOutcome  # noqa: F401
+
+    client = _FakeClient()
+    client.completions.responses = [
+        _tool_call_response(tool_name="hidden_tool", args={"x": "first"}, call_id="c1"),
+    ]
+    reasoner, _ = _make_reasoner_with_registry(client, hooks=[_DenyHiddenHook()])
+
+    result = asyncio.run(reasoner.reason(messages=[{"role": "user", "content": "go"}]))
+
+    # hidden_tool 未解锁 -> 走 preflight -> pre hook deny -> status=denied（非 deferred）
+    call = result.tool_chain[0]["calls"][0]
+    assert call["name"] == "hidden_tool"
+    assert call["status"] == "denied"
+    assert "blocked by test hook" in call["result"]
+    # pre_hook_trace 进了 tool_chain 记录
+    assert any(
+        t.get("hook_name") == "deny_hidden" and t.get("decision") == "deny"
+        for t in call.get("pre_hook_trace", [])
+    )

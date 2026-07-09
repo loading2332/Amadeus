@@ -16,7 +16,9 @@ class ToolExecutionRequest:
     arguments: dict[str, Any] = field(default_factory=dict)
     call_id: str = ""
     source: ToolSource = "passive"
-    session_key: str = ""
+    # 注意：不携带 session_key: str（Structured Session Identity 规范要求 tool 上下文
+    # 用 SessionRef / user_id+session_id，绝不出现字符串 session key）。如未来需要
+    # session 维度，加 session: SessionRef | None = None 并在装配层注入。
     # tool_batch 保留 dict 类型（与 tool_runtime.tool_call_batch_snapshot 现状一致）
     tool_batch: dict[str, Any] = field(default_factory=dict)
     tool_batch_index: int = 0

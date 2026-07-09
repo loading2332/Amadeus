@@ -56,13 +56,15 @@ class ReadOnlyFilesystemHook:
         return ctx.request.tool_name in _FILE_TOOLS
 
     def run(self, ctx: HookContext) -> HookOutcome:
-        request = ctx.request
-        raw_path = str(request.arguments.get("path") or "").strip()
+        # 读 ctx.current_arguments（反映 prior hook 改参后的最新值），而非
+        # request.arguments（frozen 原始值）--hook 链串行时否则会丢前序 hook 的改参。
+        arguments = ctx.current_arguments
+        raw_path = str(arguments.get("path") or "").strip()
         if not raw_path:
             return HookOutcome(decision="pass")
 
         resolved = self._resolve(raw_path)
-        if request.tool_name in _WRITE_TOOLS:
+        if ctx.request.tool_name in _WRITE_TOOLS:
             artifacts_root = (self.workspace_root / _ARTIFACTS_SUBDIR).resolve()
             error = self._check_scope(resolved, artifacts_root)
         else:
@@ -73,5 +75,5 @@ class ReadOnlyFilesystemHook:
 
         return HookOutcome(
             decision="pass",
-            updated_input={**request.arguments, "path": str(resolved)},
+            updated_input={**arguments, "path": str(resolved)},
         )

@@ -32,6 +32,7 @@ class McpServerRegistry:
     store: McpServersStore | None = None
     _clients: dict[str, McpClient] = field(default_factory=dict)
     _configs: dict[str, McpServerConfig] = field(default_factory=dict)
+    _bg_task: asyncio.Task[None] | None = None
 
     def _build_transport(self, config: McpServerConfig) -> McpTransport:
         if config.transport_type == "stdio":
@@ -146,19 +147,34 @@ class McpServerRegistry:
     def start_connect_all_background(self, configs: list[McpServerConfig] | None = None) -> asyncio.Task[None]:
         """后台重连，不阻塞主服务启动。
 
-        configs 为 None 时从 db 加载（需注入 store）。
+        configs 为 None 时从 db 加载（需注入 store）。task 引用保存在 self._bg_task，
+        避免被 GC；shutdown 时取消。
         """
 
         async def _bg() -> None:
-            if configs is not None:
-                await self.load_and_connect_all(configs)
-            else:
-                await self.load_all_from_db()
+            try:
+                if configs is not None:
+                    await self.load_and_connect_all(configs)
+                else:
+                    await self.load_all_from_db()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("[mcp] 后台重连整体失败: %s", e)
 
-        return asyncio.create_task(_bg())
+        self._bg_task = asyncio.create_task(_bg())
+        return self._bg_task
 
     async def shutdown(self) -> None:
         """并行断开所有 client。"""
+        # 取消未完成的后台重连 task，避免与 shutdown 竞争 register/unregister。
+        if self._bg_task is not None and not self._bg_task.done():
+            self._bg_task.cancel()
+            try:
+                await self._bg_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._bg_task = None
         names = list(self._clients.keys())
 
         async def _disconnect_one(name: str) -> None:

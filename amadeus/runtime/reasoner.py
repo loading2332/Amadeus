@@ -21,7 +21,7 @@ from amadeus.runtime.tool_runtime import (
     tool_call_batch_snapshot,
 )
 from amadeus.session.identity import SessionRef
-from amadeus.tools.base import ToolResult
+from amadeus.tools.base import ToolExecutionRequest, ToolResult
 from amadeus.tools.discovery import ToolDiscoveryState, TurnVisibleSet
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
@@ -219,11 +219,34 @@ class Reasoner:
                 "calls": [],
             }
             for batch_index, tool_call in enumerate(current_response.tool_calls):
-                # ── 按需解锁：未解锁工具走 preflight + 引导回填（TD4 a 风格）──
+                # ── 按需解锁：未解锁工具走 preflight + 引导回填（TD4 / R3.8）──
+                # preflight 让 pre hook 链先看一眼（不调 invoker），给未来 loop guard
+                # 留插座位；未被 deny 则回填"请先 tool_search(select:...) 解锁"引导。
                 if (
                     visible_set is not None
                     and not visible_set.is_visible(tool_call.name)
                 ):
+                    preflight_result = await self.tool_executor.preflight(
+                        ToolExecutionRequest(
+                            tool_name=tool_call.name,
+                            arguments=dict(tool_call.arguments),
+                            call_id=tool_call.id,
+                            source="passive",
+                            tool_batch=tool_batch,
+                            tool_batch_index=batch_index,
+                        )
+                    )
+                    if preflight_result.status == "denied":
+                        # pre hook 明确拒绝 -> 用 hook 给的 reason 回填
+                        guide = (
+                            preflight_result.output
+                            if isinstance(preflight_result.output, str)
+                            else str(preflight_result.output)
+                        )
+                        deferred_status = "denied"
+                    else:
+                        guide = _UNLOCK_GUIDE_TEMPLATE.format(name=tool_call.name)
+                        deferred_status = "deferred"
                     if session is not None:
                         await self.event_bus.emit(
                             ToolCallStarted(
@@ -234,7 +257,6 @@ class Reasoner:
                                 arguments=tool_call.arguments,
                             )
                         )
-                    guide = _UNLOCK_GUIDE_TEMPLATE.format(name=tool_call.name)
                     guide_result = ToolResult(
                         tool_name=tool_call.name,
                         output=guide,
@@ -255,7 +277,7 @@ class Reasoner:
                                 tool_name=tool_call.name,
                                 arguments=tool_call.arguments,
                                 final_arguments=tool_call.arguments,
-                                status="deferred",
+                                status=deferred_status,
                                 result_preview=guide,
                             )
                         )
@@ -264,8 +286,12 @@ class Reasoner:
                             "call_id": tool_call.id,
                             "name": tool_call.name,
                             "arguments": tool_call.arguments,
-                            "status": "deferred",
+                            "status": deferred_status,
                             "result": guide,
+                            "pre_hook_trace": [
+                                dict(t.__dict__)
+                                for t in preflight_result.pre_hook_trace
+                            ],
                         }
                     )
                     continue
@@ -321,13 +347,18 @@ class Reasoner:
                 if trace.status == "success":
                     tools_used.append(tool_call.name)
                 invocations.append(tool_call)
+                # tool_chain 记 final_arguments（post-hook 改参后的真实入参）+ hook trace，
+                # 让回放能看到 ReadOnlyFilesystemHook 解析后的绝对路径等执行元数据（design 4.1）。
+                call_meta = result.metadata if isinstance(result.metadata, dict) else {}
                 current_step["calls"].append(
                     {
                         "call_id": tool_call.id,
                         "name": tool_call.name,
-                        "arguments": tool_call.arguments,
+                        "arguments": trace.arguments,
                         "status": trace.status,
                         "result": result_preview,
+                        "pre_hook_trace": call_meta.get("pre_hook_trace", []),
+                        "post_hook_trace": call_meta.get("post_hook_trace", []),
                     }
                 )
 

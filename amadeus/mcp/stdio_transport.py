@@ -42,6 +42,7 @@ class StdioMcpTransport:
     _next_id: int = 1
     _recent_stdout: deque[str] = field(default_factory=lambda: deque(maxlen=8))
     _recent_stderr: deque[str] = field(default_factory=lambda: deque(maxlen=8))
+    _stderr_task: asyncio.Task[None] | None = None
 
     def __post_init__(self) -> None:
         if not self.cwd:
@@ -70,7 +71,9 @@ class StdioMcpTransport:
             raise ConnectionError(
                 f"MCP server {self.name!r} 启动失败（命令不存在）: {self.command[0]}"
             ) from e
-        _ = asyncio.create_task(self._drain_stderr())
+        # 保存 task 引用避免被 GC（asyncio.create_task 不持有强引用会被回收），
+        # disconnect 时显式取消 + 等待，防止子进程 pipe 未关导致 ResourceWarning。
+        self._stderr_task = asyncio.create_task(self._drain_stderr())
 
     async def send_jsonrpc(
         self, payload: dict[str, Any], *, timeout: float | None = None
@@ -99,6 +102,14 @@ class StdioMcpTransport:
         except Exception as e:
             logger.warning("[mcp:%s] 断开时出错: %s", self.name, e)
         finally:
+            # 等待 stderr drain task 退出（process 已终止，readline 返回 EOF）
+            if self._stderr_task is not None:
+                self._stderr_task.cancel()
+                try:
+                    await self._stderr_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                self._stderr_task = None
             self._process = None
 
     def _new_id(self) -> int:
