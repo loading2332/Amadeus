@@ -157,6 +157,32 @@ class MemoryStoreProtocol(Protocol):
     def get_item_by_id(self, item_id: str) -> dict[str, Any] | None: ...
 
 
+class MemoryRetrievalStoreProtocol(Protocol):
+    def search_vector_candidates(
+        self,
+        *,
+        query_embedding: list[float],
+        memory_types: tuple[str, ...] = (),
+        scope_channel: str | None = None,
+        scope_chat_id: str | None = None,
+        time_start: datetime | None = None,
+        time_end: datetime | None = None,
+        limit: int,
+    ) -> list[dict[str, Any]]: ...
+
+    def search_lexical_candidates(
+        self,
+        *,
+        terms: tuple[str, ...],
+        memory_types: tuple[str, ...] = (),
+        scope_channel: str | None = None,
+        scope_chat_id: str | None = None,
+        time_start: datetime | None = None,
+        time_end: datetime | None = None,
+        limit: int,
+    ) -> list[dict[str, Any]]: ...
+
+
 class MemoryEngine(Protocol):
     async def recall(self, request: MemoryRecallRequest) -> MemoryQueryResult: ...
 
@@ -166,7 +192,9 @@ class MemoryEngine(Protocol):
 
     def undo_by_source(self, source_ref: str) -> MemoryMutationResult: ...
 
-    async def build_context(self, request: MemoryRecallRequest) -> MemoryContextResult: ...
+    async def build_context(
+        self, request: MemoryRecallRequest
+    ) -> MemoryContextResult: ...
 
     async def run_post_response(
         self,

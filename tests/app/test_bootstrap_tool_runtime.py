@@ -66,7 +66,9 @@ def test_build_passive_app_exposes_readonly_tool_runtime(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    app = build_passive_app(workspace_root=tmp_path, env_path=env_path, client=FakeClient())
+    app = build_passive_app(
+        workspace_root=tmp_path, env_path=env_path, client=FakeClient()
+    )
 
     assert app.tool_registry is not None
     assert sorted(app.tool_registry.names()) == [
@@ -178,7 +180,9 @@ def test_build_passive_app_uses_unscoped_file_tools(tmp_path):
     )
     write_execution = asyncio.run(
         app.tool_executor.execute(
-            ToolExecutionRequest("write_file", {"path": str(target), "content": "before"})
+            ToolExecutionRequest(
+                "write_file", {"path": str(target), "content": "before"}
+            )
         )
     )
     edit_execution = asyncio.run(
@@ -206,6 +210,7 @@ def test_build_passive_app_composes_store_retriever_memorizer_and_worker(
     monkeypatch,
 ):
     clean_postgres().close()
+    monkeypatch.setenv("AMADEUS_MEMORY_LEXICAL_RETRIEVAL_ENABLED", "0")
 
     class StableEmbeddingProvider:
         async def embed(self, text: str) -> list[float]:
@@ -245,6 +250,7 @@ def test_build_passive_app_composes_store_retriever_memorizer_and_worker(
     assert engine.__class__.__name__ == "LongTermMemoryEngine"
     assert engine.store.__class__.__name__ == "PostgresMemoryStore"
     assert engine.retriever.__class__.__name__ == "MemoryRetriever"
+    assert engine.retriever.lexical_retrieval_enabled is False
     assert engine.memorizer.__class__.__name__ == "MemoryMemorizer"
     assert engine.worker.__class__.__name__ == "PostResponseMemoryWorker"
 

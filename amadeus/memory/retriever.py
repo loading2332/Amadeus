@@ -8,25 +8,31 @@ from amadeus.memory.engine import (
     MemoryContextResult,
     MemoryQueryResult,
     MemoryRecallRequest,
+    MemoryRecord,
+    MemoryRetrievalStoreProtocol,
     MemoryScope,
-    MemoryStoreProtocol,
 )
 from amadeus.memory.providers import EmbeddingProvider, HypothesisProvider
 from amadeus.memory.ranking import (
+    MemoryCandidateLanes,
+    RetrievalLaneTrace,
     build_query_plan,
     dedupe_texts,
+    extract_terms,
     format_context_record,
     normalize_datetime,
-    rank_multi_query_rows,
+    rank_candidate_lanes,
     trace_record,
 )
 
 
 @dataclass
 class MemoryRetriever:
-    store: MemoryStoreProtocol
+    store: MemoryRetrievalStoreProtocol
     embedding_provider: EmbeddingProvider
     hypothesis_provider: HypothesisProvider | None = None
+    lexical_retrieval_enabled: bool = True
+    lexical_rrf_weight: float = 1.0
     hypothesis_retrieval_enabled: bool = True
     hypothesis_timeout_seconds: float = 2.0
     score_threshold: float = 0.35
@@ -66,12 +72,22 @@ class MemoryRetriever:
         queries = dedupe_texts(queries)
         hypothesis_trace["query_texts"] = list(queries)
 
-        rows, ranked, scope_mode, lane_counts = await self._load_ranked_rows(
+        (
+            ranked,
+            scope_mode,
+            lane_trace,
+            lane_status,
+            lexical_terms,
+            retrieval_fallbacks,
+            retrieval_errors,
+        ) = await self._load_ranked_candidates(
             request=request,
             queries=queries,
             memory_types=plan.memory_types,
             limit=limit,
         )
+        fallbacks.extend(retrieval_fallbacks)
+        errors.extend(retrieval_errors)
         trace: dict[str, Any] = {
             "intent": request.intent,
             "queries": queries,
@@ -81,13 +97,22 @@ class MemoryRetriever:
             },
             "scope_mode": scope_mode,
             "time_filters": {
-                "start": normalize_datetime(request.time_start) if request.time_start else None,
-                "end": normalize_datetime(request.time_end) if request.time_end else None,
+                "start": normalize_datetime(request.time_start)
+                if request.time_start
+                else None,
+                "end": normalize_datetime(request.time_end)
+                if request.time_end
+                else None,
             },
-            "candidate_count": len(rows),
-            "lane_counts": lane_counts,
+            "candidate_count": lane_trace.candidate_counts["union"],
+            "candidate_counts": dict(lane_trace.candidate_counts),
+            "lane_counts": lane_trace.lane_counts,
+            "lane_status": lane_status,
+            "lexical_query": {"terms": list(lexical_terms)},
             "record_count": len(ranked),
-            "records": [trace_record(record, rank=index) for index, record in enumerate(ranked)],
+            "records": [
+                trace_record(record, rank=index) for index, record in enumerate(ranked)
+            ],
             "fallbacks": dedupe_texts(fallbacks),
             "errors": errors,
             "hypothesis_retrieval": hypothesis_trace,
@@ -95,7 +120,9 @@ class MemoryRetriever:
         return MemoryQueryResult(records=ranked, trace=trace)
 
     def _can_generate_hypotheses(self) -> bool:
-        return self.hypothesis_retrieval_enabled and self.hypothesis_provider is not None
+        return (
+            self.hypothesis_retrieval_enabled and self.hypothesis_provider is not None
+        )
 
     def _disabled_hypothesis_trace(
         self,
@@ -120,32 +147,48 @@ class MemoryRetriever:
             "reason": reason,
         }
 
-    async def _load_ranked_rows(
+    async def _load_ranked_candidates(
         self,
         *,
         request: MemoryRecallRequest,
         queries: list[str],
         memory_types: tuple[str, ...],
         limit: int,
-    ) -> tuple[list[dict[str, Any]], list[Any], str, dict[str, dict[str, int]]]:
-        query_vectors = await self._embed_queries(queries)
-        scoped_rows = _normalize_rows(
-            self._candidate_rows(
-                request=request,
-                memory_types=memory_types,
-                query_vectors=query_vectors,
-            )
+    ) -> tuple[
+        list[MemoryRecord],
+        str,
+        RetrievalLaneTrace,
+        dict[str, str],
+        tuple[str, ...],
+        list[str],
+        list[str],
+    ]:
+        query_vectors, embedding_errors = await self._embed_queries(queries)
+        lexical_terms = tuple(extract_terms(request.text))
+        scoped = self._search_candidate_lanes(
+            request=request,
+            memory_types=memory_types,
+            query_vectors=query_vectors,
+            lexical_terms=lexical_terms,
+            limit=limit,
+            inherited_vector_errors=embedding_errors,
         )
-        ranked, lane_counts = self._rank_query_set(
-            rows=scoped_rows,
+        ranked, lane_trace = self._rank_candidate_set(
+            candidates=scoped.candidates,
             queries=queries,
             query_vectors=query_vectors,
             limit=limit,
         )
-        if ranked or (
-            request.scope.channel is None and request.scope.chat_id is None
-        ):
-            return scoped_rows, ranked, "scoped", lane_counts
+        if ranked or (request.scope.channel is None and request.scope.chat_id is None):
+            return (
+                ranked,
+                "scoped",
+                lane_trace,
+                scoped.lane_status,
+                lexical_terms,
+                scoped.fallbacks,
+                scoped.errors,
+            )
 
         global_request = MemoryRecallRequest(
             text=request.text,
@@ -157,74 +200,134 @@ class MemoryRetriever:
             scope=MemoryScope(),
             context=request.context,
         )
-        global_rows = _normalize_rows(
-            self._candidate_rows(
-                request=global_request,
-                memory_types=memory_types,
-                query_vectors=query_vectors,
-            )
+        global_result = self._search_candidate_lanes(
+            request=global_request,
+            memory_types=memory_types,
+            query_vectors=query_vectors,
+            lexical_terms=lexical_terms,
+            limit=limit,
+            inherited_vector_errors=embedding_errors,
         )
-        global_ranked, global_lane_counts = self._rank_query_set(
-            rows=global_rows,
+        global_ranked, global_lane_trace = self._rank_candidate_set(
+            candidates=global_result.candidates,
             queries=queries,
             query_vectors=query_vectors,
             limit=limit,
         )
-        return global_rows, global_ranked, "global-fallback", global_lane_counts
+        return (
+            global_ranked,
+            "global-fallback",
+            global_lane_trace,
+            _merge_lane_statuses(scoped.lane_status, global_result.lane_status),
+            lexical_terms,
+            dedupe_texts([*scoped.fallbacks, *global_result.fallbacks]),
+            dedupe_texts([*scoped.errors, *global_result.errors]),
+        )
 
     async def _embed_queries(
         self,
         queries: list[str],
-    ) -> list[list[float]]:
-        return list(
-            await asyncio.gather(
-                *(self.embedding_provider.embed(query_text) for query_text in queries)
-            )
+    ) -> tuple[list[list[float]], list[str]]:
+        generated = await asyncio.gather(
+            *(self.embedding_provider.embed(query_text) for query_text in queries),
+            return_exceptions=True,
         )
+        vectors: list[list[float]] = []
+        errors: list[str] = []
+        for value in generated:
+            if isinstance(value, asyncio.CancelledError):
+                raise value
+            if isinstance(value, BaseException):
+                vectors.append([])
+                errors.append(f"vector_retrieval: {type(value).__name__}")
+                continue
+            if not value:
+                vectors.append([])
+                errors.append("vector_retrieval: EmptyEmbedding")
+                continue
+            vectors.append(value)
+        return vectors, dedupe_texts(errors)
 
-    def _candidate_rows(
+    def _search_candidate_lanes(
         self,
         *,
         request: MemoryRecallRequest,
         memory_types: tuple[str, ...],
         query_vectors: list[list[float]],
-    ) -> list[dict[str, Any]]:
-        """Return candidate rows for ranking.
-
-        When the store exposes a pgvector-backed ``search_active_items`` method,
-        semantic candidates for every query are recalled through SQL ``<=>`` so
-        the runtime avoids a Python full-table scan on the main production
-        path. Stores without that method keep using ``list_active_items`` and
-        the ranking layer still scores them in Python.
-        """
-        search = getattr(self.store, "search_active_items", None)
-        if callable(search) and query_vectors:
-            rows_by_id: dict[str, dict[str, Any]] = {}
-            for query_vector in query_vectors:
-                if not query_vector:
-                    continue
-                rows = search(
+        lexical_terms: tuple[str, ...],
+        limit: int,
+        inherited_vector_errors: list[str],
+    ) -> _LaneSearchResult:
+        vector_groups: list[tuple[dict[str, Any], ...]] = []
+        vector_errors = list(inherited_vector_errors)
+        vector_successes = 0
+        vector_limit = max(self.top_k, limit) * 4
+        for query_vector in query_vectors:
+            if not query_vector:
+                vector_groups.append(())
+                continue
+            try:
+                rows = self.store.search_vector_candidates(
                     query_embedding=query_vector,
                     memory_types=memory_types,
                     scope_channel=request.scope.channel,
                     scope_chat_id=request.scope.chat_id,
                     time_start=request.time_start,
                     time_end=request.time_end,
-                    limit=max(
-                        self.top_k,
-                        request.limit if request.limit > 0 else self.top_k,
-                    )
-                    * 4,
+                    limit=vector_limit,
                 )
-                for row in rows:
-                    rows_by_id.setdefault(str(row["id"]), row)
-            return list(rows_by_id.values())
-        return self.store.list_active_items(
-            memory_types=memory_types,
-            scope_channel=request.scope.channel,
-            scope_chat_id=request.scope.chat_id,
-            time_start=request.time_start,
-            time_end=request.time_end,
+            except Exception as exc:
+                vector_groups.append(())
+                vector_errors.append(f"vector_retrieval: {type(exc).__name__}")
+            else:
+                vector_successes += 1
+                vector_groups.append(tuple(_normalize_rows(rows)))
+
+        if vector_errors:
+            vector_status = "degraded" if vector_successes else "error"
+        else:
+            vector_status = "ok"
+
+        lexical_rows: tuple[dict[str, Any], ...] = ()
+        lexical_error: str | None = None
+        if not self.lexical_retrieval_enabled:
+            lexical_status = "disabled"
+        elif not lexical_terms:
+            lexical_status = "no_terms"
+        else:
+            try:
+                rows = self.store.search_lexical_candidates(
+                    terms=lexical_terms,
+                    memory_types=memory_types,
+                    scope_channel=request.scope.channel,
+                    scope_chat_id=request.scope.chat_id,
+                    time_start=request.time_start,
+                    time_end=request.time_end,
+                    limit=max(30, limit * 2),
+                )
+            except Exception as exc:
+                lexical_status = "error"
+                lexical_error = f"lexical_retrieval: {type(exc).__name__}"
+            else:
+                lexical_status = "ok"
+                lexical_rows = tuple(_normalize_rows(rows))
+
+        fallbacks: list[str] = []
+        errors = dedupe_texts(vector_errors)
+        if vector_errors:
+            fallbacks.append("vector_retrieval_failed")
+        if lexical_error is not None:
+            fallbacks.append("lexical_retrieval_failed")
+            errors.append(lexical_error)
+        return _LaneSearchResult(
+            candidates=MemoryCandidateLanes(
+                vector_groups=tuple(vector_groups),
+                lexical=lexical_rows,
+                lexical_terms=lexical_terms,
+            ),
+            lane_status={"vector": vector_status, "lexical": lexical_status},
+            fallbacks=fallbacks,
+            errors=errors,
         )
 
     async def build_context(self, request: MemoryRecallRequest) -> MemoryContextResult:
@@ -296,20 +399,21 @@ class MemoryRetriever:
             timeout=max(0.001, float(self.hypothesis_timeout_seconds)),
         )
 
-    def _rank_query_set(
+    def _rank_candidate_set(
         self,
         *,
-        rows: list[dict[str, Any]],
+        candidates: MemoryCandidateLanes,
         queries: list[str],
         query_vectors: list[list[float]],
         limit: int,
-    ) -> tuple[list[Any], dict[str, dict[str, int]]]:
-        return rank_multi_query_rows(
-            rows,
+    ) -> tuple[list[MemoryRecord], RetrievalLaneTrace]:
+        return rank_candidate_lanes(
+            candidates,
             query_vectors,
             queries,
             limit=limit,
             threshold=self.score_threshold,
+            lexical_weight=self.lexical_rrf_weight,
         )
 
 
@@ -320,48 +424,40 @@ def _render_priority_sections(
     if not records:
         return "", [], []
 
-    sections = (
-        ("Applicable Procedures", {"procedure", "constraint"}),
-        ("User Profile", {"profile", "preference"}),
-        ("Relevant History", {"event", "fact"}),
-    )
-    selected_parts: list[str] = []
+    title_by_kind = {
+        "procedure": "Applicable Procedures",
+        "constraint": "Applicable Procedures",
+        "profile": "User Profile",
+        "preference": "User Profile",
+        "event": "Relevant History",
+        "fact": "Relevant History",
+    }
+    selected_sections: list[tuple[str, list[str]]] = []
     injected_ids: list[str] = []
     omitted_ids: list[str] = []
-    handled: set[str] = set()
 
-    for title, kinds in sections:
-        entries: list[str] = []
-        for record in records:
-            if record.id in handled or record.kind not in kinds:
-                continue
-            handled.add(record.id)
-            entry = format_context_record(record)
-            candidate_entries = [*entries, entry]
-            candidate_section = f"## {title}\n" + "\n".join(candidate_entries)
-            candidate = "\n\n".join([*selected_parts, candidate_section])
-            if len(candidate) <= char_budget:
-                entries.append(entry)
-                injected_ids.append(record.id)
-            else:
-                omitted_ids.append(record.id)
-        if entries:
-            selected_parts.append(f"## {title}\n" + "\n".join(entries))
+    def render(sections: list[tuple[str, list[str]]]) -> str:
+        return "\n\n".join(
+            f"## {title}\n" + "\n".join(entries) for title, entries in sections
+        )
 
     for record in records:
-        if record.id in handled:
-            continue
+        title = title_by_kind.get(record.kind, "Relevant Memory")
         entry = format_context_record(record)
-        candidate_section = f"## Relevant Memory\n{entry}"
-        candidate = "\n\n".join([*selected_parts, candidate_section])
-        if len(candidate) <= char_budget:
-            selected_parts.append(candidate_section)
+        if selected_sections and selected_sections[-1][0] == title:
+            candidate_sections = [
+                *selected_sections[:-1],
+                (title, [*selected_sections[-1][1], entry]),
+            ]
+        else:
+            candidate_sections = [*selected_sections, (title, [entry])]
+        if len(render(candidate_sections)) <= char_budget:
+            selected_sections = candidate_sections
             injected_ids.append(record.id)
         else:
             omitted_ids.append(record.id)
-        handled.add(record.id)
 
-    return "\n\n".join(selected_parts), injected_ids, omitted_ids
+    return render(selected_sections), injected_ids, omitted_ids
 
 
 def _normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -372,3 +468,36 @@ def _normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+@dataclass(frozen=True)
+class _LaneSearchResult:
+    candidates: MemoryCandidateLanes
+    lane_status: dict[str, str]
+    fallbacks: list[str]
+    errors: list[str]
+
+
+def _merge_lane_statuses(
+    first_attempt: dict[str, str],
+    second_attempt: dict[str, str],
+) -> dict[str, str]:
+    lanes = tuple(dict.fromkeys((*first_attempt, *second_attempt)))
+    return {
+        lane: _merge_lane_status(
+            first_attempt.get(lane, "error"),
+            second_attempt.get(lane, "error"),
+        )
+        for lane in lanes
+    }
+
+
+def _merge_lane_status(first: str, second: str) -> str:
+    if first == second:
+        return first
+    statuses = {first, second}
+    if "degraded" in statuses or ("error" in statuses and "ok" in statuses):
+        return "degraded"
+    if "error" in statuses:
+        return "error"
+    return second

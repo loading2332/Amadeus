@@ -53,6 +53,7 @@ from amadeus.tools.registry import ToolRegistry
 from amadeus.tools.undo_memory_by_source import (
     UndoMemoryBySourceTool as RuntimeUndoMemoryBySourceTool,
 )
+
 # mcp imports 放在 memory/session/tools 之后，避免触发 amadeus.mcp.__init__
 # 时机过早导致 session/memory 循环 import（见文件顶部注释）
 from amadeus.mcp import (
@@ -79,10 +80,12 @@ class RuntimeConfig:
     embedding_api_key: str | None = None
     embedding_base_url: str | None = None
     long_term_memory_top_k: int = 8
+    memory_lexical_retrieval_enabled: bool = True
     memory_hypothesis_retrieval_enabled: bool = True
     memory_hypothesis_timeout_seconds: float = 2.0
     light_model: str | None = None
     mcp_mode: Literal["disabled", "local_trusted"] = "disabled"
+
 
 class AppState(str, Enum):  # noqa: UP042
     """Explicit lifecycle states for a composed passive application."""
@@ -111,7 +114,9 @@ class PassiveApp:
         init=False,
         repr=False,
     )
-    _plugin_report: PluginLoadReport | None = field(default=None, init=False, repr=False)
+    _plugin_report: PluginLoadReport | None = field(
+        default=None, init=False, repr=False
+    )
 
     async def start(self) -> PluginLoadReport:
         """Load plugins once after all host dependencies have been composed."""
@@ -120,7 +125,9 @@ class PassiveApp:
                 raise RuntimeError("PassiveApp is closed; build a new app to restart")
             if self._state is AppState.STARTED:
                 if self._plugin_report is None:  # pragma: no cover - state invariant
-                    raise RuntimeError("PassiveApp started without a plugin load report")
+                    raise RuntimeError(
+                        "PassiveApp started without a plugin load report"
+                    )
                 return self._plugin_report
             try:
                 report = await self.plugin_manager.load_all()
@@ -286,16 +293,19 @@ def load_runtime_config(
         "AMADEUS_MEMORY_USER_ID", file_values, default=1
     )
     embedding_model = _config_value("OPENAI_EMBEDDING_MODEL", file_values)
-    embedding_api_key = (
-        _config_value("OPENAI_EMBEDDING_API_KEY", file_values)
-        or str(values["OPENAI_API_KEY"])
+    embedding_api_key = _config_value("OPENAI_EMBEDDING_API_KEY", file_values) or str(
+        values["OPENAI_API_KEY"]
     )
-    embedding_base_url = (
-        _config_value("OPENAI_EMBEDDING_BASE_URL", file_values)
-        or str(values["OPENAI_BASE_URL"])
+    embedding_base_url = _config_value("OPENAI_EMBEDDING_BASE_URL", file_values) or str(
+        values["OPENAI_BASE_URL"]
     )
     long_term_memory_top_k = _int_config(
         "AMADEUS_LONG_TERM_MEMORY_TOP_K", file_values, default=8
+    )
+    memory_lexical_retrieval_enabled = _bool_config(
+        "AMADEUS_MEMORY_LEXICAL_RETRIEVAL_ENABLED",
+        file_values,
+        default=True,
     )
     memory_hypothesis_retrieval_enabled = _bool_config(
         "AMADEUS_MEMORY_HYPOTHESIS_RETRIEVAL_ENABLED",
@@ -332,6 +342,7 @@ def load_runtime_config(
         embedding_api_key=embedding_api_key,
         embedding_base_url=embedding_base_url,
         long_term_memory_top_k=long_term_memory_top_k,
+        memory_lexical_retrieval_enabled=memory_lexical_retrieval_enabled,
         memory_hypothesis_retrieval_enabled=memory_hypothesis_retrieval_enabled,
         memory_hypothesis_timeout_seconds=memory_hypothesis_timeout_seconds,
         light_model=light_model,
@@ -407,6 +418,7 @@ def build_passive_app(
                     provider=provider,
                     model=config.light_model or config.provider.model,
                 ),
+                lexical_retrieval_enabled=(config.memory_lexical_retrieval_enabled),
                 hypothesis_retrieval_enabled=(
                     config.memory_hypothesis_retrieval_enabled
                 ),
@@ -556,7 +568,9 @@ def _int_config(name: str, file_values: Mapping[str, str], *, default: int) -> i
     return int(value)
 
 
-def _float_config(name: str, file_values: Mapping[str, str], *, default: float) -> float:
+def _float_config(
+    name: str, file_values: Mapping[str, str], *, default: float
+) -> float:
     value = _config_value(name, file_values)
     if value is None:
         return default

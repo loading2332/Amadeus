@@ -12,8 +12,52 @@ from amadeus.memory.source_refs import evidence_from_source_ref
 
 _RRF_K = 60
 _KEYWORD_RRF_WEIGHT = 0.5
+_LEXICAL_RRF_WEIGHT = 1.0
 _HOTNESS_ALPHA = 0.20
 _HOTNESS_HALF_LIFE_DAYS = 14.0
+
+_CJK_STOPWORDS = {
+    "用户",
+    "助手",
+    "我们",
+    "他们",
+    "这个",
+    "那个",
+    "什么",
+    "如何",
+    "是否",
+    "有没",
+    "没有",
+    "有过",
+    "做过",
+    "进行",
+    "完成",
+    "包括",
+    "通过",
+    "实现",
+    "行为",
+    "内容",
+    "相关",
+    "情况",
+    "问题",
+    "方式",
+    "时候",
+    "时间",
+    "目前",
+    "当前",
+    "最近",
+    "之前",
+    "以前",
+    "后来",
+    "然后",
+    "因为",
+    "所以",
+    "但是",
+    "用户在",
+    "用户对",
+    "的行为吗",
+    "进行了",
+}
 
 
 @dataclass(frozen=True)
@@ -21,6 +65,21 @@ class QueryPlan:
     queries: tuple[str, ...]
     memory_types: tuple[str, ...]
     use_hypotheses: bool = False
+
+
+@dataclass(frozen=True)
+class MemoryCandidateLanes:
+    """Candidate rows kept in the lanes that actually recalled them."""
+
+    vector_groups: tuple[tuple[dict[str, Any], ...], ...]
+    lexical: tuple[dict[str, Any], ...]
+    lexical_terms: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RetrievalLaneTrace:
+    candidate_counts: dict[str, int]
+    lane_counts: dict[str, dict[str, int]]
 
 
 def build_query_plan(
@@ -38,7 +97,7 @@ def build_query_plan(
         )
     raw_queries = context.get("queries")
     if intent == "context" and isinstance(raw_queries, list):
-        queries = dedupe_texts([str(item) for item in raw_queries])
+        queries = dedupe_texts([normalized, *(str(item) for item in raw_queries)])
         if queries:
             return QueryPlan(queries=tuple(queries), memory_types=memory_types)
     return QueryPlan(
@@ -261,6 +320,180 @@ def rank_multi_query_rows(
     return records, lane_counts
 
 
+def rank_candidate_lanes(
+    candidates: MemoryCandidateLanes,
+    query_vectors: list[list[float]],
+    query_texts: list[str],
+    *,
+    limit: int,
+    threshold: float,
+    lexical_weight: float = _LEXICAL_RRF_WEIGHT,
+) -> tuple[list[MemoryRecord], RetrievalLaneTrace]:
+    """Rank independently recalled vector and lexical candidate lanes."""
+
+    if len(candidates.vector_groups) != len(query_texts):
+        raise ValueError("vector_groups must align with query_texts")
+    if len(query_vectors) != len(query_texts):
+        raise ValueError("query_vectors must align with query_texts")
+    if not math.isfinite(lexical_weight) or lexical_weight < 0:
+        raise ValueError("lexical_weight must be a finite non-negative number")
+
+    vector_candidate_ids = {
+        row_id
+        for group in candidates.vector_groups
+        for row in group
+        if (row_id := _candidate_id(row))
+    }
+    lexical_candidate_ids = {
+        row_id for row in candidates.lexical if (row_id := _candidate_id(row))
+    }
+    lane_counts = {
+        query_text: {"vector": 0, "lexical": 0} for query_text in query_texts
+    }
+    candidate_counts = {
+        "vector": len(vector_candidate_ids),
+        "lexical": len(lexical_candidate_ids),
+        "union": len(vector_candidate_ids | lexical_candidate_ids),
+        "final": 0,
+    }
+
+    row_map: dict[str, dict[str, Any]] = {}
+    lexical_scores: dict[str, float] = {}
+    for row in candidates.lexical:
+        row_id = _candidate_id(row)
+        if not row_id:
+            continue
+        row_map.setdefault(row_id, row)
+        lexical_score = _finite_float(row.get("lexical_score"))
+        if lexical_score is None or lexical_score <= 0:
+            continue
+        previous_score = lexical_scores.get(row_id)
+        if previous_score is None or lexical_score > previous_score:
+            lexical_scores[row_id] = lexical_score
+
+    if query_texts:
+        lane_counts[query_texts[0]]["lexical"] = len(lexical_scores)
+
+    vector_best_scores: dict[str, float] = {}
+    vector_semantic_scores: dict[str, float] = {}
+    vector_query_indexes: dict[str, list[str]] = {}
+    hotness_signals: dict[str, dict[str, float | int | str]] = {}
+    ranking_now = datetime.now().astimezone()
+    for query_index, (group, query_vector) in enumerate(
+        zip(candidates.vector_groups, query_vectors, strict=True)
+    ):
+        group_hits: set[str] = set()
+        for row in group:
+            row_id = _candidate_id(row)
+            if not row_id:
+                continue
+            row_map[row_id] = row
+            semantic_score = _semantic_score_for_vector_row(row, query_vector)
+            if semantic_score < threshold:
+                continue
+
+            group_hits.add(row_id)
+            matched_indexes = vector_query_indexes.setdefault(row_id, [])
+            query_index_text = str(query_index)
+            if query_index_text not in matched_indexes:
+                matched_indexes.append(query_index_text)
+
+            row_hotness_signal = hotness_signal_for_row(row, now=ranking_now)
+            final_vector_score = hotness_fused_score(
+                semantic_score,
+                float(row_hotness_signal["hotness_score"]),
+            )
+            current_score = vector_best_scores.get(row_id)
+            if current_score is None or final_vector_score > current_score:
+                vector_best_scores[row_id] = final_vector_score
+                vector_semantic_scores[row_id] = semantic_score
+                hotness_signals[row_id] = row_hotness_signal
+                row_map[row_id] = row
+        lane_counts[query_texts[query_index]]["vector"] = len(group_hits)
+
+    vector_scored = list(vector_best_scores.items())
+    lexical_scored = list(lexical_scores.items())
+    vector_ranks = _lane_rank_map(vector_scored, row_map)
+    lexical_ranks = _lane_rank_map(lexical_scored, row_map)
+    top_ids = rrf_merge(
+        vector_scored,
+        lexical_scored,
+        row_map=row_map,
+        top_n=max(0, int(limit)),
+        keyword_weight=lexical_weight,
+    )
+
+    records: list[MemoryRecord] = []
+    for item_id, rrf_score, _boost in top_ids:
+        row = row_map[item_id]
+        record_hotness_signal = hotness_signals.get(item_id)
+        if record_hotness_signal is None:
+            record_hotness_signal = hotness_signal_for_row(row, now=ranking_now)
+        vector_rank = vector_ranks.get(item_id)
+        lexical_rank = lexical_ranks.get(item_id)
+        vector_contribution = (
+            1.0 / (_RRF_K + vector_rank) if vector_rank is not None else 0.0
+        )
+        lexical_contribution = (
+            lexical_weight / (_RRF_K + lexical_rank)
+            if lexical_rank is not None
+            else 0.0
+        )
+        source_ref = str(row.get("source_ref") or "")
+        records.append(
+            MemoryRecord(
+                id=item_id,
+                kind=str(row.get("kind") or row.get("memory_type") or "event"),
+                summary=str(row.get("summary") or ""),
+                score=rrf_score,
+                source_ref=source_ref,
+                evidence=evidence_from_source_ref(source_ref),
+                signals={
+                    "lanes": [
+                        lane
+                        for lane, rank in (
+                            ("vector", vector_rank),
+                            ("lexical", lexical_rank),
+                        )
+                        if rank is not None
+                    ],
+                    "matched_query_indexes": vector_query_indexes.get(item_id, []),
+                    "vector_rank": vector_rank,
+                    "lexical_rank": lexical_rank,
+                    "vector_rrf_contribution": vector_contribution,
+                    "lexical_rrf_contribution": lexical_contribution,
+                    "vector_score": vector_semantic_scores.get(item_id, 0.0),
+                    "final_vector_score": vector_best_scores.get(item_id, 0.0),
+                    "lexical_score": lexical_scores.get(item_id, 0.0),
+                    "rrf_score": rrf_score,
+                    "reinforcement": int(row.get("reinforcement") or 1),
+                    "emotional_weight": coerce_emotional_weight(
+                        row.get("emotional_weight")
+                    ),
+                    "hotness_score": record_hotness_signal.get("hotness_score", 0.0),
+                    "hotness_alpha": _HOTNESS_ALPHA,
+                    "hotness_half_life_days": _HOTNESS_HALF_LIFE_DAYS,
+                    "hotness_recency": record_hotness_signal.get("recency", 0.0),
+                    "hotness_frequency": record_hotness_signal.get("frequency", 0.0),
+                    "hotness_effective_half_life_days": record_hotness_signal.get(
+                        "effective_half_life_days",
+                        _HOTNESS_HALF_LIFE_DAYS,
+                    ),
+                    "hotness_age_days": record_hotness_signal.get("age_days", 0.0),
+                    "hotness_updated_at": record_hotness_signal.get("updated_at", ""),
+                    "reinforcement_boost": reinforcement_boost(row),
+                    "extra": dict(row.get("extra") or {}),
+                },
+            )
+        )
+
+    candidate_counts["final"] = len(records)
+    return records, RetrievalLaneTrace(
+        candidate_counts=candidate_counts,
+        lane_counts=lane_counts,
+    )
+
+
 def trace_record(record: MemoryRecord, *, rank: int) -> dict[str, Any]:
     return {
         "rank": rank,
@@ -289,33 +522,18 @@ def normalize_datetime(value: datetime) -> str:
 
 
 def extract_terms(text: str) -> list[str]:
-    stop_words = {
-        "我",
-        "你",
-        "他",
-        "她",
-        "它",
-        "的",
-        "了",
-        "过",
-        "之前",
-        "关于",
-        "什么",
-    }
-    terms: list[str] = []
-    for token in re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]+", text.lower()):
-        if not token or token in stop_words:
+    terms = re.findall(r"[A-Za-z0-9_.-]{2,}", text)
+    for chunk in re.findall(r"[\u4e00-\u9fff\u3040-\u30ff]{2,}", text):
+        if len(chunk) <= 4:
+            if chunk not in _CJK_STOPWORDS:
+                terms.append(chunk)
             continue
-        if re.fullmatch(r"[\u4e00-\u9fff]+", token):
-            if len(token) <= 2:
-                terms.append(token)
-            else:
-                terms.extend(
-                    token[index : index + 2] for index in range(len(token) - 1)
-                )
-        else:
-            terms.append(token)
-    return dedupe_texts(terms)
+        terms.extend(
+            bigram
+            for index in range(len(chunk) - 1)
+            if (bigram := chunk[index : index + 2]) not in _CJK_STOPWORDS
+        )
+    return dedupe_texts(terms)[:20]
 
 
 def dedupe_texts(values: list[str]) -> list[str]:
@@ -329,12 +547,59 @@ def dedupe_texts(values: list[str]) -> list[str]:
     return result
 
 
+def _candidate_id(row: dict[str, Any]) -> str:
+    return str(row.get("id") or "")
+
+
+def _finite_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def _semantic_score_for_vector_row(
+    row: dict[str, Any],
+    query_vector: list[float],
+) -> float:
+    vector_distance = _finite_float(row.get("vector_distance"))
+    if vector_distance is not None:
+        return 1.0 - vector_distance
+    embedding = row.get("embedding")
+    if not isinstance(embedding, list):
+        return 0.0
+    return cosine(query_vector, embedding)
+
+
+def _lane_rank_map(
+    scored: list[tuple[str, float]],
+    row_map: dict[str, dict[str, Any]],
+) -> dict[str, int]:
+    return {
+        item_id: index + 1
+        for index, (item_id, _score) in enumerate(
+            sorted(
+                scored,
+                key=lambda item: (
+                    -item[1],
+                    -int(row_map.get(item[0], {}).get("reinforcement") or 1),
+                    item[0],
+                ),
+            )
+        )
+    }
+
+
 def rrf_merge(
     vector_scored: list[tuple[str, float]],
     keyword_scored: list[tuple[str, float]],
     *,
     row_map: dict[str, dict[str, Any]] | None = None,
     top_n: int,
+    keyword_weight: float = _KEYWORD_RRF_WEIGHT,
 ) -> list[tuple[str, float, float]]:
     if top_n <= 0 or (not vector_scored and not keyword_scored):
         return []
@@ -374,7 +639,9 @@ def rrf_merge(
         if item_id in vec_rank:
             rrf += 1.0 / (_RRF_K + vec_rank[item_id])
         if item_id in kw_rank:
-            rrf += _KEYWORD_RRF_WEIGHT / (_RRF_K + kw_rank[item_id])
+            rrf += keyword_weight / (_RRF_K + kw_rank[item_id])
+        if rrf <= 0:
+            continue
         scored.append((item_id, rrf, reinforcement_boost(metadata.get(item_id, {}))))
 
     scored.sort(key=lambda item: (-item[1], -item[2], item[0]))
@@ -478,7 +745,7 @@ def keyword_score_for_summary(summary: str, terms: list[str]) -> float:
     if not terms:
         return 0.0
     lowered = summary.lower()
-    hits = sum(1 for term in terms if term in lowered)
+    hits = sum(1 for term in terms if term.lower() in lowered)
     return hits / len(terms)
 
 
@@ -491,6 +758,8 @@ def cosine(left: list[float], right: list[float]) -> float:
     if left_norm == 0 or right_norm == 0:
         return 0.0
     return dot / left_norm / right_norm
+
+
 def content_hash(summary: str, memory_type: str) -> str:
     normalized = " ".join(summary.lower().split())
     return hashlib.sha256(f"{memory_type}:{normalized}".encode()).hexdigest()[:16]

@@ -10,6 +10,8 @@ from psycopg.types.json import Jsonb
 from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
 from amadeus.memory.store import _content_hash, _normalize_datetime
 
+_MAX_LEXICAL_TERMS = 20
+
 
 class PostgresMemoryStore:
     """PostgreSQL + pgvector-backed long-term memory store.
@@ -171,7 +173,12 @@ class PostgresMemoryStore:
                             emotional_weight = GREATEST(emotional_weight, %s)
                         WHERE user_id = %s AND id = %s
                         """,
-                        (happened_at, float(emotional_weight), self.user_id, reinforced_id),
+                        (
+                            happened_at,
+                            float(emotional_weight),
+                            self.user_id,
+                            reinforced_id,
+                        ),
                     )
                     conn.commit()
                     return reinforced_id, "reinforced"
@@ -311,26 +318,13 @@ class PostgresMemoryStore:
         time_start: datetime | None = None,
         time_end: datetime | None = None,
     ) -> list[dict[str, Any]]:
-        clauses = ["user_id = %s", "status = 'active'"]
-        params: list[Any] = [self.user_id]
-        clean_types = tuple(value.strip() for value in memory_types if value.strip())
-        if clean_types:
-            clauses.append("memory_type = ANY(%s)")
-            params.append(list(clean_types))
-        if scope_channel is not None:
-            clauses.append("extra_json->>'scope_channel' = %s")
-            params.append(scope_channel)
-        if scope_chat_id is not None:
-            clauses.append("extra_json->>'scope_chat_id' = %s")
-            params.append(scope_chat_id)
-        if time_start is not None:
-            clauses.append("happened_at IS NOT NULL")
-            clauses.append("happened_at >= %s::timestamptz")
-            params.append(_normalize_datetime(time_start))
-        if time_end is not None:
-            clauses.append("happened_at IS NOT NULL")
-            clauses.append("happened_at <= %s::timestamptz")
-            params.append(_normalize_datetime(time_end))
+        clauses, params = self._active_candidate_filters(
+            memory_types=memory_types,
+            scope_channel=scope_channel,
+            scope_chat_id=scope_chat_id,
+            time_start=time_start,
+            time_end=time_end,
+        )
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -347,7 +341,7 @@ class PostgresMemoryStore:
                 rows = cursor.fetchall()
         return [_row_to_item(row) for row in rows]
 
-    def search_active_items(
+    def search_vector_candidates(
         self,
         *,
         query_embedding: list[float],
@@ -358,41 +352,21 @@ class PostgresMemoryStore:
         time_end: datetime | None = None,
         limit: int = 32,
     ) -> list[dict[str, Any]]:
-        """pgvector semantic candidate recall.
+        """Return active pgvector candidates ordered by cosine distance.
 
-        Returns active items for this user ordered by cosine distance to
-        ``query_embedding``, filtered by type/scope/time the same way as
-        :meth:`list_active_items`. The ranking layer still scores and merges
-        these candidates; this method only narrows the candidate set through
-        the SQL ``<=>`` operator so the runtime never performs a Python
-        full-table scan as the completion state.
+        This method is the vector-lane store boundary. It intentionally rejects
+        rows without an embedding; the independent lexical method does not.
         """
-        # The query embedding binds twice: once for the projected distance and
-        # once for the ORDER BY sort key. Positional placeholders bind in the
-        # order they appear in the SQL, so the SELECT-distance placeholder comes
-        # before the WHERE placeholders. We build params in that same order.
-        clauses = ["user_id = %s", "status = 'active'", "embedding IS NOT NULL"]
+        clauses, where_params = self._active_candidate_filters(
+            memory_types=memory_types,
+            scope_channel=scope_channel,
+            scope_chat_id=scope_chat_id,
+            time_start=time_start,
+            time_end=time_end,
+        )
+        clauses.append("embedding IS NOT NULL")
         sql_distance_clause = "embedding <=> %s::vector AS distance"
         select_params: list[Any] = [Vector(query_embedding)]
-        where_params: list[Any] = [self.user_id]
-        clean_types = tuple(value.strip() for value in memory_types if value.strip())
-        if clean_types:
-            clauses.append("memory_type = ANY(%s)")
-            where_params.append(list(clean_types))
-        if scope_channel is not None:
-            clauses.append("extra_json->>'scope_channel' = %s")
-            where_params.append(scope_channel)
-        if scope_chat_id is not None:
-            clauses.append("extra_json->>'scope_chat_id' = %s")
-            where_params.append(scope_chat_id)
-        if time_start is not None:
-            clauses.append("happened_at IS NOT NULL")
-            clauses.append("happened_at >= %s::timestamptz")
-            where_params.append(_normalize_datetime(time_start))
-        if time_end is not None:
-            clauses.append("happened_at IS NOT NULL")
-            clauses.append("happened_at <= %s::timestamptz")
-            where_params.append(_normalize_datetime(time_end))
         params = select_params + where_params + [Vector(query_embedding), int(limit)]
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
@@ -414,6 +388,95 @@ class PostgresMemoryStore:
         for row, item in zip(rows, results, strict=True):
             distance = row.get("distance")
             item["vector_distance"] = float(distance) if distance is not None else None
+        return results
+
+    def search_active_items(
+        self,
+        *,
+        query_embedding: list[float],
+        memory_types: tuple[str, ...] = (),
+        scope_channel: str | None = None,
+        scope_chat_id: str | None = None,
+        time_start: datetime | None = None,
+        time_end: datetime | None = None,
+        limit: int = 32,
+    ) -> list[dict[str, Any]]:
+        """Compatibility alias for the explicitly named vector lane."""
+        return self.search_vector_candidates(
+            query_embedding=query_embedding,
+            memory_types=memory_types,
+            scope_channel=scope_channel,
+            scope_chat_id=scope_chat_id,
+            time_start=time_start,
+            time_end=time_end,
+            limit=limit,
+        )
+
+    def search_lexical_candidates(
+        self,
+        *,
+        terms: tuple[str, ...],
+        memory_types: tuple[str, ...] = (),
+        scope_channel: str | None = None,
+        scope_chat_id: str | None = None,
+        time_start: datetime | None = None,
+        time_end: datetime | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Return independent substring candidates with matched-term coverage."""
+        clean_terms = _stable_lexical_terms(terms)
+        if not clean_terms or limit <= 0:
+            return []
+
+        patterns = [_literal_ilike_pattern(term) for term in clean_terms]
+        match_parts = [
+            "CASE WHEN summary ILIKE %s ESCAPE '!' THEN 1 ELSE 0 END" for _ in patterns
+        ]
+        match_count_sql = " + ".join(match_parts)
+        match_any_sql = " OR ".join("summary ILIKE %s ESCAPE '!'" for _ in patterns)
+        clauses, filter_params = self._active_candidate_filters(
+            memory_types=memory_types,
+            scope_channel=scope_channel,
+            scope_chat_id=scope_chat_id,
+            time_start=time_start,
+            time_end=time_end,
+        )
+        params: list[Any] = [len(clean_terms)]
+        params.extend(patterns)
+        params.extend(filter_params)
+        params.extend(patterns)
+        params.append(int(limit))
+
+        with self.db.connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT id, memory_type, summary, content_hash, embedding,
+                           source_ref, happened_at, status, reinforcement,
+                           emotional_weight, created_at, updated_at, extra_json,
+                           lexical_matched_terms,
+                           lexical_matched_terms::double precision / %s
+                               AS lexical_score
+                    FROM (
+                        SELECT id, memory_type, summary, content_hash, embedding,
+                               source_ref, happened_at, status, reinforcement,
+                               emotional_weight, created_at, updated_at, extra_json,
+                               ({match_count_sql}) AS lexical_matched_terms
+                        FROM memory_items
+                        WHERE {" AND ".join(clauses)}
+                          AND ({match_any_sql})
+                    ) AS lexical_candidates
+                    ORDER BY lexical_score DESC, reinforcement DESC, id ASC
+                    LIMIT %s
+                    """,
+                    tuple(params),
+                )
+                rows = cursor.fetchall()
+
+        results = [_row_to_item(row) for row in rows]
+        for row, item in zip(rows, results, strict=True):
+            item["lexical_matched_terms"] = int(row["lexical_matched_terms"])
+            item["lexical_score"] = float(row["lexical_score"])
         return results
 
     def find_items_by_source_ref(self, source_ref: str) -> list[dict[str, Any]]:
@@ -459,6 +522,37 @@ class PostgresMemoryStore:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _active_candidate_filters(
+        self,
+        *,
+        memory_types: tuple[str, ...],
+        scope_channel: str | None,
+        scope_chat_id: str | None,
+        time_start: datetime | None,
+        time_end: datetime | None,
+    ) -> tuple[list[str], list[Any]]:
+        clauses = ["user_id = %s", "status = 'active'"]
+        params: list[Any] = [self.user_id]
+        clean_types = tuple(value.strip() for value in memory_types if value.strip())
+        if clean_types:
+            clauses.append("memory_type = ANY(%s)")
+            params.append(list(clean_types))
+        if scope_channel is not None:
+            clauses.append("extra_json->>'scope_channel' = %s")
+            params.append(scope_channel)
+        if scope_chat_id is not None:
+            clauses.append("extra_json->>'scope_chat_id' = %s")
+            params.append(scope_chat_id)
+        if time_start is not None:
+            clauses.append("happened_at IS NOT NULL")
+            clauses.append("happened_at >= %s::timestamptz")
+            params.append(_normalize_datetime(time_start))
+        if time_end is not None:
+            clauses.append("happened_at IS NOT NULL")
+            clauses.append("happened_at <= %s::timestamptz")
+            params.append(_normalize_datetime(time_end))
+        return clauses, params
 
     @staticmethod
     def _merge_scope(
@@ -513,3 +607,22 @@ def _coerce_embedding(value: Any) -> list[float]:
     if hasattr(value, "tolist"):
         return [float(v) for v in value.tolist()]
     return [float(v) for v in value]
+
+
+def _stable_lexical_terms(terms: tuple[str, ...]) -> tuple[str, ...]:
+    clean: list[str] = []
+    seen: set[str] = set()
+    for raw_term in terms:
+        term = raw_term.strip()
+        if len(term) < 2 or term in seen:
+            continue
+        clean.append(term)
+        seen.add(term)
+        if len(clean) == _MAX_LEXICAL_TERMS:
+            break
+    return tuple(clean)
+
+
+def _literal_ilike_pattern(term: str) -> str:
+    escaped = term.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    return f"%{escaped}%"

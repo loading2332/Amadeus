@@ -44,6 +44,7 @@ def test_long_term_memory_config_can_be_enabled(tmp_path, monkeypatch):
     assert config.long_term_memory_enabled is True
     assert config.embedding_model == "text-embedding-v4"
     assert config.long_term_memory_top_k == 5
+    assert config.memory_lexical_retrieval_enabled is True
     assert config.memory_hypothesis_retrieval_enabled is True
     assert config.memory_hypothesis_timeout_seconds == 2.0
     assert config.light_model is None
@@ -70,6 +71,23 @@ def test_memory_hypothesis_retrieval_config_can_be_disabled(
     assert config.memory_hypothesis_retrieval_enabled is False
     assert config.memory_hypothesis_timeout_seconds == 0.75
     assert config.light_model == "light-model"
+
+
+def test_memory_lexical_retrieval_config_can_be_disabled(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.setenv("OPENAI_MODEL", "chat-model")
+    monkeypatch.setenv("AMADEUS_MEMORY_LEXICAL_RETRIEVAL_ENABLED", "0")
+
+    config = load_runtime_config(
+        env_path=tmp_path / ".env",
+        workspace_root=tmp_path,
+    )
+
+    assert config.memory_lexical_retrieval_enabled is False
 
 
 def test_long_term_memory_config_supports_dedicated_embedding_provider(

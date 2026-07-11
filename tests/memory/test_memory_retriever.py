@@ -66,6 +66,147 @@ class SlowHypothesisProvider:
         return f"{style}-too-late"
 
 
+class FailingEmbeddingProvider:
+    async def embed(self, text: str) -> list[float]:
+        raise RuntimeError("embedding unavailable")
+
+
+class PartiallyFailingEmbeddingProvider:
+    async def embed(self, text: str) -> list[float]:
+        if "event-hypothesis" in text:
+            raise RuntimeError("event embedding unavailable")
+        return pad_embedding([1.0, 0.0, 0.0])
+
+
+class LexicalOnlyRetrievalStore:
+    def __init__(self) -> None:
+        self.lexical_calls: list[dict[str, object]] = []
+
+    def search_vector_candidates(self, **kwargs):
+        raise AssertionError("vector search must not run without an embedding")
+
+    def search_lexical_candidates(self, **kwargs):
+        self.lexical_calls.append(dict(kwargs))
+        return [
+            {
+                "id": "lexical-target",
+                "memory_type": "event",
+                "summary": "部署标识 ZXQ-4917",
+                "embedding": None,
+                "source_ref": '["session:1:1:9"]#h:lexical-target',
+                "extra": {},
+                "reinforcement": 1,
+                "emotional_weight": 0,
+                "updated_at": "2026-07-11T00:00:00",
+                "lexical_score": 1.0,
+            }
+        ]
+
+
+class OrderedLexicalRetrievalStore:
+    def search_vector_candidates(self, **kwargs):
+        raise AssertionError("vector search must not run without an embedding")
+
+    def search_lexical_candidates(self, **kwargs):
+        return [
+            {
+                "id": "event-high",
+                "memory_type": "event",
+                "summary": "ZXQ-4917 首要历史",
+                "embedding": None,
+                "source_ref": '["session:1:1:10"]#h:event-high',
+                "extra": {},
+                "reinforcement": 1,
+                "emotional_weight": 0,
+                "updated_at": "2026-07-11T00:00:00",
+                "lexical_score": 1.0,
+            },
+            {
+                "id": "procedure-low",
+                "memory_type": "procedure",
+                "summary": "ZXQ-4917 次要流程",
+                "embedding": None,
+                "source_ref": '["session:1:1:11"]#h:procedure-low',
+                "extra": {},
+                "reinforcement": 1,
+                "emotional_weight": 0,
+                "updated_at": "2026-07-11T00:00:00",
+                "lexical_score": 0.5,
+            },
+        ]
+
+
+class VectorSearchFailingStore(LexicalOnlyRetrievalStore):
+    def search_vector_candidates(self, **kwargs):
+        raise RuntimeError("vector database unavailable")
+
+
+class LexicalSearchFailingStore:
+    def __init__(self) -> None:
+        self.lexical_call_count = 0
+
+    def search_vector_candidates(self, **kwargs):
+        return [
+            {
+                "id": "vector-target",
+                "memory_type": "event",
+                "summary": "vector target",
+                "embedding": kwargs["query_embedding"],
+                "vector_distance": 0.0,
+                "source_ref": '["session:1:1:12"]#h:vector-target',
+                "extra": {},
+                "reinforcement": 1,
+                "emotional_weight": 0,
+                "updated_at": "2026-07-11T00:00:00",
+            }
+        ]
+
+    def search_lexical_candidates(self, **kwargs):
+        self.lexical_call_count += 1
+        raise RuntimeError("lexical database unavailable")
+
+
+class ScopedVectorFailureThenGlobalStore:
+    def __init__(self) -> None:
+        self.vector_scopes: list[str | None] = []
+        self.lexical_scopes: list[str | None] = []
+
+    def search_vector_candidates(self, **kwargs):
+        scope_channel = kwargs["scope_channel"]
+        self.vector_scopes.append(scope_channel)
+        if scope_channel is not None:
+            raise RuntimeError("scoped vector search unavailable")
+        return [
+            {
+                "id": "global-vector-target",
+                "memory_type": "event",
+                "summary": "vector target",
+                "embedding": kwargs["query_embedding"],
+                "vector_distance": 0.0,
+                "source_ref": '["session:1:1:13"]#h:global-vector-target',
+                "extra": {},
+                "reinforcement": 1,
+                "emotional_weight": 0,
+                "updated_at": "2026-07-11T00:00:00",
+            }
+        ]
+
+    def search_lexical_candidates(self, **kwargs):
+        self.lexical_scopes.append(kwargs["scope_channel"])
+        return []
+
+
+class ScopedLexicalFailureThenGlobalStore(LexicalOnlyRetrievalStore):
+    def search_vector_candidates(self, **kwargs):
+        return []
+
+    def search_lexical_candidates(self, **kwargs):
+        self.lexical_calls.append(dict(kwargs))
+        if kwargs["scope_channel"] is not None:
+            raise RuntimeError("scoped lexical search unavailable")
+        return super().search_lexical_candidates(**kwargs)
+
+
 @pytest.fixture
 def memory_store():
     db = clean_postgres()
@@ -75,7 +216,9 @@ def memory_store():
         db.close()
 
 
-def test_retriever_prefers_scope_matched_procedure_then_preference(memory_store) -> None:
+def test_retriever_prefers_scope_matched_procedure_then_preference(
+    memory_store,
+) -> None:
     store = memory_store
     memorizer = MemoryMemorizer(
         store=store,
@@ -124,6 +267,235 @@ def test_retriever_prefers_scope_matched_procedure_then_preference(memory_store)
     )
 
 
+def test_lexical_recall_survives_vector_embedding_failure() -> None:
+    store = LexicalOnlyRetrievalStore()
+    retriever = MemoryRetriever(
+        store=store,
+        embedding_provider=FailingEmbeddingProvider(),
+    )
+
+    result = asyncio.run(
+        retriever.recall(MemoryRecallRequest(text="ZXQ-4917", intent="answer", limit=8))
+    )
+
+    assert [record.id for record in result.records] == ["lexical-target"]
+    assert store.lexical_calls[0]["terms"] == ("ZXQ-4917",)
+    assert result.trace["lane_status"] == {
+        "vector": "error",
+        "lexical": "ok",
+    }
+    assert result.trace["candidate_counts"] == {
+        "vector": 0,
+        "lexical": 1,
+        "union": 1,
+        "final": 1,
+    }
+    assert result.trace["fallbacks"] == ["vector_retrieval_failed"]
+    assert result.trace["errors"] == ["vector_retrieval: RuntimeError"]
+
+
+def test_raw_query_still_drives_lexical_when_context_adds_vector_queries() -> None:
+    store = LexicalOnlyRetrievalStore()
+    retriever = MemoryRetriever(
+        store=store,
+        embedding_provider=FailingEmbeddingProvider(),
+    )
+
+    result = asyncio.run(
+        retriever.recall(
+            MemoryRecallRequest(
+                text="ZXQ-4917",
+                intent="context",
+                context={"queries": ["OTHER-999"]},
+            )
+        )
+    )
+
+    assert result.trace["queries"] == ["ZXQ-4917", "OTHER-999"]
+    assert store.lexical_calls[0]["terms"] == ("ZXQ-4917",)
+    assert [record.id for record in result.records] == ["lexical-target"]
+
+
+def test_partial_vector_embedding_failure_marks_lane_degraded() -> None:
+    retriever = MemoryRetriever(
+        store=LexicalSearchFailingStore(),
+        embedding_provider=PartiallyFailingEmbeddingProvider(),
+        hypothesis_provider=FakeHypothesisProvider(),
+        lexical_retrieval_enabled=False,
+    )
+
+    result = asyncio.run(
+        retriever.recall(
+            MemoryRecallRequest(text="raw vector target", intent="answer", limit=8)
+        )
+    )
+
+    assert [record.id for record in result.records] == ["vector-target"]
+    assert result.trace["lane_status"] == {
+        "vector": "degraded",
+        "lexical": "disabled",
+    }
+    assert result.trace["fallbacks"] == ["vector_retrieval_failed"]
+    assert result.trace["errors"] == ["vector_retrieval: RuntimeError"]
+
+
+def test_context_injection_preserves_final_fusion_order() -> None:
+    retriever = MemoryRetriever(
+        store=OrderedLexicalRetrievalStore(),
+        embedding_provider=FailingEmbeddingProvider(),
+    )
+
+    result = asyncio.run(
+        retriever.build_context(
+            MemoryRecallRequest(text="ZXQ-4917", intent="context", limit=8)
+        )
+    )
+
+    assert result.injected_ids == ["event-high", "procedure-low"]
+    assert result.text.index("ZXQ-4917 首要历史") < result.text.index(
+        "ZXQ-4917 次要流程"
+    )
+
+
+def test_lexical_recall_survives_vector_search_failure() -> None:
+    retriever = MemoryRetriever(
+        store=VectorSearchFailingStore(),
+        embedding_provider=StableEmbeddingProvider(),
+    )
+
+    result = asyncio.run(
+        retriever.recall(
+            MemoryRecallRequest(text="ZXQ-4917", intent="context", limit=8)
+        )
+    )
+
+    assert [record.id for record in result.records] == ["lexical-target"]
+    assert result.trace["lane_status"] == {
+        "vector": "error",
+        "lexical": "ok",
+    }
+    assert result.trace["fallbacks"] == ["vector_retrieval_failed"]
+    assert result.trace["errors"] == ["vector_retrieval: RuntimeError"]
+
+
+def test_vector_recall_survives_lexical_search_failure() -> None:
+    store = LexicalSearchFailingStore()
+    retriever = MemoryRetriever(
+        store=store,
+        embedding_provider=StableEmbeddingProvider(),
+    )
+
+    result = asyncio.run(
+        retriever.recall(
+            MemoryRecallRequest(text="vector target", intent="context", limit=8)
+        )
+    )
+
+    assert [record.id for record in result.records] == ["vector-target"]
+    assert result.trace["lane_status"] == {
+        "vector": "ok",
+        "lexical": "error",
+    }
+    assert result.trace["fallbacks"] == ["lexical_retrieval_failed"]
+    assert result.trace["errors"] == ["lexical_retrieval: RuntimeError"]
+
+
+def test_disabled_lexical_lane_does_not_query_store() -> None:
+    store = LexicalSearchFailingStore()
+    retriever = MemoryRetriever(
+        store=store,
+        embedding_provider=StableEmbeddingProvider(),
+        lexical_retrieval_enabled=False,
+    )
+
+    result = asyncio.run(
+        retriever.recall(
+            MemoryRecallRequest(text="vector target", intent="context", limit=8)
+        )
+    )
+
+    assert [record.id for record in result.records] == ["vector-target"]
+    assert store.lexical_call_count == 0
+    assert result.trace["lane_status"]["lexical"] == "disabled"
+    assert result.trace["fallbacks"] == []
+    assert result.trace["errors"] == []
+
+
+def test_no_lexical_terms_skips_query_and_reports_status() -> None:
+    store = LexicalSearchFailingStore()
+    retriever = MemoryRetriever(
+        store=store,
+        embedding_provider=StableEmbeddingProvider(),
+    )
+
+    result = asyncio.run(
+        retriever.recall(MemoryRecallRequest(text="a 用户", intent="context", limit=8))
+    )
+
+    assert [record.id for record in result.records] == ["vector-target"]
+    assert store.lexical_call_count == 0
+    assert result.trace["lexical_query"] == {"terms": []}
+    assert result.trace["lane_status"]["lexical"] == "no_terms"
+
+
+def test_scope_fallback_preserves_scoped_failure_as_degraded() -> None:
+    store = ScopedVectorFailureThenGlobalStore()
+    retriever = MemoryRetriever(
+        store=store,
+        embedding_provider=StableEmbeddingProvider(),
+    )
+
+    result = asyncio.run(
+        retriever.recall(
+            MemoryRecallRequest(
+                text="vector target",
+                intent="context",
+                scope=MemoryScope(channel="telegram"),
+                limit=8,
+            )
+        )
+    )
+
+    assert [record.id for record in result.records] == ["global-vector-target"]
+    assert result.trace["scope_mode"] == "global-fallback"
+    assert result.trace["lane_status"] == {
+        "vector": "degraded",
+        "lexical": "ok",
+    }
+    assert result.trace["fallbacks"] == ["vector_retrieval_failed"]
+    assert result.trace["errors"] == ["vector_retrieval: RuntimeError"]
+    assert store.vector_scopes == ["telegram", None]
+    assert store.lexical_scopes == ["telegram", None]
+
+
+def test_scope_fallback_does_not_relabel_lexical_failure_as_ok() -> None:
+    store = ScopedLexicalFailureThenGlobalStore()
+    retriever = MemoryRetriever(
+        store=store,
+        embedding_provider=StableEmbeddingProvider(),
+    )
+
+    result = asyncio.run(
+        retriever.recall(
+            MemoryRecallRequest(
+                text="ZXQ-4917",
+                intent="context",
+                scope=MemoryScope(channel="telegram"),
+                limit=8,
+            )
+        )
+    )
+
+    assert [record.id for record in result.records] == ["lexical-target"]
+    assert result.trace["scope_mode"] == "global-fallback"
+    assert result.trace["lane_status"] == {
+        "vector": "ok",
+        "lexical": "degraded",
+    }
+    assert result.trace["fallbacks"] == ["lexical_retrieval_failed"]
+    assert result.trace["errors"] == ["lexical_retrieval: RuntimeError"]
+
+
 def test_answer_retrieval_uses_event_and_general_hypotheses_as_vector_lanes(
     memory_store,
 ) -> None:
@@ -153,7 +525,9 @@ def test_answer_retrieval_uses_event_and_general_hypotheses_as_vector_lanes(
     hypothesis_trace = result.trace["hypothesis_retrieval"]
     assert hypothesis_trace["enabled"] is True
     assert hypothesis_trace["queries"]["event"] == "event-hypothesis memory statement"
-    assert hypothesis_trace["queries"]["general"] == "general-hypothesis memory statement"
+    assert (
+        hypothesis_trace["queries"]["general"] == "general-hypothesis memory statement"
+    )
     assert result.trace["queries"] == [
         "raw wording misses target",
         "event-hypothesis memory statement",
@@ -325,4 +699,3 @@ def test_hypothesis_trace_does_not_render_into_context_text(memory_store) -> Non
     assert "用户真正存储的事实" in result.text
     assert hypothesis not in result.text
     assert result.trace["hypothesis_retrieval"]["queries"]["event"] == hypothesis
-

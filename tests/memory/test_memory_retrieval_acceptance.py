@@ -51,10 +51,14 @@ def _memory_fixture(tmp_path, store):
     session.add_message("user", "用户正在学习 memory evidence")
     session.add_message("assistant", "原始消息必须通过 fetch_messages 回源")
     manager.save(session)
-    memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
+    memorizer = MemoryMemorizer(
+        store=store, embedding_provider=StableEmbeddingProvider()
+    )
     engine = LongTermMemoryEngine(
         store=store,
-        retriever=MemoryRetriever(store=store, embedding_provider=StableEmbeddingProvider()),
+        retriever=MemoryRetriever(
+            store=store, embedding_provider=StableEmbeddingProvider()
+        ),
         memorizer=memorizer,
         worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
     )
@@ -168,7 +172,9 @@ def test_correct_memory_module_is_not_publicly_importable():
     assert importlib.util.find_spec("amadeus.tools.correct_memory") is None
 
 
-def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_path, memory_store):
+def test_recall_output_preserves_complete_evidence_and_citation_contract(
+    tmp_path, memory_store
+):
     _, engine, memory_id = _memory_fixture(tmp_path, memory_store)
 
     recalled = asyncio.run(
@@ -186,10 +192,14 @@ def test_recall_output_preserves_complete_evidence_and_citation_contract(tmp_pat
 
 def test_recall_memory_preserves_time_filter_trace_and_signals(memory_store):
     store = memory_store
-    memorizer = MemoryMemorizer(store=store, embedding_provider=StableEmbeddingProvider())
+    memorizer = MemoryMemorizer(
+        store=store, embedding_provider=StableEmbeddingProvider()
+    )
     engine = LongTermMemoryEngine(
         store=store,
-        retriever=MemoryRetriever(store=store, embedding_provider=StableEmbeddingProvider()),
+        retriever=MemoryRetriever(
+            store=store, embedding_provider=StableEmbeddingProvider()
+        ),
         memorizer=memorizer,
         worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
     )
@@ -228,8 +238,14 @@ def test_recall_memory_preserves_time_filter_trace_and_signals(memory_store):
         "start": "2026-06-20T00:30:00",
         "end": "2026-06-20T01:30:00",
     }
-    assert recalled.output["trace"]["records"][0]["id"] == recalled.output["items"][0]["id"]
-    assert recalled.output["trace"]["records"][0]["signals"]["lanes"] == ["vector", "lexical"]
+    assert (
+        recalled.output["trace"]["records"][0]["id"]
+        == recalled.output["items"][0]["id"]
+    )
+    assert recalled.output["trace"]["records"][0]["signals"]["lanes"] == [
+        "vector",
+        "lexical",
+    ]
     assert recalled.output["trace"]["records"][0]["signals"]["vector_score"] > 0
     signals = recalled.output["trace"]["records"][0]["signals"]
     assert signals["final_vector_score"] >= signals["vector_score"] * 0.8
@@ -240,3 +256,70 @@ def test_recall_memory_preserves_time_filter_trace_and_signals(memory_store):
     assert signals["hotness_updated_at"]
 
 
+def test_public_recall_returns_lexical_target_outside_vector_window(memory_store):
+    store = memory_store
+    provider = StableEmbeddingProvider()
+    memorizer = MemoryMemorizer(store=store, embedding_provider=provider)
+    engine = LongTermMemoryEngine(
+        store=store,
+        retriever=MemoryRetriever(store=store, embedding_provider=provider),
+        memorizer=memorizer,
+        worker=PostResponseMemoryWorker(memorizer=memorizer, extractor=FakeExtractor()),
+    )
+    for index in range(33):
+        store.upsert_item(
+            memory_type="event",
+            summary=f"semantic decoy {index}",
+            embedding=pad_embedding([1.0, 0.0, 0.0]),
+            source_ref=f'["session:1:1:{index}"]#h:decoy-{index}',
+        )
+    target_id, _status = store.upsert_item(
+        memory_type="event",
+        summary="部署标识 ZXQ-4917",
+        embedding=pad_embedding([0.0, 1.0, 0.0]),
+        source_ref='["session:1:2:0"]#h:lexical-target',
+    )
+    with store.db.connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE memory_items SET embedding = NULL WHERE id = %s",
+                (target_id,),
+            )
+        conn.commit()
+
+    vector_candidates = store.search_vector_candidates(
+        query_embedding=pad_embedding([1.0, 0.0, 0.0]),
+        limit=32,
+    )
+    assert len(vector_candidates) == 32
+    assert target_id not in {str(row["id"]) for row in vector_candidates}
+
+    recalled = asyncio.run(
+        RecallMemoryTool(memory_engine=engine).execute(
+            query="ZXQ-4917",
+            intent="context",
+            limit=8,
+        )
+    )
+
+    assert target_id in [item["id"] for item in recalled.output["items"]]
+    target_item = next(
+        item for item in recalled.output["items"] if item["id"] == target_id
+    )
+    assert target_item["source_ref"] == '["session:1:2:0"]#h:lexical-target'
+    assert target_item["evidence"][0]["refs"] == ["session:1:2:0"]
+    trace = recalled.output["trace"]
+    assert trace["candidate_counts"] == {
+        "vector": 32,
+        "lexical": 1,
+        "union": 33,
+        "final": 8,
+    }
+    assert trace["lane_status"] == {"vector": "ok", "lexical": "ok"}
+    target_trace = next(
+        record for record in trace["records"] if record["id"] == target_id
+    )
+    assert target_trace["signals"]["lanes"] == ["lexical"]
+    assert target_trace["signals"]["vector_rank"] is None
+    assert target_trace["signals"]["lexical_rank"] == 1
+    assert target_trace["signals"]["lexical_rrf_contribution"] > 0
