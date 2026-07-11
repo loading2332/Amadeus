@@ -56,6 +56,67 @@ Primary examples:
 - Session messages are append-only through `SessionManager.save()` / `SessionStore.insert_message()`.
 - Always close app/session/memory stores in cleanup paths. App-level cleanup should not hide the original failure with sensitive cleanup detail.
 
+## 场景：pytest 中 PostgreSQL 不可用时快速退化
+
+### 1. 范围 / 触发
+
+- 触发条件：测试通过 `PostgresDatabase.open()`、`clean_postgres()`、`build_passive_app()` 或 evaluation runner 访问真实 PostgreSQL。
+- 目标：本地 Docker 未启动时，整轮 pytest 只做一次短连接探测；数据库测试诚实地标记为 skipped，非数据库测试继续运行。
+
+### 2. 签名
+
+- `tests.db.postgres_helpers.postgres_dsn() -> str`
+- `tests.db.postgres_helpers.require_postgres() -> None`
+- `tests.db.postgres_helpers.clean_postgres() -> PostgresDatabase`
+- `tests.conftest._postgres_test_environment(monkeypatch) -> None`
+
+### 3. 契约
+
+- 测试默认 DSN 由 `AMADEUS_POSTGRES_DSN` 提供，缺省指向本地 `localhost:5432/amadeus`。
+- `require_postgres()` 按完整 DSN 缓存探测结果；同一 DSN 在单次 pytest 进程中最多调用一次 `psycopg.connect(..., connect_timeout=1)`。
+- 探测连接成功后必须立即关闭；随后调用原始 `PostgresDatabase.open()`，保留真实数据库、pgvector 和 migration 验证。
+- `tests/conftest.py` 必须在所有真实 `PostgresDatabase.open()` 之前执行该探测，不能只保护 `clean_postgres()` 路径。
+- 数据库不可用时使用 `pytest.skip()`，不得把跳过计为通过；未访问 PostgreSQL 的测试不得触发探测。
+
+### 4. 验证与错误矩阵
+
+- 首次探测成功 -> 缓存成功、关闭探测连接、继续真实数据库测试。
+- 首次探测抛 `psycopg.Error` -> 缓存失败原因、当前测试 skipped。
+- 同一 DSN 再次进入 -> 不再连接；复用成功结果或立即以相同原因 skipped。
+- DSN 改变 -> 视为新的数据库目标，单独探测一次。
+- Docker 已启动但 schema/migration 不完整 -> 快速探测成功后由真实数据库测试失败，不得静默跳过配置缺陷。
+
+### 5. Good / Base / Bad Cases
+
+- Good：Docker 未启动，全量测试在秒级结束；数据库用例 skipped，其他单元测试正常执行。
+- Base：Docker 与 migration 就绪，探测一次后所有 PostgreSQL 集成测试正常运行。
+- Bad：每个用例都新建 `ConnectionPool`，等待默认 30 秒后才 skip，并留下最长 300 秒的后台重连 worker。
+
+### 6. 必需测试
+
+- `test_require_postgres_caches_unavailable_database`：连续调用两次，断言只连接一次、`connect_timeout == 1`、两次均 skipped。
+- `test_require_postgres_caches_success_and_closes_probe`：连续调用两次，断言只连接一次且探测连接已关闭。
+- Docker 关闭时运行 `python -m pytest tests -q`：断言无 `PoolTimeout` 失败，数据库用例统一 skipped，全量在合理时间内结束。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+def clean_postgres() -> PostgresDatabase:
+    db = PostgresDatabase(PostgresConfig(dsn=postgres_dsn()))
+    db.open()  # 每个用例重复等待连接池默认超时
+    return db
+```
+
+#### Correct
+
+```python
+def open_after_probe(database: PostgresDatabase) -> None:
+    require_postgres()  # 按 DSN 复用一次短探测结果
+    original_open(database)
+```
+
 ## Common Mistakes
 
 - Do not build SQL by concatenating external strings.

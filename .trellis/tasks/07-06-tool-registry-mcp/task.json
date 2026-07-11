@@ -2,7 +2,7 @@
   "id": "tool-registry-mcp",
   "name": "tool-registry-mcp",
   "title": "统一工具注册与 MCP 接入链路",
-  "description": "重写 ToolRegistry 为三表结构 + ToolExecutor invoker port + HookOutcome 三段式 + deferred loading/tool_search + MCP 接入（stdio + Streamable HTTP），合并 MCP 工具到统一工具注册链路",
+  "description": "统一 ToolRegistry/ToolExecutor/deferred 链路，并以 local_trusted 模式接入本地 stdio MCP Host；MCP 工具经 McpToolWrapper 注入 Registry",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
