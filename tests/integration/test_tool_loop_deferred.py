@@ -8,10 +8,13 @@ from typing import Any
 
 from amadeus.provider import LLMProvider, LLMProviderConfig
 from amadeus.runtime.reasoner import Reasoner
+from amadeus.session.identity import SessionRef
 from amadeus.tools.base import ToolResult
 from amadeus.tools.discovery import ToolSearchTool
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
+
+_SESSION = SessionRef(user_id=1, session_id=1)
 
 
 class _ControlledCompletions:
@@ -111,7 +114,6 @@ def _make_reasoner_with_registry(
     registry.register(HiddenTool(), risk="read-only", always_on=False)
 
     async def invoker(name: str, arguments: dict[str, Any]) -> Any:
-        arguments.pop("purpose", None)
         return await registry.execute(name, arguments)
 
     executor = ToolExecutor(hooks=hooks or [], invoker=invoker)
@@ -145,7 +147,9 @@ def test_deferred_tool_call_blocked_until_unlocked():
     ]
     reasoner, registry = _make_reasoner_with_registry(client)
 
-    result = asyncio.run(reasoner.reason(messages=[{"role": "user", "content": "go"}]))
+    result = asyncio.run(
+        reasoner.reason(messages=[{"role": "user", "content": "go"}], session=_SESSION)
+    )
 
     assert result.reply == "final reply"
     # 3 个 tool_call 步骤 + 1 个 final = 4 次 provider.chat
@@ -173,7 +177,9 @@ def test_unlocked_tool_appears_in_next_round_schemas():
     ]
     reasoner, _ = _make_reasoner_with_registry(client)
 
-    asyncio.run(reasoner.reason(messages=[{"role": "user", "content": "go"}]))
+    asyncio.run(
+        reasoner.reason(messages=[{"role": "user", "content": "go"}], session=_SESSION)
+    )
 
     # 第 1 轮 tools 只有 always_on（tool_search）
     first_round_tools = client.completions.calls[0]["tools"]
@@ -186,6 +192,29 @@ def test_unlocked_tool_appears_in_next_round_schemas():
     assert "hidden_tool" in second_names
 
 
+def test_unlocked_tool_is_visible_on_the_next_turn_for_the_same_session():
+    """session 级 discovery state 会预热下一轮，而不会泄漏给其它 session。"""
+    client = _FakeClient()
+    client.completions.responses = [
+        _tool_call_response(
+            tool_name="tool_search",
+            args={"query": "select:hidden_tool"},
+            call_id="c1",
+        ),
+    ]
+    reasoner, _ = _make_reasoner_with_registry(client)
+
+    asyncio.run(
+        reasoner.reason(messages=[{"role": "user", "content": "unlock"}], session=_SESSION)
+    )
+    asyncio.run(
+        reasoner.reason(messages=[{"role": "user", "content": "next turn"}], session=_SESSION)
+    )
+
+    next_turn_tools = client.completions.calls[-1]["tools"]
+    assert "hidden_tool" in {tool["function"]["name"] for tool in next_turn_tools}
+
+
 def test_tool_search_returns_matched_candidates():
     """普通 query（非 select:）返回关键词匹配的候选列表。"""
     client = _FakeClient()
@@ -196,7 +225,9 @@ def test_tool_search_returns_matched_candidates():
     ]
     reasoner, _ = _make_reasoner_with_registry(client)
 
-    result = asyncio.run(reasoner.reason(messages=[{"role": "user", "content": "go"}]))
+    result = asyncio.run(
+        reasoner.reason(messages=[{"role": "user", "content": "go"}], session=_SESSION)
+    )
 
     # tool_search 执行成功，返回候选
     search_call = result.tool_chain[0]["calls"][0]
@@ -234,7 +265,9 @@ def test_deferred_tool_call_runs_preflight_and_respects_deny_hook():
     ]
     reasoner, _ = _make_reasoner_with_registry(client, hooks=[_DenyHiddenHook()])
 
-    result = asyncio.run(reasoner.reason(messages=[{"role": "user", "content": "go"}]))
+    result = asyncio.run(
+        reasoner.reason(messages=[{"role": "user", "content": "go"}], session=_SESSION)
+    )
 
     # hidden_tool 未解锁 -> 走 preflight -> pre hook deny -> status=denied（非 deferred）
     call = result.tool_chain[0]["calls"][0]

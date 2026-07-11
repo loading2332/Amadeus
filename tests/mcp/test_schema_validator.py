@@ -40,5 +40,69 @@ def test_non_dict_properties_flagged():
 
 
 def test_non_dict_schema_flagged():
-    errors = validate_openai_function_schema("not a dict")  # type: ignore[arg-type]
+    errors = validate_openai_function_schema("not a dict")
     assert any("应为 dict" in e for e in errors)
+
+
+def test_nested_ref_in_properties_is_rejected_with_path():
+    schema = {
+        "type": "object",
+        "properties": {
+            "payload": {
+                "type": "object",
+                "properties": {"item": {"$ref": "#/$defs/Item"}},
+            }
+        },
+    }
+
+    errors = validate_openai_function_schema(schema)
+
+    assert any("properties.payload.properties.item.$ref" in error for error in errors)
+
+
+def test_nested_ref_in_items_and_additional_properties_is_rejected():
+    schema = {
+        "type": "object",
+        "properties": {
+            "rows": {"type": "array", "items": {"$ref": "#/Row"}},
+            "labels": {
+                "type": "object",
+                "additionalProperties": {"$ref": "#/Label"},
+            },
+        },
+    }
+
+    errors = validate_openai_function_schema(schema)
+
+    assert any("properties.rows.items.$ref" in error for error in errors)
+    assert any(
+        "properties.labels.additionalProperties.$ref" in error for error in errors
+    )
+
+
+def test_schema_like_business_data_is_not_traversed():
+    schema = {
+        "type": "object",
+        "properties": {
+            "payload": {
+                "type": "object",
+                "enum": [{"$ref": "business-data", "allOf": ["not-a-schema"]}],
+                "default": {"$ref": "also-business-data"},
+            }
+        },
+    }
+
+    assert validate_openai_function_schema(schema) == []
+
+
+def test_deep_schema_uses_iterative_walk():
+    schema: dict = {"type": "object", "properties": {"payload": {}}}
+    cursor = schema["properties"]["payload"]
+    for _ in range(1500):
+        cursor["items"] = {}
+        cursor = cursor["items"]
+    cursor["$ref"] = "#/Deep"
+
+    errors = validate_openai_function_schema(schema)
+
+    assert any("$ref" in error for error in errors)

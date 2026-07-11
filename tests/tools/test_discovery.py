@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from amadeus.tools.discovery.visible_set import ToolDiscoveryState, TurnVisibleSet
+from amadeus.session.identity import SessionRef
+from amadeus.tools.discovery.visible_set import (
+    SessionToolDiscoveryStore,
+    ToolDiscoveryState,
+    TurnVisibleSet,
+)
 
 
 def test_always_on_tools_always_visible():
@@ -91,3 +96,17 @@ def test_discovery_state_remember_moves_to_end_on_repeat():
     state.remember("c")
     assert "b" not in state
     assert "a" in state
+
+
+def test_session_discovery_store_isolates_sessions_and_evicts_lru_session():
+    store = SessionToolDiscoveryStore(session_capacity=2, tool_capacity=3)
+    first = SessionRef(user_id=1, session_id=1)
+    second = SessionRef(user_id=1, session_id=2)
+    third = SessionRef(user_id=1, session_id=3)
+
+    store.for_session(first).remember("read_file")
+    assert "read_file" not in store.for_session(second)
+    store.for_session(third)
+
+    assert len(store) == 2
+    assert "read_file" not in store.for_session(first)

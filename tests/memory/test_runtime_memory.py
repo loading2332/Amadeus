@@ -314,7 +314,7 @@ def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path, memory_e
         session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         memory_engine=engine,
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry=registry),
+        tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
 
     result = asyncio.run(
@@ -329,4 +329,3 @@ def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path, memory_e
     tool_messages = [message for message in second_messages if message["role"] == "tool"]
     assert len(tool_messages) == 1
     assert '"count": 1' in tool_messages[0]["content"]
-

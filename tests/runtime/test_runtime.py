@@ -466,7 +466,7 @@ def test_before_step_early_stop_skips_tool_batch(tmp_path: Path) -> None:
         ),
         session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry=registry),
+        tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
     runtime.set_before_step_plugin_modules([_BeforeStepStopModule()])
 
@@ -514,7 +514,7 @@ def test_after_step_early_stop_skips_followup_llm_round(tmp_path: Path) -> None:
         ),
         session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry=registry),
+        tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
     runtime.set_after_step_plugin_modules([_AfterStepStopModule()])
 
@@ -799,7 +799,7 @@ def test_passive_runtime_executes_single_tool_call_before_persisting_final_reply
         provider=provider,
         session_manager=manager,
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry=registry),
+        tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
 
     result = asyncio.run(
@@ -810,8 +810,9 @@ def test_passive_runtime_executes_single_tool_call_before_persisting_final_reply
     assert result.assistant_response == "assistant after tool"
     assert [message["role"] for message in session.messages] == ["user", "assistant"]
     assert len(client.completions.calls) == 2
-    assert client.completions.calls[0]["tools"] == registry.export_openai_tools()
-    assert client.completions.calls[1]["tools"] == registry.export_openai_tools()
+    expected_tools = registry.get_schemas()
+    assert client.completions.calls[0]["tools"] == expected_tools
+    assert client.completions.calls[1]["tools"] == expected_tools
     assert [message["role"] for message in client.completions.calls[1]["messages"][-2:]] == [
         "assistant",
         "tool",
@@ -896,7 +897,7 @@ def test_passive_runtime_continues_when_followup_response_requests_another_tool(
         provider=provider,
         session_manager=manager,
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry=registry),
+        tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
 
     result = asyncio.run(
@@ -961,7 +962,7 @@ def test_passive_runtime_returns_progress_summary_when_tool_loop_hits_iteration_
         provider=provider,
         session_manager=manager,
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry=registry),
+        tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
         max_tool_iterations=1,
     )
 
@@ -1006,7 +1007,7 @@ def test_tool_chain_is_persisted_in_assistant_message_extra(tmp_path):
     registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path, provider=provider, session_manager=manager,
-        tool_registry=registry, tool_executor=ToolExecutor(registry=registry),
+        tool_registry=registry, tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
     result = asyncio.run(
         runtime.run_turn(session=_session("persist"), user_message="use tool")
@@ -1055,7 +1056,7 @@ def test_tool_messages_are_not_in_session_history(tmp_path):
     registry.register(EchoTool(), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path, provider=provider, session_manager=manager,
-        tool_registry=registry, tool_executor=ToolExecutor(registry=registry),
+        tool_registry=registry, tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
     result = asyncio.run(
         runtime.run_turn(session=_session("filter"), user_message="use tool")

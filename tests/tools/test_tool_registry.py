@@ -56,16 +56,12 @@ def test_registry_exports_openai_tool_schema():
     registry = ToolRegistry()
     registry.register(EchoTool())
 
-    schema = registry.export_openai_tools()
+    schema = registry.get_schemas()
 
-    # P3：每条 schema 自动注入 purpose 字段（progress description 软约束）
     function = schema[0]["function"]
     assert function["name"] == "echo"
     assert function["description"] == "Echo the provided text."
     assert function["parameters"]["type"] == "object"
     assert function["parameters"]["properties"]["text"] == {"type": "string"}
-    # purpose 被注入到 properties 与 required
-    assert "purpose" in function["parameters"]["properties"]
-    assert "purpose" in function["parameters"]["required"]
-    assert "purpose" not in EchoTool().parameters.get("properties", {})  # 工具本体未被污染
-
+    assert function["parameters"]["required"] == ["text"]
+    assert set(function["parameters"]["properties"]) == {"text"}

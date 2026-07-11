@@ -95,6 +95,50 @@ class FailingPostHook:
         raise RuntimeError("post hook crashed")
 
 
+class FailingPostErrorHook(FailingPostHook):
+    name = "failing_post_error"
+    event = "post_tool_error"
+
+
+class FailingPreMatchHook:
+    name = "failing_pre_match"
+    event = "pre_tool_use"
+
+    def matches(self, ctx: HookContext) -> bool:
+        del ctx
+        raise RuntimeError("pre match crashed")
+
+    def run(self, ctx: HookContext) -> HookOutcome:
+        del ctx
+        return HookOutcome()
+
+
+class FailingPreRunHook:
+    name = "failing_pre_run"
+    event = "pre_tool_use"
+
+    def matches(self, ctx: HookContext) -> bool:
+        del ctx
+        return True
+
+    def run(self, ctx: HookContext) -> HookOutcome:
+        del ctx
+        raise RuntimeError("pre run crashed")
+
+
+class FailingPostMatchHook:
+    name = "failing_post_match"
+    event = "post_tool_use"
+
+    def matches(self, ctx: HookContext) -> bool:
+        del ctx
+        raise RuntimeError("post match crashed")
+
+    def run(self, ctx: HookContext) -> HookOutcome:
+        del ctx
+        return HookOutcome()
+
+
 def test_pre_hook_can_rewrite_without_deny():
     registry = ToolRegistry()
     registry.register(EchoTool())
@@ -169,6 +213,22 @@ def test_post_hook_fail_open_does_not_pollute_main_path():
     assert any("post hook error" in (t.reason or "") for t in result.post_hook_trace)
 
 
+def test_post_error_hook_fail_open_preserves_tool_error():
+    async def broken_invoker(name: str, arguments: dict[str, Any]) -> Any:
+        del name, arguments
+        raise RuntimeError("tool crashed")
+
+    executor = ToolExecutor(hooks=[FailingPostErrorHook()], invoker=broken_invoker)
+
+    result = asyncio.run(
+        executor.execute(ToolExecutionRequest(tool_name="echo", arguments={}))
+    )
+
+    assert result.status == "error"
+    assert "tool crashed" in str(result.output)
+    assert any("post hook error" in (t.reason or "") for t in result.post_hook_trace)
+
+
 def test_preflight_does_not_invoke_invoker():
     registry = ToolRegistry()
     registry.register(EchoTool())
@@ -202,3 +262,71 @@ def test_preflight_returns_deny_when_hook_denies():
 
     assert result.status == "denied"
     assert "denied by test hook" in result.output
+
+
+def test_pre_hook_match_failure_returns_structured_error():
+    call_log: list = []
+
+    async def invoker(name: str, arguments: dict[str, Any]) -> Any:
+        call_log.append((name, arguments))
+        return "unexpected"
+
+    executor = ToolExecutor(hooks=[FailingPreMatchHook()], invoker=invoker)
+
+    result = asyncio.run(
+        executor.execute(ToolExecutionRequest(tool_name="echo", arguments={}))
+    )
+
+    assert result.status == "error"
+    assert "failing_pre_match" in str(result.output)
+    assert "pre match crashed" in str(result.output)
+    assert call_log == []
+
+
+def test_preflight_pre_hook_run_failure_returns_structured_error():
+    async def invoker(name: str, arguments: dict[str, Any]) -> Any:
+        del name, arguments
+        return "unexpected"
+
+    executor = ToolExecutor(hooks=[FailingPreRunHook()], invoker=invoker)
+
+    result = asyncio.run(
+        executor.preflight(ToolExecutionRequest(tool_name="echo", arguments={}))
+    )
+
+    assert result.status == "error"
+    assert "failing_pre_run" in str(result.output)
+    assert "pre run crashed" in str(result.output)
+
+
+def test_post_hook_match_failure_is_fail_open_and_traced():
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    executor = ToolExecutor(
+        hooks=[FailingPostMatchHook()], invoker=_make_invoker(registry)
+    )
+
+    result = asyncio.run(
+        executor.execute(
+            ToolExecutionRequest(tool_name="echo", arguments={"text": "hello"})
+        )
+    )
+
+    assert result.status == "success"
+    assert result.output.output == {"echo": "hello"}
+    assert result.post_hook_trace[-1].matched is False
+    assert "matches" in result.post_hook_trace[-1].reason
+    assert "post match crashed" in result.post_hook_trace[-1].reason
+
+
+def test_missing_tool_is_recorded_as_error():
+    registry = ToolRegistry()
+    executor = ToolExecutor(hooks=[], invoker=_make_invoker(registry))
+
+    result = asyncio.run(
+        executor.execute(ToolExecutionRequest(tool_name="missing", arguments={}))
+    )
+
+    assert result.status == "error"
+    assert "missing" in str(result.output)
+    assert "不存在" in str(result.output)

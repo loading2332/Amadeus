@@ -16,11 +16,13 @@ from amadeus.mcp import (
 )
 from amadeus.provider import LLMProvider, LLMProviderConfig
 from amadeus.runtime.reasoner import Reasoner
+from amadeus.session.identity import SessionRef
 from amadeus.tools.discovery import ToolSearchTool
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
 
 _FAKE_SERVER = str(Path(__file__).parent.parent / "mcp" / "fake_stdio_server.py")
+_SESSION = SessionRef(user_id=1, session_id=1)
 
 
 class _ControlledCompletions:
@@ -103,7 +105,6 @@ def _build_reasoner_with_mcp() -> tuple[Reasoner, ToolRegistry, McpServerRegistr
     )
 
     async def invoker(name: str, arguments: dict[str, Any]) -> Any:
-        arguments.pop("purpose", None)
         return await registry.execute(name, arguments)
 
     executor = ToolExecutor(hooks=[], invoker=invoker)
@@ -120,8 +121,8 @@ def _build_reasoner_with_mcp() -> tuple[Reasoner, ToolRegistry, McpServerRegistr
     return reasoner, registry, mcp_reg, client
 
 
-def test_mcp_add_then_search_then_unlock_then_call():
-    """完整 MCP 链路：mcp_add → tool_search 发现 → select 解锁 → 调用 → 结果。"""
+def test_mcp_add_search_call_list_and_remove():
+    """完整 MCP 链路：add → search/select → call → list → remove。"""
     reasoner, registry, mcp_reg, client = _build_reasoner_with_mcp()
 
     async def run():
@@ -129,12 +130,12 @@ def test_mcp_add_then_search_then_unlock_then_call():
             # 1) 模型调 mcp_add 加 fake server
             # 2) 模型调 tool_search(select:mcp_fake__echo) 解锁
             # 3) 模型调 mcp_fake__echo 调用远端工具
+            # 4) list 观察状态，再 remove 回收连接与 wrappers
             client.completions.responses = [
                 _tool_call_response(
                     tool_name="mcp_add",
                     args={
                         "name": "fake",
-                        "transport_type": "stdio",
                         "command": [sys.executable, _FAKE_SERVER],
                     },
                     call_id="c1",
@@ -149,26 +150,28 @@ def test_mcp_add_then_search_then_unlock_then_call():
                     args={"text": "hello from mcp"},
                     call_id="c3",
                 ),
+                _tool_call_response(tool_name="mcp_list", call_id="c4"),
+                _tool_call_response(
+                    tool_name="mcp_remove",
+                    args={"name": "fake"},
+                    call_id="c5",
+                ),
             ]
-            return await reasoner.reason(messages=[{"role": "user", "content": "go"}])
+            return await reasoner.reason(
+                messages=[{"role": "user", "content": "go"}], session=_SESSION
+            )
         finally:
             await mcp_reg.shutdown()
 
     result = asyncio.run(run())
 
     assert result.reply == "done"
-    # 3 个工具调用步骤
-    assert len(result.tool_chain) == 3
+    assert len(result.tool_chain) == 5
     # 1) mcp_add 成功，注册了 mcp_fake__echo / mcp_fake__add
     add_call = result.tool_chain[0]["calls"][0]
     assert add_call["name"] == "mcp_add"
     assert add_call["status"] == "success"
     assert "mcp_fake__echo" in add_call["result"]
-    # registry 里确实有了 MCP 工具
-    assert registry.get("mcp_fake__echo") is not None
-    meta = registry.get_metadata("mcp_fake__echo")
-    assert meta is not None
-    assert meta.source_type == "mcp"
     # 2) tool_search select 解锁成功
     search_call = result.tool_chain[1]["calls"][0]
     assert search_call["name"] == "tool_search"
@@ -178,6 +181,14 @@ def test_mcp_add_then_search_then_unlock_then_call():
     assert echo_call["name"] == "mcp_fake__echo"
     assert echo_call["status"] == "success"
     assert "echo: hello from mcp" in str(echo_call["result"])
+    list_call = result.tool_chain[3]["calls"][0]
+    assert list_call["name"] == "mcp_list"
+    assert list_call["status"] == "success"
+    assert "connected" in str(list_call["result"])
+    remove_call = result.tool_chain[4]["calls"][0]
+    assert remove_call["name"] == "mcp_remove"
+    assert remove_call["status"] == "success"
+    assert registry.get("mcp_fake__echo") is None
 
 
 def test_mcp_tool_not_visible_until_unlocked():
@@ -193,7 +204,6 @@ def test_mcp_tool_not_visible_until_unlocked():
                     tool_name="mcp_add",
                     args={
                         "name": "fake",
-                        "transport_type": "stdio",
                         "command": [sys.executable, _FAKE_SERVER],
                     },
                     call_id="c1",
@@ -204,7 +214,9 @@ def test_mcp_tool_not_visible_until_unlocked():
                     call_id="c2",
                 ),
             ]
-            return await reasoner.reason(messages=[{"role": "user", "content": "go"}])
+            return await reasoner.reason(
+                messages=[{"role": "user", "content": "go"}], session=_SESSION
+            )
         finally:
             await mcp_reg.shutdown()
 

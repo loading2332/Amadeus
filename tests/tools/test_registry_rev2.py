@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
 from amadeus.tools.base import ToolResult
-from amadeus.tools.registry import ToolRegistry
+from amadeus.tools.registry import ToolNotFoundError, ToolRegistry
 
 
 @dataclass
@@ -81,11 +83,11 @@ def test_get_schemas_none_returns_all():
     assert {s["function"]["name"] for s in schemas} == {"alpha", "beta"}
 
 
-def test_export_openai_tools_thin_shell_equivalent_to_get_schemas_none():
+def test_get_schemas_without_names_returns_all_registered_tools():
     registry = ToolRegistry()
     registry.register(_make("alpha"))
 
-    assert registry.export_openai_tools() == registry.get_schemas(names=None)
+    assert [schema["function"]["name"] for schema in registry.get_schemas()] == ["alpha"]
 
 
 def test_get_always_on_names():
@@ -115,3 +117,12 @@ def test_get_documents_returns_all():
 
     docs = registry.get_documents()
     assert {d.name for d in docs} == {"alpha", "beta"}
+
+
+def test_execute_missing_tool_raises_typed_error():
+    registry = ToolRegistry()
+
+    with pytest.raises(ToolNotFoundError, match="missing") as exc_info:
+        asyncio.run(registry.execute("missing", {}))
+
+    assert exc_info.value.tool_name == "missing"

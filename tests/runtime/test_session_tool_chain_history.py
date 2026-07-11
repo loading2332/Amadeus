@@ -153,7 +153,7 @@ def test_second_turn_reuses_rebuilt_tool_chain_history_for_provider_messages(tmp
         provider=provider,
         session_manager=manager,
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry=registry),
+        tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
 
     asyncio.run(runtime.run_turn(session=_session(), user_message="first turn"))
@@ -169,6 +169,10 @@ def test_second_turn_reuses_rebuilt_tool_chain_history_for_provider_messages(tmp
         "assistant",
     ]
     assert history_slice[1]["tool_calls"][0]["function"]["name"] == "echo_tool"
+    rebuilt_arguments = json.loads(
+        history_slice[1]["tool_calls"][0]["function"]["arguments"]
+    )
+    assert rebuilt_arguments == {"text": "hello"}
     assert history_slice[2]["tool_call_id"] == "call_1"
     assert '"echo": "hello"' in history_slice[2]["content"]
     assert history_slice[3]["content"] == "first final"
