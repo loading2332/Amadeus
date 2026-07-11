@@ -38,10 +38,19 @@ cases:
       - summary: 用户正在把 Amadeus 做成面试项目。
         memory_type: profile
         source_message_indexes: [0]
+        embedding_mode: null
     input:
       recall_query: 面试项目
     expect:
       source_ref_required: true
+      candidate_counts_min:
+        lexical: 1
+      lane_status_equals:
+        lexical: ok
+      record_lane_expectations:
+        - summary_contains: 用户正在把 Amadeus 做成面试项目
+          lanes_contains: [lexical]
+          lanes_excludes: [vector]
       fetched_messages_contains:
         - 我正在把 Amadeus 做成面试项目
       answer_keywords_any:
@@ -49,7 +58,7 @@ cases:
       judge_rubric: The retrieved result should clearly indicate Amadeus is being built as an interview project.
   - id: runtime_turn_global_scope_fallback
     mode: runtime_turn
-    title: runtime turn can fall back to global memory when session-scoped memory is absent
+    title: runtime turn can recall global memory across sessions
     seed_session_messages:
       - role: user
         content: 记住：Memory Phase 3 先做 Evaluation。
@@ -64,8 +73,6 @@ cases:
       memory_intent: context
       candidate_count_min: 1
       injected_count_min: 1
-      fallbacks_contains:
-        - global-fallback
       answer_keywords_any:
         - Evaluation
       judge_rubric: The answer should mention Evaluation as the current Phase 3 priority.

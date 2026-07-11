@@ -24,10 +24,19 @@ cases:
       - summary: remember hello
         memory_type: fact
         source_message_indexes: [0]
+        embedding_mode: null
     input:
       recall_query: hello
     expect:
       source_ref_required: true
+      candidate_counts_min:
+        lexical: 1
+      lane_status_equals:
+        lexical: ok
+      record_lane_expectations:
+        - summary_contains: remember hello
+          lanes_contains: [lexical]
+          lanes_excludes: [vector]
       fetched_messages_contains: [hello]
       answer_keywords_any: [hello]
       judge_rubric: mention hello
@@ -41,8 +50,30 @@ cases:
     assert cases[0].id == "recall-1"
     assert cases[0].mode == "recall_tool"
     assert cases[0].seed_long_term_memories[0].source_message_indexes == (0,)
+    assert cases[0].seed_long_term_memories[0].embedding_mode == "null"
     assert cases[0].input_payload["recall_query"] == "hello"
     assert cases[0].expect.source_ref_required is True
+    assert cases[0].expect.candidate_counts_min == {"lexical": 1}
+    assert cases[0].expect.lane_status_equals == {"lexical": "ok"}
+    assert cases[0].expect.record_lane_expectations[0].summary_contains == (
+        "remember hello"
+    )
+    assert cases[0].expect.record_lane_expectations[0].lanes_contains == ("lexical",)
+    assert cases[0].expect.record_lane_expectations[0].lanes_excludes == ("vector",)
+
+
+def test_canonical_memory_recall_cases_include_strict_lexical_only_fixture():
+    case_file = Path(__file__).parent / "cases" / "memory_recall_v1.yaml"
+
+    cases = load_memory_recall_cases(case_file)
+
+    lexical_case = next(
+        case for case in cases if case.id == "recall_tool_returns_source_refs"
+    )
+    assert lexical_case.seed_long_term_memories[0].embedding_mode == "null"
+    expectation = lexical_case.expect.record_lane_expectations[0]
+    assert expectation.lanes_contains == ("lexical",)
+    assert expectation.lanes_excludes == ("vector",)
 
 
 def test_load_memory_recall_cases_rejects_missing_required_fields(tmp_path: Path):

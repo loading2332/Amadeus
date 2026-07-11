@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal
 
 import yaml
 
@@ -30,6 +30,7 @@ class SeedLongTermMemory:
     source_message_indexes: tuple[int, ...] = ()
     happened_at: str | None = None
     source_ref: str | None = None
+    embedding_mode: Literal["generated", "null"] = "generated"
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
@@ -42,15 +43,34 @@ class SeedLongTermMemory:
             payload["happened_at"] = self.happened_at
         if self.source_ref is not None:
             payload["source_ref"] = self.source_ref
+        if self.embedding_mode != "generated":
+            payload["embedding_mode"] = self.embedding_mode
         if self.extra:
             payload["extra"] = dict(self.extra)
         return payload
 
 
 @dataclass(frozen=True)
+class MemoryRecordLaneExpectation:
+    summary_contains: str
+    lanes_contains: tuple[str, ...]
+    lanes_excludes: tuple[str, ...] = ()
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "summary_contains": self.summary_contains,
+            "lanes_contains": list(self.lanes_contains),
+            "lanes_excludes": list(self.lanes_excludes),
+        }
+
+
+@dataclass(frozen=True)
 class MemoryRecallCaseExpect:
     memory_intent: str | None = None
     candidate_count_min: int = 0
+    candidate_counts_min: dict[str, int] = field(default_factory=dict)
+    lane_status_equals: dict[str, str] = field(default_factory=dict)
+    record_lane_expectations: tuple[MemoryRecordLaneExpectation, ...] = ()
     injected_count_min: int = 0
     fallbacks_contains: tuple[str, ...] = ()
     context_contains: tuple[str, ...] = ()
@@ -63,6 +83,11 @@ class MemoryRecallCaseExpect:
         return {
             "memory_intent": self.memory_intent,
             "candidate_count_min": self.candidate_count_min,
+            "candidate_counts_min": dict(self.candidate_counts_min),
+            "lane_status_equals": dict(self.lane_status_equals),
+            "record_lane_expectations": [
+                expectation.to_record() for expectation in self.record_lane_expectations
+            ],
             "injected_count_min": self.injected_count_min,
             "fallbacks_contains": list(self.fallbacks_contains),
             "context_contains": list(self.context_contains),
@@ -151,9 +176,7 @@ class MemoryQualityCase:
             "seed_long_term_memories": [
                 memory.to_record() for memory in self.seed_long_term_memories
             ],
-            "turn_messages": [
-                message.to_record() for message in self.turn_messages
-            ],
+            "turn_messages": [message.to_record() for message in self.turn_messages],
             "input": dict(self.input_payload),
             "expect": self.expect.to_record(),
         }
@@ -162,6 +185,7 @@ class MemoryQualityCase:
 def load_memory_recall_cases(case_file: str | Path) -> list[MemoryRecallCase]:
     path = Path(case_file)
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw_cases: Any
     if isinstance(payload, list):
         raw_cases = payload
     elif isinstance(payload, dict):
@@ -180,6 +204,7 @@ def case_from_record(payload: dict[str, Any]) -> MemoryRecallCase:
 def load_memory_quality_cases(case_file: str | Path) -> list[MemoryQualityCase]:
     path = Path(case_file)
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw_cases: Any
     if isinstance(payload, list):
         raw_cases = payload
     elif isinstance(payload, dict):
@@ -188,7 +213,9 @@ def load_memory_quality_cases(case_file: str | Path) -> list[MemoryQualityCase]:
         raw_cases = None
     if not isinstance(raw_cases, list):
         raise ValueError(f"{path} must contain a top-level 'cases' list")
-    return [_parse_quality_case(item, index=index) for index, item in enumerate(raw_cases)]
+    return [
+        _parse_quality_case(item, index=index) for index, item in enumerate(raw_cases)
+    ]
 
 
 def quality_case_from_record(payload: dict[str, Any]) -> MemoryQualityCase:
@@ -207,21 +234,25 @@ def _parse_case(payload: Any, *, index: int) -> MemoryRecallCase:
     raw_messages = payload.get("seed_session_messages")
     if not isinstance(raw_messages, list):
         raise ValueError(f"{case_id}: seed_session_messages must be a list")
-    messages = tuple(_parse_seed_message(item, case_id=case_id) for item in raw_messages)
+    messages = tuple(
+        _parse_seed_message(item, case_id=case_id) for item in raw_messages
+    )
 
     raw_memories = payload.get("seed_long_term_memories")
     if not isinstance(raw_memories, list):
         raise ValueError(f"{case_id}: seed_long_term_memories must be a list")
-    memories = tuple(
-        _parse_seed_memory(item, case_id=case_id) for item in raw_memories
-    )
+    memories = tuple(_parse_seed_memory(item, case_id=case_id) for item in raw_memories)
 
     input_payload = payload.get("input")
     if not isinstance(input_payload, dict):
         raise ValueError(f"{case_id}: input must be an object")
-    if mode == "runtime_turn" and not _non_empty_string(input_payload.get("user_message")):
+    if mode == "runtime_turn" and not _non_empty_string(
+        input_payload.get("user_message")
+    ):
         raise ValueError(f"{case_id}: runtime_turn input.user_message is required")
-    if mode == "recall_tool" and not _non_empty_string(input_payload.get("recall_query")):
+    if mode == "recall_tool" and not _non_empty_string(
+        input_payload.get("recall_query")
+    ):
         raise ValueError(f"{case_id}: recall_tool input.recall_query is required")
 
     raw_expect = payload.get("expect")
@@ -252,14 +283,14 @@ def _parse_quality_case(payload: Any, *, index: int) -> MemoryQualityCase:
     raw_messages = payload.get("seed_session_messages")
     if not isinstance(raw_messages, list):
         raise ValueError(f"{case_id}: seed_session_messages must be a list")
-    messages = tuple(_parse_seed_message(item, case_id=case_id) for item in raw_messages)
+    messages = tuple(
+        _parse_seed_message(item, case_id=case_id) for item in raw_messages
+    )
 
     raw_memories = payload.get("seed_long_term_memories")
     if not isinstance(raw_memories, list):
         raise ValueError(f"{case_id}: seed_long_term_memories must be a list")
-    memories = tuple(
-        _parse_seed_memory(item, case_id=case_id) for item in raw_memories
-    )
+    memories = tuple(_parse_seed_memory(item, case_id=case_id) for item in raw_memories)
 
     raw_turn_messages = payload.get("turn_messages")
     if not isinstance(raw_turn_messages, list) or not raw_turn_messages:
@@ -271,7 +302,9 @@ def _parse_quality_case(payload: Any, *, index: int) -> MemoryQualityCase:
     input_payload = payload.get("input")
     if not isinstance(input_payload, dict):
         raise ValueError(f"{case_id}: input must be an object")
-    if mode == "write_then_recall" and not _non_empty_string(input_payload.get("recall_query")):
+    if mode == "write_then_recall" and not _non_empty_string(
+        input_payload.get("recall_query")
+    ):
         raise ValueError(f"{case_id}: write_then_recall input.recall_query is required")
 
     raw_expect = payload.get("expect")
@@ -299,7 +332,7 @@ def _parse_seed_message(payload: Any, *, case_id: str) -> SeedSessionMessage:
     timestamp = payload.get("timestamp")
     if timestamp is not None and not isinstance(timestamp, str):
         raise ValueError(f"{case_id}: seed_session_messages.timestamp must be a string")
-    return SeedSessionMessage(role=role, content=content, timestamp=cast(str | None, timestamp))
+    return SeedSessionMessage(role=role, content=content, timestamp=timestamp)
 
 
 def _parse_seed_memory(payload: Any, *, case_id: str) -> SeedLongTermMemory:
@@ -308,14 +341,31 @@ def _parse_seed_memory(payload: Any, *, case_id: str) -> SeedLongTermMemory:
     summary = _required_string(payload, "summary", case_id=case_id)
     memory_type = _required_string(payload, "memory_type", case_id=case_id)
     raw_indexes = payload.get("source_message_indexes", [])
-    if not isinstance(raw_indexes, list) or any(not isinstance(item, int) for item in raw_indexes):
-        raise ValueError(f"{case_id}: source_message_indexes must be a list of integers")
+    if not isinstance(raw_indexes, list) or any(
+        not isinstance(item, int) for item in raw_indexes
+    ):
+        raise ValueError(
+            f"{case_id}: source_message_indexes must be a list of integers"
+        )
     happened_at = payload.get("happened_at")
     if happened_at is not None and not isinstance(happened_at, str):
         raise ValueError(f"{case_id}: happened_at must be a string")
     source_ref = payload.get("source_ref")
     if source_ref is not None and not isinstance(source_ref, str):
         raise ValueError(f"{case_id}: source_ref must be a string")
+    raw_embedding_mode = (
+        payload.get("embedding_mode") if "embedding_mode" in payload else "generated"
+    )
+    if raw_embedding_mode is None:
+        raw_embedding_mode = "null"
+    if not isinstance(raw_embedding_mode, str) or raw_embedding_mode not in {
+        "generated",
+        "null",
+    }:
+        raise ValueError(f"{case_id}: embedding_mode must be 'generated' or 'null'")
+    embedding_mode: Literal["generated", "null"] = (
+        "null" if raw_embedding_mode == "null" else "generated"
+    )
     raw_extra = payload.get("extra", {})
     if not isinstance(raw_extra, dict):
         raise ValueError(f"{case_id}: extra must be an object")
@@ -323,8 +373,9 @@ def _parse_seed_memory(payload: Any, *, case_id: str) -> SeedLongTermMemory:
         summary=summary,
         memory_type=memory_type,
         source_message_indexes=tuple(raw_indexes),
-        happened_at=cast(str | None, happened_at),
-        source_ref=cast(str | None, source_ref),
+        happened_at=happened_at,
+        source_ref=source_ref,
+        embedding_mode=embedding_mode,
         extra=dict(raw_extra),
     )
 
@@ -333,13 +384,49 @@ def _parse_expect(payload: dict[str, Any], *, case_id: str) -> MemoryRecallCaseE
     rubric = _required_string(payload, "judge_rubric", case_id=case_id)
     return MemoryRecallCaseExpect(
         memory_intent=_optional_string(payload.get("memory_intent")),
-        candidate_count_min=_int_value(payload.get("candidate_count_min", 0), case_id=case_id, field="candidate_count_min"),
-        injected_count_min=_int_value(payload.get("injected_count_min", 0), case_id=case_id, field="injected_count_min"),
-        fallbacks_contains=_string_tuple(payload.get("fallbacks_contains"), case_id=case_id, field="fallbacks_contains"),
-        context_contains=_string_tuple(payload.get("context_contains"), case_id=case_id, field="context_contains"),
+        candidate_count_min=_int_value(
+            payload.get("candidate_count_min", 0),
+            case_id=case_id,
+            field="candidate_count_min",
+        ),
+        candidate_counts_min=_string_int_dict(
+            payload.get("candidate_counts_min"),
+            case_id=case_id,
+            field="candidate_counts_min",
+        ),
+        lane_status_equals=_string_string_dict(
+            payload.get("lane_status_equals"),
+            case_id=case_id,
+            field="lane_status_equals",
+        ),
+        record_lane_expectations=_record_lane_expectations(
+            payload.get("record_lane_expectations"),
+            case_id=case_id,
+        ),
+        injected_count_min=_int_value(
+            payload.get("injected_count_min", 0),
+            case_id=case_id,
+            field="injected_count_min",
+        ),
+        fallbacks_contains=_string_tuple(
+            payload.get("fallbacks_contains"),
+            case_id=case_id,
+            field="fallbacks_contains",
+        ),
+        context_contains=_string_tuple(
+            payload.get("context_contains"), case_id=case_id, field="context_contains"
+        ),
         source_ref_required=bool(payload.get("source_ref_required", False)),
-        fetched_messages_contains=_string_tuple(payload.get("fetched_messages_contains"), case_id=case_id, field="fetched_messages_contains"),
-        answer_keywords_any=_string_tuple(payload.get("answer_keywords_any"), case_id=case_id, field="answer_keywords_any"),
+        fetched_messages_contains=_string_tuple(
+            payload.get("fetched_messages_contains"),
+            case_id=case_id,
+            field="fetched_messages_contains",
+        ),
+        answer_keywords_any=_string_tuple(
+            payload.get("answer_keywords_any"),
+            case_id=case_id,
+            field="answer_keywords_any",
+        ),
         judge_rubric=rubric,
     )
 
@@ -363,7 +450,7 @@ def _parse_quality_expect(
             case_id=case_id,
             field="write_count_min",
         ),
-        write_count_max=cast(int | None, write_count_max),
+        write_count_max=write_count_max,
         written_summaries_contains=_string_tuple(
             payload.get("written_summaries_contains"),
             case_id=case_id,
@@ -439,6 +526,98 @@ def _int_value(value: Any, *, case_id: str, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{case_id}: {field} must be an integer")
     return max(0, value)
+
+
+def _string_int_dict(
+    value: Any,
+    *,
+    case_id: str,
+    field: str,
+) -> dict[str, int]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{case_id}: {field} must be an object")
+    result: dict[str, int] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{case_id}: {field} keys must be non-empty strings")
+        result[key.strip()] = _int_value(
+            item,
+            case_id=case_id,
+            field=f"{field}.{key}",
+        )
+    return result
+
+
+def _string_string_dict(
+    value: Any,
+    *,
+    case_id: str,
+    field: str,
+) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{case_id}: {field} must be an object")
+    result: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{case_id}: {field} keys must be non-empty strings")
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{case_id}: {field}.{key} must be a non-empty string")
+        result[key.strip()] = item.strip()
+    return result
+
+
+def _record_lane_expectations(
+    value: Any,
+    *,
+    case_id: str,
+) -> tuple[MemoryRecordLaneExpectation, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{case_id}: record_lane_expectations must be a list")
+    result: list[MemoryRecordLaneExpectation] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"{case_id}: record_lane_expectations[{index}] must be an object"
+            )
+        summary_contains = _required_string(
+            item,
+            "summary_contains",
+            case_id=case_id,
+        )
+        lanes_contains = _string_tuple(
+            item.get("lanes_contains"),
+            case_id=case_id,
+            field=f"record_lane_expectations[{index}].lanes_contains",
+        )
+        lanes_excludes = _string_tuple(
+            item.get("lanes_excludes"),
+            case_id=case_id,
+            field=f"record_lane_expectations[{index}].lanes_excludes",
+        )
+        if not lanes_contains:
+            raise ValueError(
+                f"{case_id}: record_lane_expectations[{index}].lanes_contains "
+                "must not be empty"
+            )
+        if set(lanes_contains) & set(lanes_excludes):
+            raise ValueError(
+                f"{case_id}: record_lane_expectations[{index}] cannot contain "
+                "the same lane in lanes_contains and lanes_excludes"
+            )
+        result.append(
+            MemoryRecordLaneExpectation(
+                summary_contains=summary_contains,
+                lanes_contains=lanes_contains,
+                lanes_excludes=lanes_excludes,
+            )
+        )
+    return tuple(result)
 
 
 def _non_empty_string(value: Any) -> bool:

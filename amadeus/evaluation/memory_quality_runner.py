@@ -34,6 +34,7 @@ from amadeus.evaluation.langsmith_sync import (
     sync_memory_quality_dataset,
 )
 from amadeus.memory.engine import MemoryWriteRequest
+from amadeus.memory.runtime import LongTermMemoryEngine
 from amadeus.session.identity import SessionRef
 from amadeus.tools.base import ToolExecutionRequest
 
@@ -211,9 +212,6 @@ async def _run_memory_quality_case_async(
             )
         finally:
             await app.aclose()
-            memory_engine = app.runtime.memory_engine
-            if memory_engine is not None:
-                memory_engine.store.close()
     output["elapsed_ms"] = int((time.perf_counter() - started_at) * 1000)
     return output
 
@@ -240,7 +238,7 @@ async def _seed_long_term_memories(
     source_message_ids: list[str],
 ) -> None:
     memory_engine = app.runtime.memory_engine
-    if memory_engine is None:
+    if not isinstance(memory_engine, LongTermMemoryEngine):
         raise ValueError(
             "memory quality evaluation requires AMADEUS_LONG_TERM_MEMORY_ENABLED=1"
         )
@@ -270,7 +268,7 @@ async def _run_write_case(
     case: MemoryQualityCase,
 ) -> dict[str, Any]:
     memory_engine = app.runtime.memory_engine
-    if memory_engine is None:
+    if not isinstance(memory_engine, LongTermMemoryEngine):
         raise ValueError(
             "memory quality evaluation requires AMADEUS_LONG_TERM_MEMORY_ENABLED=1"
         )
@@ -439,7 +437,8 @@ def _happened_at_from_source_indexes(
 ) -> str | None:
     for index in indexes:
         if 0 <= index < len(messages):
-            return messages[index].timestamp
+            timestamp = messages[index].timestamp
+            return timestamp if isinstance(timestamp, str) else None
     return None
 
 

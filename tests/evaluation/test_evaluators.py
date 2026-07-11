@@ -48,6 +48,115 @@ def test_trace_evaluator_reports_field_level_differences():
     assert "global-fallback" in str(result.comment)
 
 
+def test_trace_evaluator_validates_independent_lexical_provenance():
+    run = SimpleNamespace(
+        outputs={
+            "memory_trace": {
+                "candidate_count": 2,
+                "candidate_counts": {
+                    "vector": 1,
+                    "lexical": 1,
+                    "union": 2,
+                    "final": 2,
+                },
+                "lane_status": {"vector": "ok", "lexical": "ok"},
+                "records": [
+                    {
+                        "id": "mem-lexical",
+                        "signals": {
+                            "lanes": ["lexical"],
+                            "vector_rank": None,
+                            "lexical_rank": 1,
+                            "vector_rrf_contribution": 0.0,
+                            "lexical_rrf_contribution": 1 / 61,
+                        },
+                    }
+                ],
+                "injected_ids": [],
+                "fallbacks": [],
+            },
+            "recall_items": [
+                {
+                    "id": "mem-lexical",
+                    "summary": "部署标识 ZXQ-4917",
+                }
+            ],
+            "rendered_context": "",
+        }
+    )
+    example = SimpleNamespace(
+        outputs={
+            "expect": {
+                "candidate_counts_min": {"lexical": 1},
+                "lane_status_equals": {"lexical": "ok"},
+                "record_lane_expectations": [
+                    {
+                        "summary_contains": "ZXQ-4917",
+                        "lanes_contains": ["lexical"],
+                        "lanes_excludes": ["vector"],
+                    }
+                ],
+            }
+        }
+    )
+
+    result = trace_evaluator(run, example)
+
+    assert result.score is True
+
+
+def test_trace_evaluator_rejects_missing_independent_lexical_provenance():
+    run = SimpleNamespace(
+        outputs={
+            "memory_trace": {
+                "candidate_count": 1,
+                "candidate_counts": {"vector": 1, "lexical": 0, "union": 1},
+                "lane_status": {"vector": "ok", "lexical": "error"},
+                "records": [
+                    {
+                        "id": "mem-target",
+                        "signals": {
+                            "lanes": ["vector", "lexical"],
+                            "vector_rank": 1,
+                            "lexical_rank": None,
+                            "vector_rrf_contribution": 1 / 61,
+                            "lexical_rrf_contribution": 0.0,
+                        },
+                    }
+                ],
+                "injected_ids": [],
+                "fallbacks": [],
+            },
+            "recall_items": [{"id": "mem-target", "summary": "部署标识 ZXQ-4917"}],
+            "rendered_context": "",
+        }
+    )
+    example = SimpleNamespace(
+        outputs={
+            "expect": {
+                "candidate_counts_min": {"lexical": 1},
+                "lane_status_equals": {"lexical": "ok"},
+                "record_lane_expectations": [
+                    {
+                        "summary_contains": "ZXQ-4917",
+                        "lanes_contains": ["lexical"],
+                        "lanes_excludes": ["vector"],
+                    }
+                ],
+            }
+        }
+    )
+
+    result = trace_evaluator(run, example)
+
+    assert result.score is False
+    assert "candidate_counts.lexical" in str(result.comment)
+    assert "lane_status.lexical" in str(result.comment)
+    assert "lexical_rank" in str(result.comment)
+    assert "lexical_rrf_contribution" in str(result.comment)
+    assert "unexpectedly contains lane 'vector'" in str(result.comment)
+
+
 def test_source_ref_evaluator_reports_missing_fetchability():
     run = SimpleNamespace(
         outputs={
@@ -87,7 +196,9 @@ def test_llm_judge_evaluator_skips_when_answer_rules_fail():
     result = llm_judge_evaluator(
         run,
         example,
-        judge=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("judge must not run")),
+        judge=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("judge must not run")
+        ),
     )
 
     assert result.value == "skipped"
@@ -96,9 +207,7 @@ def test_llm_judge_evaluator_skips_when_answer_rules_fail():
 
 def test_answer_rules_evaluator_accepts_matching_keyword():
     run = SimpleNamespace(outputs={"assistant_response": "之后默认用中文回复。"})
-    example = SimpleNamespace(
-        outputs={"expect": {"answer_keywords_any": ["中文"]}}
-    )
+    example = SimpleNamespace(outputs={"expect": {"answer_keywords_any": ["中文"]}})
 
     result = answer_rules_evaluator(run, example)
 

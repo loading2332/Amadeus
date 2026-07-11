@@ -9,6 +9,7 @@ from amadeus.app.bootstrap import build_passive_app
 from amadeus.evaluation.cases import (
     MemoryRecallCase,
     MemoryRecallCaseExpect,
+    MemoryRecordLaneExpectation,
     SeedLongTermMemory,
     SeedSessionMessage,
 )
@@ -37,7 +38,9 @@ class FakeCompletions:
 
     async def create(self, **kwargs: Any):
         self.calls.append(kwargs)
-        prompt_text = "\n".join(str(message.get("content", "")) for message in kwargs["messages"])
+        prompt_text = "\n".join(
+            str(message.get("content", "")) for message in kwargs["messages"]
+        )
         if "中文" in prompt_text:
             content = "之后默认用中文回复。"
         elif "Evaluation" in prompt_text:
@@ -116,7 +119,9 @@ def _case_file(tmp_path: Path) -> Path:
     return case_file
 
 
-def test_run_memory_recall_case_returns_runtime_turn_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_run_memory_recall_case_returns_runtime_turn_shape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setattr(
         "amadeus.app.bootstrap.OpenAIEmbeddingProvider",
         lambda _config: StableEmbeddingProvider(),
@@ -161,7 +166,9 @@ def test_run_memory_recall_case_returns_runtime_turn_shape(tmp_path: Path, monke
     assert result["error"] is None
 
 
-def test_run_memory_recall_case_returns_recall_tool_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_run_memory_recall_case_returns_recall_tool_shape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setattr(
         "amadeus.app.bootstrap.OpenAIEmbeddingProvider",
         lambda _config: StableEmbeddingProvider(),
@@ -178,11 +185,21 @@ def test_run_memory_recall_case_returns_recall_tool_shape(tmp_path: Path, monkey
                 summary="用户正在把 Amadeus 做成面试项目。",
                 memory_type="profile",
                 source_message_indexes=(0,),
+                embedding_mode="null",
             ),
         ),
         input_payload={"recall_query": "面试项目"},
         expect=MemoryRecallCaseExpect(
             source_ref_required=True,
+            candidate_counts_min={"lexical": 1},
+            lane_status_equals={"lexical": "ok"},
+            record_lane_expectations=(
+                MemoryRecordLaneExpectation(
+                    summary_contains="用户正在把 Amadeus 做成面试项目",
+                    lanes_contains=("lexical",),
+                    lanes_excludes=("vector",),
+                ),
+            ),
             fetched_messages_contains=("面试项目",),
             answer_keywords_any=("面试项目",),
             judge_rubric="mention interview project",
@@ -198,6 +215,19 @@ def test_run_memory_recall_case_returns_recall_tool_shape(tmp_path: Path, monkey
 
     assert result["assistant_response"] == ""
     assert result["recall_items"]
+    assert result["memory_trace"]["candidate_counts"]["lexical"] >= 1
+    assert result["memory_trace"]["lane_status"]["lexical"] == "ok"
+    recalled_id = result["recall_items"][0]["id"]
+    trace_record = next(
+        record
+        for record in result["memory_trace"]["records"]
+        if record["id"] == recalled_id
+    )
+    assert "lexical" in trace_record["signals"]["lanes"]
+    assert "vector" not in trace_record["signals"]["lanes"]
+    assert trace_record["signals"]["vector_rank"] is None
+    assert trace_record["signals"]["lexical_rank"] >= 1
+    assert trace_record["signals"]["lexical_rrf_contribution"] > 0
     assert result["source_refs"]
     assert result["fetched_messages"]
     assert result["error"] is None

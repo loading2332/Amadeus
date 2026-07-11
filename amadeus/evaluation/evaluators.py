@@ -20,7 +20,10 @@ def trace_evaluator(run: Any, example: Any) -> EvaluationResult:
     failures: list[str] = []
 
     expected_intent = _optional_string(expect.get("memory_intent"))
-    if expected_intent is not None and str(trace.get("intent") or "") != expected_intent:
+    if (
+        expected_intent is not None
+        and str(trace.get("intent") or "") != expected_intent
+    ):
         failures.append(
             f"memory_intent expected {expected_intent!r}, got {trace.get('intent')!r}"
         )
@@ -30,6 +33,22 @@ def trace_evaluator(run: Any, example: Any) -> EvaluationResult:
         failures.append(
             f"candidate_count expected >= {candidate_count_min}, got {candidate_count}"
         )
+    candidate_counts = _dict(trace.get("candidate_counts"))
+    for lane, expected_min in _dict(expect.get("candidate_counts_min")).items():
+        actual = _int(candidate_counts.get(lane))
+        minimum = _int(expected_min)
+        if actual < minimum:
+            failures.append(
+                f"candidate_counts.{lane} expected >= {minimum}, got {actual}"
+            )
+    lane_status = _dict(trace.get("lane_status"))
+    for lane, expected_status in _dict(expect.get("lane_status_equals")).items():
+        actual_status = str(lane_status.get(lane) or "")
+        if actual_status != str(expected_status):
+            failures.append(
+                f"lane_status.{lane} expected {expected_status!r}, "
+                f"got {actual_status!r}"
+            )
     injected_count_min = _int(expect.get("injected_count_min"))
     injected_ids = _string_list(trace.get("injected_ids"))
     if len(injected_ids) < injected_count_min:
@@ -47,6 +66,12 @@ def trace_evaluator(run: Any, example: Any) -> EvaluationResult:
     for fallback in _string_list(expect.get("fallbacks_contains")):
         if fallback not in observed_fallbacks:
             failures.append(f"fallback {fallback!r} not found in trace")
+    _evaluate_record_lane_expectations(
+        failures,
+        expectations=expect.get("record_lane_expectations"),
+        trace=trace,
+        recall_items=outputs.get("recall_items"),
+    )
 
     return EvaluationResult(
         key="trace",
@@ -62,7 +87,11 @@ def source_ref_evaluator(run: Any, example: Any) -> EvaluationResult:
     if bool(expect.get("source_ref_required")):
         recall_items = outputs.get("recall_items")
         if isinstance(recall_items, list) and recall_items:
-            if not any(str(item.get("source_ref") or "").strip() for item in recall_items if isinstance(item, dict)):
+            if not any(
+                str(item.get("source_ref") or "").strip()
+                for item in recall_items
+                if isinstance(item, dict)
+            ):
                 failures.append("source_ref is missing from recall items")
         else:
             written_memories = outputs.get("written_memories")
@@ -75,18 +104,24 @@ def source_ref_evaluator(run: Any, example: Any) -> EvaluationResult:
             ):
                 failures.append("source_ref is missing from written memories")
     fetched_messages = outputs.get("fetched_messages")
-    fetched_text = "\n".join(
-        str(message.get("content") or "")
-        for message in fetched_messages
-        if isinstance(message, dict)
-    ) if isinstance(fetched_messages, list) else ""
+    fetched_text = (
+        "\n".join(
+            str(message.get("content") or "")
+            for message in fetched_messages
+            if isinstance(message, dict)
+        )
+        if isinstance(fetched_messages, list)
+        else ""
+    )
     for expected in _string_list(expect.get("fetched_messages_contains")):
         if expected not in fetched_text:
             failures.append(f"fetched_messages missing substring {expected!r}")
     return EvaluationResult(
         key="source_ref",
         score=not failures,
-        comment="; ".join(failures) if failures else "source_ref expectations satisfied",
+        comment="; ".join(failures)
+        if failures
+        else "source_ref expectations satisfied",
     )
 
 
@@ -115,7 +150,9 @@ def write_presence_evaluator(run: Any, example: Any) -> EvaluationResult:
     return EvaluationResult(
         key="write_presence",
         score=not failures,
-        comment="; ".join(failures) if failures else "write presence expectations satisfied",
+        comment="; ".join(failures)
+        if failures
+        else "write presence expectations satisfied",
     )
 
 
@@ -141,7 +178,9 @@ def write_absence_evaluator(run: Any, example: Any) -> EvaluationResult:
     return EvaluationResult(
         key="write_absence",
         score=not failures,
-        comment="; ".join(failures) if failures else "write absence expectations satisfied",
+        comment="; ".join(failures)
+        if failures
+        else "write absence expectations satisfied",
     )
 
 
@@ -156,10 +195,11 @@ def memory_type_evaluator(run: Any, example: Any) -> EvaluationResult:
             comment="no memory type expectations",
         )
     written_memories = outputs.get("written_memories")
+    memory_rows = written_memories if isinstance(written_memories, list) else []
     observed = {
         str(item.get("memory_type") or "").strip()
-        for item in written_memories
-        if isinstance(written_memories, list) and isinstance(item, dict)
+        for item in memory_rows
+        if isinstance(item, dict)
     }
     failures = [
         f"missing memory_type {memory_type!r}"
@@ -169,7 +209,9 @@ def memory_type_evaluator(run: Any, example: Any) -> EvaluationResult:
     return EvaluationResult(
         key="memory_types",
         score=not failures,
-        comment="; ".join(failures) if failures else "memory type expectations satisfied",
+        comment="; ".join(failures)
+        if failures
+        else "memory type expectations satisfied",
     )
 
 
@@ -289,11 +331,12 @@ def make_llm_judge_evaluator(
     return _evaluate
 
 
-def elapsed_summary_evaluator(runs: Sequence[Any], examples: Sequence[Any]) -> EvaluationResult:
+def elapsed_summary_evaluator(
+    runs: Sequence[Any], examples: Sequence[Any]
+) -> EvaluationResult:
     del examples
     elapsed_values = [
-        _int(_dict(getattr(run, "outputs", None)).get("elapsed_ms"))
-        for run in runs
+        _int(_dict(getattr(run, "outputs", None)).get("elapsed_ms")) for run in runs
     ]
     valid = [value for value in elapsed_values if value > 0]
     average = (sum(valid) / len(valid)) if valid else 0.0
@@ -326,8 +369,10 @@ def summarize_result_rows(rows: list[Any]) -> dict[str, Any]:
             for result in results
         ]
         row_error = str(run_outputs.get("error") or "").strip()
-        passed = not row_error and bool(results) and all(
-            _evaluation_result_passes(result) for result in results
+        passed = (
+            not row_error
+            and bool(results)
+            and all(_evaluation_result_passes(result) for result in results)
         )
         if not passed:
             failed_case_ids.append(case_id)
@@ -360,7 +405,11 @@ def _build_llm_judge(
     client: Any | None,
 ) -> Callable[[str, str], tuple[bool | None, str]]:
     config = load_runtime_config(env_path=env_path)
-    model = judge_model or os.environ.get("AMADEUS_EVAL_JUDGE_MODEL") or config.provider.model
+    model = (
+        judge_model
+        or os.environ.get("AMADEUS_EVAL_JUDGE_MODEL")
+        or config.provider.model
+    )
     provider = LLMProvider(config.provider, client=client)
 
     def _judge(answer: str, rubric: str) -> tuple[bool | None, str]:
@@ -405,7 +454,12 @@ def _member(value: Any, name: str) -> Any:
 def _parse_json_object(text: str) -> dict[str, Any]:
     stripped = text.strip()
     if stripped.startswith("```"):
-        stripped = stripped.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        stripped = (
+            stripped.removeprefix("```json")
+            .removeprefix("```")
+            .removesuffix("```")
+            .strip()
+        )
     try:
         payload = json.loads(stripped)
     except json.JSONDecodeError:
@@ -451,7 +505,9 @@ def _response_text(outputs: dict[str, Any]) -> str:
         if isinstance(memories, list):
             lines = _memory_summaries(memories)
             if lines:
-                memory_sections.append(f"{title}:\n" + "\n".join(f"- {line}" for line in lines))
+                memory_sections.append(
+                    f"{title}:\n" + "\n".join(f"- {line}" for line in lines)
+                )
     memory_text = "\n\n".join(memory_sections).strip()
     if memory_text:
         return memory_text
@@ -459,9 +515,7 @@ def _response_text(outputs: dict[str, Any]) -> str:
     if not isinstance(items, list):
         return ""
     return "\n".join(
-        str(item.get("summary") or "")
-        for item in items
-        if isinstance(item, dict)
+        str(item.get("summary") or "") for item in items if isinstance(item, dict)
     ).strip()
 
 
@@ -479,6 +533,77 @@ def _evaluation_result_passes(result: Any) -> bool:
 
 def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _evaluate_record_lane_expectations(
+    failures: list[str],
+    *,
+    expectations: Any,
+    trace: dict[str, Any],
+    recall_items: Any,
+) -> None:
+    if not isinstance(expectations, list):
+        return
+    items = recall_items if isinstance(recall_items, list) else []
+    records = trace.get("records")
+    trace_records = records if isinstance(records, list) else []
+    for expectation in expectations:
+        if not isinstance(expectation, dict):
+            continue
+        summary_contains = str(expectation.get("summary_contains") or "")
+        item = next(
+            (
+                candidate
+                for candidate in items
+                if isinstance(candidate, dict)
+                and summary_contains in str(candidate.get("summary") or "")
+            ),
+            None,
+        )
+        if item is None:
+            failures.append(
+                f"record_lane_expectation summary {summary_contains!r} not recalled"
+            )
+            continue
+        item_id = str(item.get("id") or "")
+        record = next(
+            (
+                candidate
+                for candidate in trace_records
+                if isinstance(candidate, dict)
+                and str(candidate.get("id") or "") == item_id
+            ),
+            None,
+        )
+        if record is None:
+            failures.append(f"trace record missing for recalled memory {item_id!r}")
+            continue
+        signals = _dict(record.get("signals"))
+        observed_lanes = set(_string_list(signals.get("lanes")))
+        for lane in _string_list(expectation.get("lanes_contains")):
+            if lane not in observed_lanes:
+                failures.append(f"record {item_id!r} missing lane {lane!r}")
+            rank = _int(signals.get(f"{lane}_rank"))
+            if rank < 1:
+                failures.append(f"record {item_id!r} {lane}_rank expected >= 1")
+            contribution = _number(signals.get(f"{lane}_rrf_contribution"))
+            if contribution <= 0:
+                failures.append(
+                    f"record {item_id!r} {lane}_rrf_contribution expected > 0"
+                )
+        for lane in _string_list(expectation.get("lanes_excludes")):
+            if lane in observed_lanes:
+                failures.append(
+                    f"record {item_id!r} unexpectedly contains lane {lane!r}"
+                )
+            rank = _int(signals.get(f"{lane}_rank"))
+            if rank >= 1:
+                failures.append(f"record {item_id!r} {lane}_rank expected to be absent")
+            contribution = _number(signals.get(f"{lane}_rrf_contribution"))
+            if contribution > 0:
+                failures.append(
+                    f"record {item_id!r} {lane}_rrf_contribution expected to be 0"
+                )
 
 
 def _string_list(value: Any) -> list[str]:
@@ -512,3 +637,11 @@ def _int(value: Any) -> int:
     if isinstance(value, float):
         return int(value)
     return 0
+
+
+def _number(value: Any) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    return 0.0

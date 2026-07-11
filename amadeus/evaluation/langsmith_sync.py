@@ -8,14 +8,20 @@ from typing import Any, Protocol
 from langsmith import Client
 
 from amadeus.app.bootstrap import _read_dotenv
-from amadeus.evaluation.cases import MemoryRecallCase
 
 
 class _LangSmithSyncCase(Protocol):
-    id: str
-    title: str
-    mode: str
-    expect: Any
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def title(self) -> str: ...
+
+    @property
+    def mode(self) -> str: ...
+
+    @property
+    def expect(self) -> Any: ...
 
     def to_record(self) -> dict[str, Any]: ...
 
@@ -34,13 +40,11 @@ def build_langsmith_client(
     client_class: type[Client] | Any = Client,
 ) -> Client | Any:
     file_values = _read_dotenv(Path(env_path))
-    api_key = (
-        file_values.get("LANGSMITH_API_KEY")
-        or file_values.get("LANGCHAIN_API_KEY")
+    api_key = file_values.get("LANGSMITH_API_KEY") or file_values.get(
+        "LANGCHAIN_API_KEY"
     )
-    api_url = (
-        file_values.get("LANGSMITH_ENDPOINT")
-        or file_values.get("LANGCHAIN_ENDPOINT")
+    api_url = file_values.get("LANGSMITH_ENDPOINT") or file_values.get(
+        "LANGCHAIN_ENDPOINT"
     )
     web_url = file_values.get("LANGSMITH_WEB_URL")
     workspace_id = file_values.get("LANGSMITH_WORKSPACE_ID")
@@ -57,7 +61,7 @@ def build_langsmith_client(
 
 
 def sync_memory_recall_dataset(
-    cases: list[MemoryRecallCase],
+    cases: Sequence[_LangSmithSyncCase],
     *,
     dataset_name: str,
     env_path: str | Path = ".env",
@@ -75,7 +79,7 @@ def sync_memory_recall_dataset(
 
 
 def sync_memory_quality_dataset(
-    cases: list[_LangSmithSyncCase],
+    cases: Sequence[_LangSmithSyncCase],
     *,
     dataset_name: str,
     env_path: str | Path = ".env",

@@ -31,6 +31,8 @@ from amadeus.evaluation.langsmith_sync import (
     sync_memory_recall_dataset,
 )
 from amadeus.memory.engine import MemoryWriteRequest
+from amadeus.memory.postgres import PostgresMemoryStore
+from amadeus.memory.runtime import LongTermMemoryEngine
 from amadeus.session.identity import SessionRef
 from amadeus.tools.base import ToolExecutionRequest
 
@@ -207,9 +209,6 @@ async def _run_memory_recall_case_async(
                 raise ValueError(f"unsupported case mode: {case.mode}")
         finally:
             await app.aclose()
-            memory_engine = app.runtime.memory_engine
-            if memory_engine is not None:
-                memory_engine.store.close()
     output["elapsed_ms"] = int((time.perf_counter() - started_at) * 1000)
     return output
 
@@ -236,7 +235,7 @@ async def _seed_long_term_memories(
     source_message_ids: list[str],
 ) -> None:
     memory_engine = app.runtime.memory_engine
-    if memory_engine is None:
+    if not isinstance(memory_engine, LongTermMemoryEngine):
         raise ValueError(
             "memory recall evaluation requires AMADEUS_LONG_TERM_MEMORY_ENABLED=1"
         )
@@ -250,7 +249,7 @@ async def _seed_long_term_memories(
             case,
             memory.source_message_indexes,
         )
-        await memory_engine.memorize(
+        ingest = await memory_engine.memorize(
             MemoryWriteRequest(
                 summary=memory.summary,
                 memory_type=memory.memory_type,
@@ -259,6 +258,39 @@ async def _seed_long_term_memories(
                 extra=dict(memory.extra),
             )
         )
+        if memory.embedding_mode == "null":
+            _set_seed_embedding_null(
+                memory_engine,
+                item_id=ingest.item_id,
+                case_id=case.id,
+            )
+
+
+def _set_seed_embedding_null(
+    memory_engine: LongTermMemoryEngine,
+    *,
+    item_id: str | None,
+    case_id: str,
+) -> None:
+    """Create a deterministic lexical-only fixture without changing runtime APIs."""
+    store = memory_engine.store
+    if item_id is None or not isinstance(store, PostgresMemoryStore):
+        raise ValueError(
+            f"{case_id}: embedding_mode=null requires PostgreSQL long-term memory"
+        )
+    with store.db.connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE memory_items
+                SET embedding = NULL
+                WHERE user_id = %s AND id = %s
+                """,
+                (store.user_id, item_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"{case_id}: seeded memory {item_id!r} was not found")
+        conn.commit()
 
 
 async def _run_runtime_turn_case(
@@ -301,9 +333,13 @@ async def _run_recall_tool_case(
         )
     )
     recall_result = recall_execution.output
-    recall_output = recall_result.output if isinstance(recall_result.output, dict) else {}
+    recall_output = (
+        recall_result.output if isinstance(recall_result.output, dict) else {}
+    )
     recall_items = recall_output.get("items") if isinstance(recall_output, dict) else []
-    source_refs = _collect_source_refs(recall_items if isinstance(recall_items, list) else [])
+    source_refs = _collect_source_refs(
+        recall_items if isinstance(recall_items, list) else []
+    )
     fetched_messages: list[dict[str, Any]] = []
     if source_refs:
         fetch_execution = await app.tool_executor.execute(
