@@ -276,3 +276,38 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 完成记忆检索独立双 lane 召回
+
+**Date**: 2026-07-11
+**Task**: 完成记忆检索独立双 lane 召回
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+实现 PostgreSQL pgvector 与独立 lexical 候选通道，按 Akashic 规则提取 ASCII/CJK terms，以参数化 ILIKE、pg_trgm GIN、lane-aware RRF、独立失败降级和公开评测证明 lexical-only 记忆可进入最终结果。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f05f43b` | (see git log) |
+| `4ab3e52` | (see git log) |
+| `0afca18` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

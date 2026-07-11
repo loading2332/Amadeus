@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-07-11
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~278 | Active |
+| `journal-1.md` | ~313 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-07-11 | 完成记忆检索独立双 lane 召回 | `f05f43b`, `4ab3e52`, `0afca18` | `codex/delivery-runtime` |
 | 8 | 2026-07-11 | 完成本地 MCP Host 与统一工具链路 | `ff4d1a2`, `7bde6ee`, `f0aa7fb` | `codex/tool-registry-mcp` |
 | 7 | 2026-07-05 | Remove SQLite Runtime Stores | `5836e63` | `codex/delivery-runtime` |
 | 6 | 2026-07-04 | PostgreSQL worker runtime migration | `9e4cad0`, `2f75ab8`, `198f587`, `a5f8424`, `2e9155d` | `codex/delivery-runtime` |
