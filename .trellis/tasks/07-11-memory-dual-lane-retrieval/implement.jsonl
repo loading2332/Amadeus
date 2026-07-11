@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"长期记忆独立双 lane、trace、降级与公开行为合同"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"PostgreSQL vector/lexical 查询、过滤、迁移与索引合同"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"预期非致命检索失败必须通过 typed trace 诚实降级"}
+{"file":".trellis/tasks/07-11-memory-dual-lane-retrieval/research/akashic-dual-lane-reference.md","reason":"Akashic tokenizer、独立候选与 RRF 参考行为"}
+{"file":".trellis/tasks/07-11-memory-dual-lane-retrieval/research/postgres-lexical-channel-options.md","reason":"ILIKE、pg_trgm 与中文短 pattern 的真实 PostgreSQL 证据"}
+{"file":".trellis/tasks/07-11-memory-dual-lane-retrieval/research/rrf-final-visibility.md","reason":"0.5/1.0 权重与默认 final top-8 可见性实验"}

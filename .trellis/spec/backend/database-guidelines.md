@@ -123,3 +123,75 @@ def open_after_probe(database: PostgresDatabase) -> None:
 - Do not treat message ids as memory ids. `forget_memory` and memory mutation APIs operate on memory ids returned by `recall_memory`.
 - Do not add a new database abstraction unless it removes real duplication across stores.
 - Do not split memory reinforcement semantics between database-generated hashes and Python-generated hashes; this breaks cross-store behavior and migration consistency.
+
+## 场景：PostgreSQL 独立长期记忆 lexical lane
+
+### 1. Scope / Trigger
+
+- 触发：修改长期记忆 vector/lexical 候选 SQL、eligible filters、substring 语义、文本索引或相关 Alembic migration。
+- 目标：精确关键词记忆即使没有 embedding、或位于 pgvector candidate window 外，也能独立进入融合排序。
+
+### 2. Signatures
+
+- `PostgresMemoryStore.search_vector_candidates(*, query_embedding, memory_types=(), scope_channel=None, scope_chat_id=None, time_start=None, time_end=None, limit) -> list[dict[str, Any]]`
+- `PostgresMemoryStore.search_lexical_candidates(*, terms, memory_types=(), scope_channel=None, scope_chat_id=None, time_start=None, time_end=None, limit) -> list[dict[str, Any]]`
+- Migration `20260711_0004_memory_summary_trgm`: `CREATE EXTENSION IF NOT EXISTS pg_trgm`; `ix_memory_items_summary_trgm USING gin (summary gin_trgm_ops)`。
+
+### 3. Contracts
+
+- 两个方法分别查询完整 eligible corpus，并在各自 `LIMIT` 前应用同一组 `user_id/status/type/scope/time` filters。
+- vector SQL 要求 `embedding IS NOT NULL`，按 `<=>` 排序并返回 `vector_distance`。
+- lexical SQL 不要求 embedding；使用参数化 OR-`ILIKE ... ESCAPE '!'`，返回 `lexical_matched_terms` 与 `lexical_score = matched_terms / total_terms`。
+- pattern builder 必须依次执行 `! -> !!`、`% -> !%`、`_ -> !_`，再包裹 `%...%`。动态 SQL 只能生成由已拥有 term 数量决定的 placeholder 结构。
+- lexical 排序为 coverage DESC、reinforcement DESC、id ASC；不得依赖数据库未声明的 tie order。
+- `pg_trgm` GIN 只加速 planner 能提取 trigram 的 pattern。2 字 CJK 和包含短 pattern 的 OR 可以诚实地 scoped Seq Scan；索引不是正确性前置条件。
+- downgrade 只删除本任务拥有的 index，不删除可能被其他模块共享的 `pg_trgm` extension。
+
+### 4. Validation & Error Matrix
+
+- `terms=()` 或 `limit<=0` -> 返回空列表，不执行 SQL。
+- `_`、`%`、`!` 出现在 term -> 按字面量匹配；不得扩大为 wildcard。
+- SQL-like 输入 -> 作为绑定参数处理，不改变查询结构。
+- `embedding IS NULL` 且 substring 命中 -> lexical 可返回，vector 不返回。
+- memory 不属于当前 user、不是 active、type/scope/time 不匹配 -> 两个 lane 都必须过滤。
+- migration downgrade/upgrade -> extension 保留；index 先消失再恢复。
+
+### 5. Good / Base / Bad Cases
+
+- Good：32 个更近 vector decoys 外的 NULL-embedding `ZXQ-4917` 目标由 lexical SQL 召回，公开 recall 最终返回。
+- Base：3～4 字 CJK/ASCII identifier 使用同一 ILIKE 合同，planner 可选择 GIN；2 字 CJK 在过滤后的 corpus 扫描。
+- Bad：先取 pgvector rows，再在 Python 中计算 substring；这只是共享 shortlist 重打分。
+- Bad：为了强迫 GIN 使用而删除 2 字 terms，改变中文召回合同。
+
+### 6. Tests Required
+
+- migration index/extension 存在性与真实 downgrade/upgrade 往返。
+- store 集成测试覆盖中英文、ASCII identifier、NULL embedding、stable order、literal wildcard/escape、SQL-like term。
+- vector/lexical 过滤矩阵覆盖 user、active status、memory type、scope 与 time。
+- `EXPLAIN`/性能探针区分 2 字 CJK Seq Scan 与可提取 trigram 的 Bitmap GIN，不写虚假 index usage 断言。
+- public acceptance 先断言目标不在 vector window，再断言 tool/engine 返回目标与 lexical-only provenance。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+rows = store.search_vector_candidates(query_embedding=embedding, limit=32)
+for row in rows:
+    row["lexical_score"] = keyword_score_for_summary(row["summary"], terms)
+```
+
+#### Correct
+
+```python
+vector_rows = store.search_vector_candidates(
+    query_embedding=embedding,
+    **filters,
+    limit=32,
+)
+lexical_rows = store.search_lexical_candidates(
+    terms=tuple(terms),
+    **filters,
+    limit=30,
+)
+```

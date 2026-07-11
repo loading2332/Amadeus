@@ -288,78 +288,105 @@ localStorage.setItem("amadeus_session_id", String(session_id))
 - This task intentionally diverges from Akashic's `session_key` mechanism. Akashic uses string session keys across bus/lifecycle/passive/turn/tests; Amadeus expresses the same "explicit identity at lifecycle/memory boundary" idea through `SessionRef` / `user_id + session_id`. Akashic is treated as a cautionary map of where identity leaks, not a model to copy.
 - Closer structural reference: `redrumY/telegram-bot@codex/web-agent-architecture` for structured web/turn contracts around `user_id`/`session_id`. Note its `MemoryScope.session_key` field is NOT copied — Amadeus keeps memory scope structured.
 
-## Scenario: Dual-Hypothesis Memory Retrieval
+## 场景：独立双 lane 长期记忆检索
 
-### 1. Scope / Trigger
+### 1. 范围 / 触发
 
-- Trigger: changes to long-term memory retrieval, hypothesis generation, `recall_memory`, passive context injection, or memory retrieval trace fields.
-- This requires code-spec depth because the behavior spans `MemoryRetriever`, `rank_rows`, LLM hypothesis providers, runtime/bootstrap config, tool-facing traces, and interview documentation.
+- 触发：修改长期记忆候选生成、hypothesis 生成、RRF 排序、`recall_memory`、被动 context injection 或 retrieval trace/eval 字段。
+- 该行为跨越 PostgreSQL、`MemoryRetriever`、lane-aware ranking、runtime/bootstrap config、tool trace、canonical eval 与面试声明，因此必须维护代码级规格。
 
-### 2. Signatures
+### 2. 签名
 
 - `MemoryRetriever.recall(request: MemoryRecallRequest) -> MemoryQueryResult`
 - `HypothesisProvider.generate(query: str, *, style: str) -> str`
-- `rank_rows(rows: list[dict[str, Any]], query_vector: list[float], query_text: str, *, limit: int, threshold: float, lexical_enabled: bool = True) -> list[MemoryRecord]`
-- `rank_multi_query_rows(rows: list[dict[str, Any]], query_vectors: list[list[float]], query_texts: list[str], *, limit: int, threshold: float) -> tuple[list[MemoryRecord], dict[str, dict[str, int]]]`
+- `MemoryRetrievalStoreProtocol.search_vector_candidates(..., limit: int) -> list[dict[str, Any]]`
+- `MemoryRetrievalStoreProtocol.search_lexical_candidates(*, terms: tuple[str, ...], ..., limit: int) -> list[dict[str, Any]]`
+- `rank_candidate_lanes(candidates: MemoryCandidateLanes, query_vectors: list[list[float]], query_texts: list[str], *, limit: int, threshold: float, lexical_weight: float = 1.0) -> tuple[list[MemoryRecord], RetrievalLaneTrace]`
 - `load_runtime_config(...) -> RuntimeConfig`
 
-### 3. Contracts
+### 3. 契约
 
-- Explicit `intent="answer"` / `recall_memory` retrieval may generate exactly two memory-shaped auxiliary query styles: `event` and `general`.
-- Passive `intent="context"` retrieval must remain raw-query-only and must not spend an LLM call on hypothesis generation.
-- Raw query always participates.
-- Generated hypothesis queries participate in vector retrieval only; lexical matching must remain raw-query-only.
-- Multiple vector queries that hit the same memory id must keep the best vector hit for that id, not accumulate one RRF contribution per query.
-- Final RRF fusion is between the deduplicated vector pool and the raw-query lexical pool.
-- Hypothesis generation is default-on when long-term memory has a provider, with `AMADEUS_MEMORY_HYPOTHESIS_RETRIEVAL_ENABLED=0` as the kill switch.
-- Hypothesis text belongs in structured trace, not in rendered retrieved-memory/context-frame text.
+- Vector 与 lexical 必须分别从完整 eligible corpus 生成候选。在 pgvector shortlist 上补算 substring 分数不构成 lexical retrieval lane。
+- 显式 `intent="answer"` / `recall_memory` 最多生成两种 memory-shaped 辅助 query：`event` 与 `general`。
+- 被动 `intent="context"` 不调用 hypothesis provider；raw query 始终参与 vector retrieval，显式 context queries 只能追加，不能替换 raw query。
+- 生成的 hypothesis 只参与 vector retrieval；lexical 永远只由 `MemoryRecallRequest.text` 驱动。
+- Lexical extraction 对齐 Akashic：先提取全部 ASCII `[A-Za-z0-9_.-]{2,}`，再处理汉字、平假名、片假名；2～4 字 chunk 保留完整，长 chunk 拆相邻 bigram；应用 CJK stopwords，最后对“ASCII terms + CJK terms”拼接序列稳定去重并限制为 20 个。
+- 多个 vector query 命中同一 memory id 时，只保留最佳 vector hit，不得按 query 累加多份 RRF contribution。
+- `MemoryCandidateLanes` 保留原始 vector groups 与 lexical rows。lane membership、rank 与 contribution 不得从 union 上重新打分推断。
+- Vector candidate 必须先通过 semantic threshold，再做 hotness fusion；整次排序共享同一个时间快照。Lexical candidate 使用 store 返回的 coverage score，不要求 embedding。
+- 最终 RRF 按稳定 id 去重，`k=60`，lexical weight `1.0` 是首轮 deterministic eval 基线，最终参数由 eval 决定。权重为 0 时不得返回零分 lexical-only 结果。
+- `candidate_counts.vector/lexical` 表示 SQL 返回的 raw unique candidates；`lane_counts` 表示通过 threshold/score 校验后真正贡献排名的候选；兼容字段 `candidate_count` 表示 union count。
+- Record signals 暴露 1-based `vector_rank` / `lexical_rank` 与两路 RRF contribution；context injection 保留最终融合顺序。
+- Long-term memory 配置 provider 后 hypothesis 默认开启，`AMADEUS_MEMORY_HYPOTHESIS_RETRIEVAL_ENABLED=0` 是 kill switch。
+- Lexical retrieval 默认开启，`AMADEUS_MEMORY_LEXICAL_RETRIEVAL_ENABLED=0` 是 query-level rollback switch。
+- Hypothesis 文本只进入 structured trace，不进入渲染后的 retrieved-memory/context-frame 文本。
 
-### 4. Validation & Error Matrix
+### 4. 验证与错误矩阵
 
-- One hypothesis style fails -> keep the successful style and record a style-specific fallback/error.
-- Both hypothesis styles fail or time out -> fall back to raw-only retrieval.
-- Empty hypothesis output -> omit that generated query and record an empty-output fallback.
-- Missing hypothesis provider or disabled config -> raw-only retrieval with a disabled reason in trace.
+- 一个 hypothesis style 失败 -> 保留成功 style，并记录 style-specific fallback/error。
+- 两种 hypothesis 都失败或超时 -> 降级为 raw-only retrieval。
+- Hypothesis 输出为空 -> 忽略该 generated query，并记录 empty-output fallback。
+- 缺少 hypothesis provider 或配置关闭 -> raw-only retrieval，并在 trace 中记录 disabled reason。
+- 一个 vector embedding/search 失败 -> 用空 vector group 保持 index 对齐；成功的 vector groups 与 lexical 继续执行，`lane_status.vector="degraded"`。全部 vector queries 失败 -> `lane_status.vector="error"`，lexical 仍可返回。
+- Lexical 关闭 -> 不执行 lexical SQL，`lane_status.lexical="disabled"`；无有效 terms -> `"no_terms"`；scoped lexical 失败而 global retry 成功 -> `"degraded"`，不能重标为 `"ok"`。
+- Lexical SQL 失败 -> 返回 vector 结果，记录 `lexical_retrieval_failed`、稳定错误类型与 `lane_status.lexical="error"`。
+- Scoped 两路都无最终结果 -> 两个 lane 一起按 global scope 重试。任一尝试发生的失败都不得被后续成功重标为完整双 lane 成功。
 
-### 5. Good/Base/Bad Cases
+### 5. Good / Base / Bad Cases
 
-- Good: raw query misses a relevant memory, event/general vector lanes recall it, and trace records matched query indexes.
-- Base: passive context retrieval runs once with raw query and no hypothesis provider calls.
-- Bad: a generated hypothesis creates a lexical-only hit because its literal words overlap a memory summary.
-- Bad: the same memory receives separate RRF contributions for raw, event, and general vector matches.
+- Good：一个位于所有 vector windows 外、`embedding IS NULL` 的 memory 精确命中 raw-query 稀有标识符，以 lexical-only 进入默认 final top-8，并保留 source evidence。
+- Base：被动 context retrieval 执行 raw-query vector + raw-query lexical，不调用 hypothesis provider，注入时保留最终融合顺序。
+- Bad：generated hypothesis 的字面词与 summary 重叠，从而制造 lexical-only hit。
+- Bad：同一 memory 因 raw、event、general vector query 分别获得多份 RRF contribution。
+- Bad：先 union vector/lexical rows 再打分，导致记录被伪标成未真正召回它的 lane 成员。
 
-### 6. Tests Required
+### 6. 必需测试
 
-- Retriever test proving event/general hypotheses can recall a candidate raw wording misses.
-- Retriever test proving passive context does not call the hypothesis provider.
-- Retriever test proving generated hypotheses do not create lexical hits.
-- Ranking test proving repeated vector-query hits keep the best vector hit instead of accumulating per-query RRF.
-- Retriever tests proving exception and timeout paths fall back to raw retrieval and record trace fallbacks/errors.
-- Bootstrap/config test proving default-on behavior, timeout, optional light model, and kill switch.
+- Retriever test：event/general hypotheses 能召回 raw wording 未命中的 candidate。
+- Retriever test：被动 context 不调用 hypothesis provider，explicit context queries 也不能替换 raw query 或驱动 lexical。
+- Retriever test：generated hypotheses 不制造 lexical hit。
+- Ranking test：重复 vector-query hit 只保留最佳 hit，不按 query 累加 RRF；等价候选使用单一时间快照与稳定 id tie-break。
+- Ranking tests：vector-only、lexical-only、双 lane、lane rank/contribution、threshold-before-hotness、零权重行为，以及 `0.5` 对比 `1.0` 的 final 可见性。
+- Retriever tests：embedding failure、vector SQL failure、lexical SQL failure、partial/degraded、disabled/no-terms、scope retry 状态聚合与 context injection 顺序。
+- 真实 PostgreSQL acceptance：至少 32 个 vector decoys 加一个 NULL-embedding lexical target；先断言目标不在 vector window，再断言它进入公开 final top-8。
+- Canonical memory recall eval：用 NULL-embedding fixture 断言 lexical candidate count/status，并按 recalled item id 关联 trace，证明 lexical rank/contribution 为正且 vector provenance 缺失。
+- Bootstrap/config test：证明 lexical 默认开启，kill switch 正确注入 composed retriever。
 
 ### 7. Wrong vs Correct
 
-#### Wrong
+#### 错误
 
 ```python
-queries = [raw_query, event_hypothesis, general_hypothesis]
-result_sets = [
-    rank_rows(rows, query_vector, query, limit=top_k, threshold=threshold)
-    for query in queries
-]
-ranked = rrf_fuse_records(result_sets, limit=top_k)
-```
-
-#### Correct
-
-```python
-queries = [raw_query, event_hypothesis, general_hypothesis]
-query_vectors = await asyncio.gather(*(embed(query) for query in queries))
-ranked, lane_counts = rank_multi_query_rows(
-    rows,
+vector_rows = union_vector_rows(raw_query, event_hypothesis, general_hypothesis)
+ranked = rank_multi_query_rows(
+    vector_rows,
     query_vectors,
     queries,
     limit=top_k,
     threshold=threshold,
+)
+```
+
+#### 正确
+
+```python
+queries = [raw_query, event_hypothesis, general_hypothesis]
+query_vectors = await embed_with_per_query_failure_isolation(queries)
+vector_groups = search_each_vector_query(query_vectors, filters)
+lexical_rows = store.search_lexical_candidates(
+    terms=tuple(extract_terms(raw_query)),
+    **filters,
+    limit=max(30, top_k * 2),
+)
+ranked, lane_trace = rank_candidate_lanes(
+    MemoryCandidateLanes(
+        vector_groups=vector_groups,
+        lexical=tuple(lexical_rows),
+    ),
+    query_vectors,
+    queries,
+    limit=top_k,
+    threshold=threshold,
+    lexical_weight=1.0,
 )
 ```

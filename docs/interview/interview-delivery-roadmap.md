@@ -41,34 +41,28 @@ Phase 2 的目标不是只补几个 retrieval 细节，而是把 Amadeus 的具�
 Phase 2 verification command：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest `
-  tests/memory/test_memory_ranking.py `
-  tests/memory/test_session_memory_runtime.py `
-  tests/memory/test_memory_retrieval_acceptance.py `
-  tests/memory/test_runtime_memory.py `
-  tests/app/test_cli.py `
-  tests/app/test_bootstrap_tool_runtime.py -v
+uv run pytest -q tests/memory tests/evaluation tests/db
 ```
 
-当前验收状态（2026-07-01）：通过。上述 focused suite 本次运行结果为 `54 passed`。
+当前验收状态（2026-07-11）：通过。上述 memory/evaluation/database suite 本次运行结果为 `145 passed`；仓库全量为 `550 passed`。
 
 交付范围：
 
 - Markdown memory：保留可读的 SELF/MEMORY/HISTORY/PENDING/RECENT_CONTEXT 文件语义，明确 profile、history、pending、correction 等条目的生命周期。
-- Long-term memory store：SQLite-backed retrieval store 支持 embedding 写入、source_ref 去重、kind 过滤、happened_at、status、reinforcement 和可解释 scoring signals。
-- Retrieval：支持 vector、lexical、RRF 融合、query planning、Akashic-style dual-hypothesis retrieval、timeline/procedure/context/answer 等公开查询意图；显式 answer/recall_memory 默认生成 event/general auxiliary queries，passive context 保持 raw-query path。
+- Long-term memory store：PostgreSQL + pgvector store 支持 embedding 写入、source_ref 去重、kind 过滤、happened_at、status、reinforcement、HNSW vector search 与 pg_trgm GIN lexical acceleration。
+- Retrieval：vector 与 raw-query lexical 独立查询完整 eligible corpus，再做 stable-id RRF。lexical 使用 Akashic ASCII/CJK term extraction 与参数化 OR-ILIKE；显式 answer/recall_memory 默认生成只进入 vector lane 的 event/general auxiliary queries，passive context 保持 raw-query path。
 - Ranking：retrieval 使用 Akashic-style hotness fusion：通过语义阈值后的向量候选按 `0.8 * semantic + 0.2 * hotness` 排序，其中 hotness 由 reinforcement、updated_at time decay 和 emotional_weight 半衰期修正组成；trace 暴露 semantic、hotness、final score 和各组成信号。
 - Source references：`recall_memory` 返回的候选记忆必须带 `source_ref`/evidence，并能通过 `fetch_messages` 回源到原始 session messages。
 - Correction：用户纠正记忆时，必须先定位 memory id，再回源核对，最后 soft-delete 或写入更正记忆；不能把 message id 当作 memory id。
 - Forgetting：`forget_memory`/mutation 必须把错误记忆标记为 superseded，查询和 context 注入默认不再使用，同时原始消息仍可回源。
 - Context injection：被动 runtime 只能通过 `MemoryEngine` 或明确 context contract 注入 retrieved memory，且 retrieved memory 进入 context frame，不污染稳定 system prompt。
-- Retrieval trace：统一记录 query plan、candidate count、lane counts、score signals、dual-hypothesis queries/fallbacks/errors、injected/omitted ids、source_ref/evidence 状态。
+- Retrieval trace：统一记录 query plan、vector/lexical/union/final candidate counts、lane status、逐 lane rank/RRF contribution、score signals、dual-hypothesis queries/fallbacks/errors、injected/omitted ids、source_ref/evidence 状态。
 - Verification：用 focused tests 和 memory-specific eval/smoke cases 覆盖公开行为；完整产品化 Evaluation runner 仍属于阶段 3。
 
 验收标准：
 
 - 能演示一条完整记忆链路：session 消息 -> Markdown consolidation -> long-term memory ingest -> recall -> fetch_messages 回源 -> forget -> 后续 query 不再使用旧记忆。
-- memory-specific eval 或 smoke 覆盖 recall、source_ref fetch、correction、forgetting、dual-hypothesis fallback、context-frame injection、reinforcement ranking、retrieval trace。
+- memory-specific eval 或 smoke 覆盖 vector-window 外 lexical-only recall、source_ref fetch、correction、forgetting、dual-hypothesis fallback、context-frame fusion-order injection、reinforcement ranking与 retrieval provenance trace。
 - 所有记忆相关能力都有代码证据和验证命令，面试时能指向公开工具、runtime 行为或 trace，而不只解释内部 helper。
 - 简历措辞不能写尚未实现的 sqlite-vec；hotness ranking 可以描述为已迁移 Akashic 的 scoring 思路，但不能说完整迁移了 Akashic memory2。
 
@@ -82,6 +76,7 @@ Phase 3 已落地 memory recall 和 memory quality 两条最小垂直切片。me
 - 本地 canonical case 文件作为 source of truth。
 - 人类可读 summary 和机器可读 JSON 结果。
 - `write_trace.candidate_decisions`、active/superseded memories、source_ref/fetched_messages 作为可观察证据。
+- memory recall case 可以断言 lexical candidate count、lane status，并把公开 recall item id 关联到 trace 中的 lane rank 与 RRF contribution。
 - 回归测试使用 deterministic fake；真实 LLM smoke 通过 `amadeus eval memory-quality --env .env` 运行。
 
 后续扩展：
