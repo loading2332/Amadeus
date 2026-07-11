@@ -241,3 +241,38 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 完成本地 MCP Host 与统一工具链路
+
+**Date**: 2026-07-11
+**Task**: 完成本地 MCP Host 与统一工具链路
+**Branch**: `codex/tool-registry-mcp`
+
+### Summary
+
+完成 local_trusted stdio MCP Host、统一 ToolRegistry/ToolExecutor/deferred 数据流、生命周期与回滚处理；补齐端到端和资源回收验证，并更新中文任务文档及 backend spec。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ff4d1a2` | (see git log) |
+| `7bde6ee` | (see git log) |
+| `f0aa7fb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
