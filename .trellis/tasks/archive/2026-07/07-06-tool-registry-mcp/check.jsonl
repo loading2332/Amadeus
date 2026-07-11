@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "check sub-agent 须按项目代码标准评审本次改动的 tools / mcp / runtime 代码，识别 forbidden patterns。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "check 须验证跨层数据流一致：ToolExecutionRequest 字段、tool_chain 记录、mcp_servers 表 schema、reasoner 调用点。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "check 须审视是否复用了既有 utility 而非重造、是否破坏既有抽象边界。"}
+{"file": ".trellis/tasks/07-06-tool-registry-mcp/prd.md", "reason": "对照验收 A1-A6 标准逐条核验：是否每条验收点都有测试或实施动作支撑。"}
+{"file": ".trellis/tasks/07-06-tool-registry-mcp/design.md", "reason": "对照数据契约 3.1-3.12 与数据流 4.x 核验实现是否偏离设计；如偏离应回改 design.md。"}
+{"file": ".trellis/tasks/07-06-tool-registry-mcp/implement.md", "reason": "对照 Review Gates（P0-P8）与 validation 命令核验每阶段产物是否齐全。"}

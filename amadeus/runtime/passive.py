@@ -192,6 +192,7 @@ class PassiveRuntime:
             event_bus=self.event_bus,
             before_step=self._before_step,
             after_step=self._after_step,
+            tool_registry=self.tool_registry,
         )
 
     def set_before_turn_plugin_modules(self, modules: list[object]) -> None:
@@ -419,9 +420,6 @@ class PassiveRuntime:
         resolved_runtime_metadata = before_reasoning_context.runtime_metadata
         resolved_extra_hints = before_reasoning_context.extra_hints
 
-        tool_schemas = (
-            self.tool_registry.export_openai_tools() if self.tool_registry is not None else None
-        )
         tool_chain: list[dict[str, Any]] = []
         provider_raw: Any = None
         assistant_content: str
@@ -465,7 +463,6 @@ class PassiveRuntime:
             try:
                 reasoner_result = await self.reasoner.reason(
                     messages=messages,
-                    tool_schemas=tool_schemas,
                     session=session,
                 )
                 assistant_content = reasoner_result.reply

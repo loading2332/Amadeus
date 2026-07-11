@@ -13,9 +13,8 @@ class ReasonerResult:
     Attributes:
         reply: Final assistant reply text.
         tool_chain: List of tool-call groups, one per LLM round that
-                    produced tool_calls. Each group:
-                      {"text": str, "calls": [{"call_id", "name",
-                       "arguments", "status", "result"}, ...]}
+                    produced tool_calls. Each call keeps the executed business
+                    ``arguments`` alongside status, result, and hook traces.
         invocations: Flat list of all LLMToolCall made during the loop.
         provider_raw: Raw provider response object (for after_reasoning commit).
         metadata: Extra runtime metadata (tools_used, react_stats, …).

@@ -307,14 +307,14 @@ def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path, memory_e
         LLMProviderConfig(api_key="secret", model="fake"), client=client
     )
     registry = ToolRegistry()
-    registry.register(RecallMemoryTool(memory_engine=engine))
+    registry.register(RecallMemoryTool(memory_engine=engine), always_on=True)
     runtime = PassiveRuntime(
         workspace_root=tmp_path,
         provider=provider,
         session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
         memory_engine=engine,
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry=registry),
+        tool_executor=ToolExecutor(hooks=[], invoker=registry.execute),
     )
 
     result = asyncio.run(
@@ -329,4 +329,3 @@ def test_passive_and_active_memory_paths_coexist_in_tool_loop(tmp_path, memory_e
     tool_messages = [message for message in second_messages if message["role"] == "tool"]
     assert len(tool_messages) == 1
     assert '"count": 1' in tool_messages[0]["content"]
-

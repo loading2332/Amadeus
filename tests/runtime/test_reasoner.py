@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 from amadeus.provider import LLMProvider, LLMProviderConfig
+from amadeus.session.identity import SessionRef
+from amadeus.tools.registry import ToolRegistry
 from amadeus.types import ReasonerResult
 
 
@@ -35,6 +37,15 @@ class FakeClient:
     def __init__(self, completions: FakeCompletions | None = None) -> None:
         self.completions: FakeCompletions = completions or FakeCompletions()
         self.chat = FakeChatNamespace(completions=self.completions)
+
+
+class _SchemaOnlyTool:
+    name = "test_tool"
+    description = "test tool"
+    parameters = {"type": "object", "properties": {}}
+
+    def execute(self, **kwargs: Any) -> Any:
+        raise AssertionError("ordinary chat must not execute tools")
 
 
 class TestReasonerFromResponse:
@@ -102,20 +113,23 @@ class TestReasonerOrdinaryChat:
             LLMProviderConfig(api_key="secret", model="fake-model"),
             client=client,
         )
-        reasoner = Reasoner(provider=provider)
-        tool_schemas = [{"type": "function", "function": {"name": "test_tool"}}]
+        registry = ToolRegistry()
+        registry.register(_SchemaOnlyTool(), always_on=True)
+        reasoner = Reasoner(provider=provider, tool_registry=registry)
 
         asyncio.run(
             reasoner.reason(
                 messages=[{"role": "user", "content": "hello"}],
-                tool_schemas=tool_schemas,
+                session=SessionRef(user_id=1, session_id=1),
             )
         )
 
         assert len(client.completions.calls) == 1
         call_kwargs = client.completions.calls[0]
         assert call_kwargs["messages"] == [{"role": "user", "content": "hello"}]
-        assert call_kwargs["tools"] == tool_schemas
+        assert call_kwargs["tools"] == registry.get_schemas(
+            names=registry.get_always_on_names()
+        )
 
     def test_returns_empty_tool_chain_when_no_tools_used(self) -> None:
         """Ordinary chat produces no tool_chain entries."""

@@ -73,7 +73,7 @@ def test_llm_provider_sends_chat_completion_payload_and_parses_response():
     ]
 
 
-def test_llm_provider_parses_tool_calls_without_assistant_content():
+def test_llm_provider_parses_flat_tool_arguments_without_assistant_content():
     raw = SimpleNamespace(
         id="resp_2",
         model="fake-model",
@@ -86,7 +86,9 @@ def test_llm_provider_parses_tool_calls_without_assistant_content():
                             id="call_1",
                             function=SimpleNamespace(
                                 name="fetch_messages",
-                                arguments=json.dumps({"source_ref": '["session:1:1:0"]'}),
+                                arguments=json.dumps(
+                                    {"source_ref": '["session:1:1:0"]'}
+                                ),
                             ),
                         )
                     ],
@@ -106,7 +108,51 @@ def test_llm_provider_parses_tool_calls_without_assistant_content():
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].id == "call_1"
     assert result.tool_calls[0].name == "fetch_messages"
-    assert result.tool_calls[0].arguments == {"source_ref": '["session:1:1:0"]'}
+    assert result.tool_calls[0].arguments == {
+        "source_ref": '["session:1:1:0"]'
+    }
+
+
+def test_llm_provider_sends_business_tool_schema_unchanged():
+    raw = SimpleNamespace(
+        id="resp_schema",
+        model="fake-model",
+        choices=[SimpleNamespace(message=SimpleNamespace(content="hello"))],
+        usage={},
+    )
+    client = FakeClient(raw)
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    business_parameters = {
+        "type": "object",
+        "properties": {
+            "purpose": {
+                "type": "string",
+                "description": "远端工具真正消费的业务用途。",
+            }
+        },
+        "required": ["purpose"],
+    }
+    schema: dict[str, Any] = {
+        "type": "function",
+        "function": {
+            "name": "business_purpose",
+            "description": "Consume a business purpose.",
+            "parameters": business_parameters,
+        },
+    }
+
+    asyncio.run(
+        provider.chat(
+            [{"role": "user", "content": "hi"}],
+            tools=[schema],
+        )
+    )
+
+    assert client.completions.calls[0]["tools"] == [schema]
+    assert schema["function"]["parameters"] == business_parameters
 
 
 def test_llm_provider_rejects_response_without_content_or_tool_calls():
@@ -120,4 +166,3 @@ def test_llm_provider_rejects_response_without_content_or_tool_calls():
 
     with pytest.raises(ValueError, match="assistant content"):
         asyncio.run(provider.chat([{"role": "user", "content": "hi"}]))
-

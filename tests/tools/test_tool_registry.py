@@ -56,20 +56,12 @@ def test_registry_exports_openai_tool_schema():
     registry = ToolRegistry()
     registry.register(EchoTool())
 
-    schema = registry.export_openai_tools()
+    schema = registry.get_schemas()
 
-    assert schema == [
-        {
-            "type": "function",
-            "function": {
-                "name": "echo",
-                "description": "Echo the provided text.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"text": {"type": "string"}},
-                    "required": ["text"],
-                },
-            },
-        }
-    ]
-
+    function = schema[0]["function"]
+    assert function["name"] == "echo"
+    assert function["description"] == "Echo the provided text."
+    assert function["parameters"]["type"] == "object"
+    assert function["parameters"]["properties"]["text"] == {"type": "string"}
+    assert function["parameters"]["required"] == ["text"]
+    assert set(function["parameters"]["properties"]) == {"text"}

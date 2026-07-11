@@ -71,6 +71,12 @@ class Session:
                         for call in calls:
                             if not isinstance(call, dict):
                                 continue
+                            raw_arguments = call.get("arguments")
+                            arguments = (
+                                raw_arguments
+                                if isinstance(raw_arguments, dict)
+                                else {}
+                            )
                             assistant_tool_message["tool_calls"].append(
                                 {
                                     "id": str(call.get("call_id") or ""),
@@ -78,7 +84,7 @@ class Session:
                                     "function": {
                                         "name": str(call.get("name") or ""),
                                         "arguments": json.dumps(
-                                            call.get("arguments") or {},
+                                            arguments,
                                             ensure_ascii=False,
                                         ),
                                     },

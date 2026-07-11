@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "本任务改造 ToolExecutor / Registry / hooks / reasoner，需对照项目代码标准与禁止模式，避免 forbidden patterns。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "工具链路横跨 tools / runtime / mcp / db / app.bootstrap 多层，新增 ToolExecutionRequest 字段、tool_chain 字段、mcp_servers 表字段，须按跨层思考数据流与字段一致性。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "MCP transport / ToolExecutor 三段式 / ToolRegistry 多表登记多处有 akashic 同源实现可借鉴；新增 utility（schema_validator、KeywordSearchBackend、TurnVisibleSet）前应先搜是否已有可用代码。"}
+{"file": ".trellis/tasks/07-06-tool-registry-mcp/prd.md", "reason": "本任务 PRD：需求 R1-R5 与验收 A1-A6，实现期须对照验收标准逐条兑现。"}
+{"file": ".trellis/tasks/07-06-tool-registry-mcp/design.md", "reason": "本任务技术设计：决策表、模块边界、数据契约（3.1-3.12）、数据流（4.x）、MCP 实现细节（6.x）、迁移接缝（5.x）。实现期主要参照文档。"}
+{"file": ".trellis/tasks/07-06-tool-registry-mcp/implement.md", "reason": "本任务执行 checklist：P0-P8 阶段、validation 命令、review gates、rollback points。实现期按阶段顺序推进。"}

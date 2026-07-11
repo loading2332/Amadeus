@@ -173,6 +173,32 @@ def test_load_runtime_config_defaults_to_home_workspace(tmp_path, monkeypatch):
     assert config.workspace_root == tmp_path / ".amadeus" / "workspace"
 
 
+@pytest.mark.parametrize(
+    ("configured_mode", "expected_mode"),
+    [
+        (None, "disabled"),
+        ("stdio", "disabled"),
+        ("LOCAL_TRUSTED", "disabled"),
+        ("local_trusted", "local_trusted"),
+    ],
+)
+def test_load_runtime_config_normalizes_mcp_mode(
+    tmp_path,
+    monkeypatch,
+    configured_mode,
+    expected_mode,
+):
+    env_path = _env_path(tmp_path)
+    if configured_mode is None:
+        monkeypatch.delenv("AMADEUS_MCP_MODE", raising=False)
+    else:
+        monkeypatch.setenv("AMADEUS_MCP_MODE", configured_mode)
+
+    config = load_runtime_config(env_path=env_path, workspace_root=tmp_path)
+
+    assert config.mcp_mode == expected_mode
+
+
 def test_load_runtime_config_requires_provider_values(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text("OPENAI_API_KEY=secret\n", encoding="utf-8")

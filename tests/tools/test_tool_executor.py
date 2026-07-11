@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from amadeus.tools.base import ToolExecutionRequest, ToolResult
-from amadeus.tools.executor import ToolExecutionDenied, ToolExecutor
+from amadeus.tools.base import (
+    HookContext,
+    HookOutcome,
+    ToolExecutionRequest,
+    ToolResult,
+)
+from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
 
 
@@ -24,36 +30,56 @@ class EchoTool:
 
 
 class DenySecretHook:
-    def before_execute(self, request: ToolExecutionRequest) -> ToolExecutionRequest:
-        if request.arguments.get("text") == "secret":
-            raise ToolExecutionDenied("secret not allowed")
-        return request
+    name = "deny_secret"
+    event = "pre_tool_use"
 
-    def after_execute(self, request: ToolExecutionRequest, result: ToolResult) -> ToolResult:
-        return result
+    def matches(self, ctx: HookContext) -> bool:
+        return ctx.request.tool_name == "echo"
+
+    def run(self, ctx: HookContext) -> HookOutcome:
+        if ctx.request.arguments.get("text") == "secret":
+            return HookOutcome(decision="deny", reason="secret not allowed")
+        return HookOutcome(decision="pass")
 
 
-def test_executor_runs_tool_and_returns_trace():
+def _make_invoker(registry: ToolRegistry):
+    async def invoker(name: str, arguments: dict[str, Any]) -> Any:
+        return await registry.execute(name, arguments)
+
+    return invoker
+
+
+def test_executor_runs_tool_and_returns_success():
     registry = ToolRegistry()
     registry.register(EchoTool())
-    executor = ToolExecutor(registry=registry)
+    executor = ToolExecutor(hooks=[], invoker=_make_invoker(registry))
 
-    result, trace = executor.execute("echo", {"text": "hello"})
+    result = asyncio.run(
+        executor.execute(
+            ToolExecutionRequest(tool_name="echo", arguments={"text": "hello"})
+        )
+    )
 
-    assert result.output == {"echo": "hello"}
-    assert trace.status == "success"
+    assert result.status == "success"
+    assert result.output.tool_name == "echo"
+    assert result.output.output == {"echo": "hello"}
+    assert result.final_arguments == {"text": "hello"}
 
 
 def test_executor_denies_via_pre_hook():
     registry = ToolRegistry()
     registry.register(EchoTool())
-    executor = ToolExecutor(registry=registry, hooks=[DenySecretHook()])
+    executor = ToolExecutor(hooks=[DenySecretHook()], invoker=_make_invoker(registry))
 
-    result, trace = executor.execute("echo", {"text": "secret"})
+    result = asyncio.run(
+        executor.execute(
+            ToolExecutionRequest(tool_name="echo", arguments={"text": "secret"})
+        )
+    )
 
-    assert result.is_error is True
-    assert "secret not allowed" in result.output["error"]
-    assert trace.status == "denied"
+    assert result.status == "denied"
+    assert "secret not allowed" in result.output
+    assert any(t.decision == "deny" for t in result.pre_hook_trace)
 
 
 def test_executor_wraps_tool_exceptions():
@@ -70,10 +96,11 @@ def test_executor_wraps_tool_exceptions():
 
     registry = ToolRegistry()
     registry.register(BrokenTool())
-    executor = ToolExecutor(registry=registry)
+    executor = ToolExecutor(hooks=[], invoker=_make_invoker(registry))
 
-    result, trace = executor.execute("broken", {})
+    result = asyncio.run(
+        executor.execute(ToolExecutionRequest(tool_name="broken", arguments={}))
+    )
 
-    assert result.is_error is True
-    assert result.output["error"] == "boom"
-    assert trace.status == "error"
+    assert result.status == "error"
+    assert "boom" in result.output

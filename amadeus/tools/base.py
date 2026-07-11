@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
+
+HookEvent = Literal["pre_tool_use", "post_tool_use", "post_tool_error"]
+ToolSource = Literal["passive", "proactive", "subagent"]
+HookDecision = Literal["pass", "deny"]
+ToolExecStatus = Literal["success", "denied", "error", "pass"]
 
 
 @dataclass(frozen=True)
@@ -10,6 +15,11 @@ class ToolExecutionRequest:
     tool_name: str
     arguments: dict[str, Any] = field(default_factory=dict)
     call_id: str = ""
+    source: ToolSource = "passive"
+    # 注意：不携带 session_key: str（Structured Session Identity 规范要求 tool 上下文
+    # 用 SessionRef / user_id+session_id，绝不出现字符串 session key）。如未来需要
+    # session 维度，加 session: SessionRef | None = None 并在装配层注入。
+    # tool_batch 保留 dict 类型（与 tool_runtime.tool_call_batch_snapshot 现状一致）
     tool_batch: dict[str, Any] = field(default_factory=dict)
     tool_batch_index: int = 0
 
@@ -23,11 +33,44 @@ class ToolResult:
 
 
 @dataclass(frozen=True)
-class ToolTrace:
-    tool_name: str
-    arguments: dict[str, Any]
-    status: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+class HookOutcome:
+    """Pre hook 的返回值：decision / updated_input / reason 三字段正交。
+
+    - decision: "pass" 放行 / "deny" 拒绝
+    - updated_input: 不为 None 时整体替换参数（与 decision 正交，可同时表达"改参 + deny"）
+    - reason: deny 时给模型看的理由；pass 时可空
+    """
+
+    decision: HookDecision = "pass"
+    updated_input: dict[str, Any] | None = None
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class HookContext:
+    event: HookEvent
+    request: ToolExecutionRequest
+    current_arguments: dict[str, Any]
+    result: Any = ""
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class HookTraceItem:
+    hook_name: str
+    event: HookEvent
+    matched: bool
+    decision: HookDecision = "pass"
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class ToolExecutionResult:
+    status: ToolExecStatus
+    output: Any
+    final_arguments: dict[str, Any]
+    pre_hook_trace: list[HookTraceItem] = field(default_factory=list)
+    post_hook_trace: list[HookTraceItem] = field(default_factory=list)
 
 
 class Tool(Protocol):
@@ -40,12 +83,13 @@ class Tool(Protocol):
 
 
 class ToolHook(Protocol):
-    def before_execute(self, request: ToolExecutionRequest) -> ToolExecutionRequest:
+    """新 hook 协议：matches + run，按 event 分发，返回 HookOutcome。"""
+
+    name: str
+    event: HookEvent
+
+    def matches(self, ctx: HookContext) -> bool:
         ...
 
-    def after_execute(
-        self,
-        request: ToolExecutionRequest,
-        result: ToolResult,
-    ) -> ToolResult:
+    def run(self, ctx: HookContext) -> Awaitable[HookOutcome] | HookOutcome:
         ...

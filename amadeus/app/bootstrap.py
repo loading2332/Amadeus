@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+# ruff: noqa: I001
+# bootstrap 是装配文件，import 顺序有语义：memory/session 必须在 mcp 前
+# 初始化，否则 amadeus.mcp.__init__ → tools.base → tools.defaults →
+# session.store 会与 memory 包形成预存在循环 import。
+
 import asyncio
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from amadeus.app.workspace import initialize_workspace
 from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
@@ -38,13 +43,23 @@ from amadeus.tools.defaults import (
     SearchMessagesTool,
     WriteFileTool,
 )
+from amadeus.tools.discovery import ToolSearchTool
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.forget_memory import ForgetMemoryTool
+from amadeus.tools.hooks import ReadOnlyFilesystemHook
 from amadeus.tools.memorize import MemorizeTool as RuntimeMemorizeTool
 from amadeus.tools.recall_memory import RecallMemoryTool
 from amadeus.tools.registry import ToolRegistry
 from amadeus.tools.undo_memory_by_source import (
     UndoMemoryBySourceTool as RuntimeUndoMemoryBySourceTool,
+)
+# mcp imports 放在 memory/session/tools 之后，避免触发 amadeus.mcp.__init__
+# 时机过早导致 session/memory 循环 import（见文件顶部注释）
+from amadeus.mcp import (
+    McpAddTool,
+    McpListTool,
+    McpRemoveTool,
+    McpServerRegistry,
 )
 
 
@@ -67,6 +82,7 @@ class RuntimeConfig:
     memory_hypothesis_retrieval_enabled: bool = True
     memory_hypothesis_timeout_seconds: float = 2.0
     light_model: str | None = None
+    mcp_mode: Literal["disabled", "local_trusted"] = "disabled"
 
 class AppState(str, Enum):  # noqa: UP042
     """Explicit lifecycle states for a composed passive application."""
@@ -87,6 +103,7 @@ class PassiveApp:
     tool_registry: ToolRegistry
     tool_executor: ToolExecutor
     plugin_manager: PluginManager
+    mcp_server_registry: McpServerRegistry | None = None
     postgres_db: PostgresDatabase | None = None
     _state: AppState = field(default=AppState.NEW, init=False)
     _lifecycle_lock: asyncio.Lock = field(
@@ -176,7 +193,15 @@ class PassiveApp:
             try:
                 await self.plugin_manager.terminate_all()
             except BaseException as error:
-                first_error = error
+                if first_error is None:
+                    first_error = error
+            try:
+                # 断开所有本地 MCP server 子进程，须在 postgres 关闭前
+                if self.mcp_server_registry is not None:
+                    await self.mcp_server_registry.shutdown()
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
             try:
                 self.runtime.set_before_turn_plugin_modules([])
             except BaseException as error:
@@ -283,6 +308,11 @@ def load_runtime_config(
         default=2.0,
     )
     light_model = _config_value("OPENAI_LIGHT_MODEL", file_values)
+    mcp_mode: Literal["disabled", "local_trusted"] = (
+        "local_trusted"
+        if _config_value("AMADEUS_MCP_MODE", file_values) == "local_trusted"
+        else "disabled"
+    )
     if long_term_memory_enabled and not embedding_model:
         raise ValueError("Missing Amadeus runtime config: OPENAI_EMBEDDING_MODEL")
     return RuntimeConfig(
@@ -305,6 +335,7 @@ def load_runtime_config(
         memory_hypothesis_retrieval_enabled=memory_hypothesis_retrieval_enabled,
         memory_hypothesis_timeout_seconds=memory_hypothesis_timeout_seconds,
         light_model=light_model,
+        mcp_mode=mcp_mode,
     )
 
 
@@ -330,13 +361,25 @@ def build_passive_app(
     )
     event_bus = EventBus()
     tool_registry = ToolRegistry()
-    tool_registry.register(FetchMessagesTool(store=session_manager.store))
-    tool_registry.register(SearchMessagesTool(store=session_manager.store))
-    tool_registry.register(ReadFileTool())
-    tool_registry.register(WriteFileTool())
-    tool_registry.register(EditFileTool())
-    tool_registry.register(ListDirTool())
-    tool_executor = ToolExecutor(registry=tool_registry)
+    tool_registry.register(
+        FetchMessagesTool(store=session_manager.store),
+        risk="read-only",
+        always_on=True,
+    )
+    tool_registry.register(
+        SearchMessagesTool(store=session_manager.store),
+        risk="read-only",
+        always_on=True,
+    )
+    tool_registry.register(ReadFileTool(), risk="read-only", always_on=True)
+    tool_registry.register(WriteFileTool(), risk="write", always_on=True)
+    tool_registry.register(EditFileTool(), risk="write", always_on=True)
+    tool_registry.register(ListDirTool(), risk="read-only", always_on=True)
+
+    tool_executor = ToolExecutor(
+        hooks=[ReadOnlyFilesystemHook(workspace_root=config.workspace_root)],
+        invoker=tool_registry.execute,
+    )
     long_term_memory = None
     if config.long_term_memory_enabled and config.embedding_model:
         embedding_provider = OpenAIEmbeddingProvider(
@@ -395,12 +438,54 @@ def build_passive_app(
         user_id=config.default_memory_user_id,
         db=postgres_db,
     )
-    tool_registry.register(RecallMemoryTool(memory_engine=long_term_memory))
-    tool_registry.register(RuntimeMemorizeTool(memory_engine=long_term_memory))
-    tool_registry.register(ForgetMemoryTool(memory_engine=long_term_memory))
     tool_registry.register(
-        RuntimeUndoMemoryBySourceTool(memory_engine=long_term_memory)
+        RecallMemoryTool(memory_engine=long_term_memory),
+        risk="read-only",
+        always_on=True,
     )
+    tool_registry.register(
+        RuntimeMemorizeTool(memory_engine=long_term_memory),
+        risk="write",
+        always_on=True,
+    )
+    tool_registry.register(
+        ForgetMemoryTool(memory_engine=long_term_memory),
+        risk="write",
+        always_on=True,
+    )
+    tool_registry.register(
+        RuntimeUndoMemoryBySourceTool(memory_engine=long_term_memory),
+        risk="write",
+        always_on=True,
+    )
+    tool_registry.register(
+        ToolSearchTool(registry=tool_registry),
+        risk="read-only",
+        always_on=True,
+        search_hint="发现 搜索 加载 工具 tool",
+    )
+
+    mcp_server_registry: McpServerRegistry | None = None
+    if config.mcp_mode == "local_trusted":
+        mcp_server_registry = McpServerRegistry(tool_registry=tool_registry)
+        tool_registry.register(
+            McpAddTool(mcp_registry=mcp_server_registry),
+            risk="write",
+            always_on=True,
+            search_hint="添加 连接 MCP server",
+        )
+        tool_registry.register(
+            McpRemoveTool(mcp_registry=mcp_server_registry),
+            risk="write",
+            always_on=True,
+            search_hint="移除 断开 MCP server",
+        )
+        tool_registry.register(
+            McpListTool(mcp_registry=mcp_server_registry),
+            risk="read-only",
+            always_on=True,
+            search_hint="列出 MCP server",
+        )
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
         provider=provider,
@@ -431,6 +516,7 @@ def build_passive_app(
         tool_registry=tool_registry,
         tool_executor=tool_executor,
         plugin_manager=plugin_manager,
+        mcp_server_registry=mcp_server_registry,
         postgres_db=postgres_db,
     )
 
