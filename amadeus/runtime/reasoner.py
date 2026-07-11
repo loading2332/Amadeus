@@ -21,8 +21,8 @@ from amadeus.runtime.tool_runtime import (
     tool_call_batch_snapshot,
 )
 from amadeus.session.identity import SessionRef
-from amadeus.tools.base import ToolExecutionRequest, ToolResult
-from amadeus.tools.discovery import ToolDiscoveryState, TurnVisibleSet
+from amadeus.tools.base import ToolExecutionRequest, ToolExecutionResult, ToolResult
+from amadeus.tools.discovery import SessionToolDiscoveryStore, TurnVisibleSet
 from amadeus.tools.executor import ToolExecutor
 from amadeus.tools.registry import ToolRegistry
 from amadeus.types import ReasonerResult
@@ -54,9 +54,13 @@ class Reasoner:
     max_tool_iterations: int = 10
     event_bus: EventBus = field(default_factory=EventBus)
 
-    # 按需解锁：注入 tool_registry 后启用 deferred loading + tool_search 解锁链路。
-    # 为 None 时回退到入参 tool_schemas 固定的旧行为（兼容期）。
+    # 注入 registry 时启用按需解锁；不注入即运行无工具对话。
     tool_registry: ToolRegistry | None = None
+    _discovery_store: SessionToolDiscoveryStore = field(
+        default_factory=SessionToolDiscoveryStore,
+        init=False,
+        repr=False,
+    )
 
     # Step lifecycle phases — injected by PassiveRuntime / PassiveApp.
     # Executed by Reasoner during the tool loop.
@@ -88,16 +92,11 @@ class Reasoner:
     async def reason(
         self,
         messages: Sequence[dict[str, Any]],
-        tool_schemas: Sequence[dict[str, Any]] | None = None,
         session: SessionRef | None = None,
     ) -> ReasonerResult:
         """Run a reasoning turn: provider call → optional tool loop → result."""
-        # 按需解锁：tool_registry 注入时，第一轮用 always_on 集导出 schema
-        # （visible_set 在 _run_tool_loop 里构造，首轮还没解锁任何 deferred 工具）。
-        if self.tool_registry is not None and tool_schemas is None:
-            tool_schemas = self.tool_registry.get_schemas(
-                names=self.tool_registry.get_always_on_names()
-            )
+        visible_set = self._create_visible_set(session)
+        tool_schemas = self._schemas_for_visible_set(visible_set)
         response = await self.provider.chat(
             list(messages),
             tools=list(tool_schemas) if tool_schemas is not None else None,
@@ -121,8 +120,8 @@ class Reasoner:
         return await self._run_tool_loop(
             messages=list(messages),
             response=response,
-            tool_schemas=list(tool_schemas) if tool_schemas is not None else None,
             session=session,
+            visible_set=visible_set,
         )
 
     async def _run_tool_loop(
@@ -130,8 +129,8 @@ class Reasoner:
         *,
         messages: list[dict[str, Any]],
         response: LLMResponse,
-        tool_schemas: list[dict[str, Any]] | None,
         session: SessionRef | None = None,
+        visible_set: TurnVisibleSet | None = None,
     ) -> ReasonerResult:
         if self.tool_executor is None:
             raise ValueError("LLM requested tools but no tool executor is configured")
@@ -145,23 +144,8 @@ class Reasoner:
         step_telemetry: list[dict[str, Any]] = []
         repeat_history: list[tuple[str, str]] = []
 
-        # ── 按需解锁：构造本轮可见集（TD3a/TD3b/TD4）──────────────
-        # tool_registry 为空时回退到入参 tool_schemas 固定旧行为。
-        discovery_state: ToolDiscoveryState | None = None
-        visible_set: TurnVisibleSet | None = None
-        if self.tool_registry is not None:
-            discovery_state = ToolDiscoveryState()
-            visible_set = TurnVisibleSet(
-                always_on=self.tool_registry.get_always_on_names(),
-                discovery_state=discovery_state,
-            )
-
         def _current_schemas() -> list[dict[str, Any]] | None:
-            if self.tool_registry is not None and visible_set is not None:
-                return self.tool_registry.get_schemas(
-                    names=visible_set.visible_names()
-                )
-            return tool_schemas
+            return self._schemas_for_visible_set(visible_set)
 
         while current_response.tool_calls:
             if iterations >= self.max_tool_iterations:
@@ -176,7 +160,7 @@ class Reasoner:
                         session=session,
                         iteration=iterations,
                         messages=loop_messages,
-                        tool_schemas=tool_schemas,
+                        tool_schemas=_current_schemas(),
                     )
                 )
                 if before_step.extra_hints:
@@ -307,13 +291,17 @@ class Reasoner:
                         )
                     )
 
-                result, trace = await self.tool_executor.execute_async(
-                    tool_call.name,
-                    tool_call.arguments,
-                    call_id=tool_call.id,
-                    tool_batch=tool_batch,
-                    tool_batch_index=batch_index,
+                execution = await self.tool_executor.execute(
+                    ToolExecutionRequest(
+                        tool_name=tool_call.name,
+                        arguments=dict(tool_call.arguments),
+                        call_id=tool_call.id,
+                        source="passive",
+                        tool_batch=tool_batch,
+                        tool_batch_index=batch_index,
+                    )
                 )
+                result = _as_tool_result(tool_call.name, execution)
 
                 result_preview = self._preview_tool_result(result)
                 if session is not None:
@@ -324,8 +312,8 @@ class Reasoner:
                             call_id=tool_call.id,
                             tool_name=tool_call.name,
                             arguments=tool_call.arguments,
-                            final_arguments=tool_call.arguments,
-                            status=trace.status,
+                            final_arguments=execution.final_arguments,
+                            status=execution.status,
                             result_preview=result_preview,
                         )
                     )
@@ -339,12 +327,12 @@ class Reasoner:
                 if (
                     visible_set is not None
                     and tool_call.name == _TOOL_SEARCH_NAME
-                    and trace.status == "success"
+                    and execution.status == "success"
                 ):
                     unlock_text = self._extract_unlock_text(result)
                     if unlock_text:
                         visible_set.consume_unlock_targets(unlock_text)
-                if trace.status == "success":
+                if execution.status == "success":
                     tools_used.append(tool_call.name)
                 invocations.append(tool_call)
                 # tool_chain 记 final_arguments（post-hook 改参后的真实入参）+ hook trace，
@@ -354,8 +342,8 @@ class Reasoner:
                     {
                         "call_id": tool_call.id,
                         "name": tool_call.name,
-                        "arguments": trace.arguments,
-                        "status": trace.status,
+                        "arguments": execution.final_arguments,
+                        "status": execution.status,
                         "result": result_preview,
                         "pre_hook_trace": call_meta.get("pre_hook_trace", []),
                         "post_hook_trace": call_meta.get("post_hook_trace", []),
@@ -363,7 +351,10 @@ class Reasoner:
                 )
 
                 # ── Repeat guard ───────────────────────────────────────
-                norm = json.dumps({"name": tool_call.name, "args": tool_call.arguments}, sort_keys=True)
+                norm = json.dumps(
+                    {"name": tool_call.name, "args": tool_call.arguments},
+                    sort_keys=True,
+                )
                 repeat_history.append((tool_call.name, norm))
                 if _detect_repeated_signature(repeat_history):
                     guard_tool_chain = [*tool_chain, current_step]
@@ -464,6 +455,25 @@ class Reasoner:
 
     # ── internal helpers ────────────────────────────────────────────────────
 
+    def _create_visible_set(self, session: SessionRef | None) -> TurnVisibleSet | None:
+        if self.tool_registry is None:
+            return None
+        if session is None:
+            raise ValueError("tool-enabled reasoner requires a structured session")
+        visible_set = TurnVisibleSet(
+            always_on=self.tool_registry.get_always_on_names(),
+            discovery_state=self._discovery_store.for_session(session),
+        )
+        visible_set.warm_up_from_discovery()
+        return visible_set
+
+    def _schemas_for_visible_set(
+        self, visible_set: TurnVisibleSet | None
+    ) -> list[dict[str, Any]] | None:
+        if self.tool_registry is None or visible_set is None:
+            return None
+        return self.tool_registry.get_schemas(names=visible_set.visible_names())
+
     @staticmethod
     def _preview_tool_result(result: Any) -> str:
         output = getattr(result, "output", result)
@@ -529,3 +539,27 @@ def _detect_repeated_signature(
         return False
     *_, w3, w2, w1, w0 = history[-_REPEAT_GUARD_WINDOW:]
     return w0 == w2 and w1 == w3
+
+
+def _as_tool_result(tool_name: str, execution: ToolExecutionResult) -> ToolResult:
+    """将执行边界的结构化结果渲染为 provider 所需的 tool message。"""
+    if isinstance(execution.output, ToolResult):
+        return ToolResult(
+            tool_name=execution.output.tool_name or tool_name,
+            output=execution.output.output,
+            is_error=execution.output.is_error or execution.status != "success",
+            metadata={
+                **execution.output.metadata,
+                "pre_hook_trace": [dict(t.__dict__) for t in execution.pre_hook_trace],
+                "post_hook_trace": [dict(t.__dict__) for t in execution.post_hook_trace],
+            },
+        )
+    return ToolResult(
+        tool_name=tool_name,
+        output=execution.output,
+        is_error=execution.status != "success",
+        metadata={
+            "pre_hook_trace": [dict(t.__dict__) for t in execution.pre_hook_trace],
+            "post_hook_trace": [dict(t.__dict__) for t in execution.post_hook_trace],
+        },
+    )

@@ -27,6 +27,7 @@ class _HandlerRegistration:
 @dataclass(frozen=True)
 class ToolCallStarted:
     """Emitted before a tool call is executed within the reasoner loop."""
+
     session: SessionRef
     iteration: int
     call_id: str
@@ -37,6 +38,7 @@ class ToolCallStarted:
 @dataclass(frozen=True)
 class ToolCallCompleted:
     """Emitted after a tool call has been executed within the reasoner loop."""
+
     session: SessionRef
     iteration: int
     call_id: str

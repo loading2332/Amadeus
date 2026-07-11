@@ -73,16 +73,6 @@ class ToolExecutionResult:
     post_hook_trace: list[HookTraceItem] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class ToolTrace:
-    """旧调用点的兼容 trace 结构（与新 ToolExecutionResult 并存）。"""
-
-    tool_name: str
-    arguments: dict[str, Any]
-    status: str
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
 class Tool(Protocol):
     name: str
     description: str

@@ -2,59 +2,68 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from amadeus.tools.base import (
     HookContext,
+    HookEvent,
     HookTraceItem,
     ToolExecutionRequest,
     ToolExecutionResult,
     ToolHook,
-    ToolResult,
-    ToolTrace,
 )
 
 ToolInvoker = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 
-class ToolExecutionDenied(RuntimeError):
-    """旧异常符号保留（旧测试/插件可能 import）；新 executor 不再依赖它。"""
+class HookExecutionError(RuntimeError):
+    """把 hook 边界内的任意异常归一为可观察的执行错误。"""
+
+    def __init__(
+        self,
+        hook_name: str,
+        event: HookEvent,
+        stage: str,
+        cause: Exception,
+    ) -> None:
+        self.hook_name = hook_name
+        self.event = event
+        self.stage = stage
+        self.cause = cause
+        super().__init__(f"hook {hook_name} ({event}.{stage}) failed: {cause}")
 
 
 @dataclass
 class ToolExecutor:
     """工具执行器：三段式（pre hooks → invoker → post hooks）+ preflight。
 
-    与 Registry 解耦：构造为 ToolExecutor(hooks, invoker)，不持有 Registry 引用。
-    旧调用点传 registry= 兼容：构造期包成 invoker，不存 registry 字段。
+    与 Registry 解耦：构造为 ToolExecutor(hooks, invoker)，只依赖 invoker port。
     """
 
-    hooks: list[ToolHook] = field(default_factory=list)
-    invoker: ToolInvoker | None = None
-    # 兼容旧 ToolExecutor(registry=...) 构造；不作为字段长期持有
-    registry: Any = None
-
-    def __post_init__(self) -> None:
-        if self.invoker is None and self.registry is not None:
-            registry = self.registry
-
-            async def _compat_invoker(name: str, arguments: dict[str, Any]) -> Any:
-                return await registry.execute(name, arguments)
-
-            self.invoker = _compat_invoker
+    hooks: list[ToolHook]
+    invoker: ToolInvoker
 
     async def execute(self, request: ToolExecutionRequest) -> ToolExecutionResult:
         current_arguments = dict(request.arguments)
         pre_trace: list[HookTraceItem] = []
         post_trace: list[HookTraceItem] = []
 
-        # 4a pre hooks
-        denied, current_arguments = await self._run_pre_hooks(
-            request=request,
-            current_arguments=current_arguments,
-            traces=pre_trace,
-        )
+        # 4a pre hooks。pre hook 是执行边界的一部分，异常不能击穿 Reasoner。
+        try:
+            denied, current_arguments = await self._run_pre_hooks(
+                request=request,
+                current_arguments=current_arguments,
+                traces=pre_trace,
+            )
+        except HookExecutionError as exc:
+            return ToolExecutionResult(
+                status="error",
+                output=f"工具执行出错: {exc}",
+                final_arguments=dict(current_arguments),
+                pre_hook_trace=pre_trace,
+                post_hook_trace=post_trace,
+            )
         if denied is not None:
             reason = denied
             return ToolExecutionResult(
@@ -66,25 +75,17 @@ class ToolExecutor:
             )
 
         # 4b invoker
-        if self.invoker is None:
-            return ToolExecutionResult(
-                status="error",
-                output="ToolExecutor 未配置 invoker",
-                final_arguments=current_arguments,
-                pre_hook_trace=pre_trace,
-                post_hook_trace=post_trace,
-            )
         try:
             output = await self.invoker(request.tool_name, current_arguments)
         except Exception as exc:
-            # 4c-err post_tool_error（不 fail_open）
+            # 4c-err post_tool_error 也 fail-open，避免 hook 错误覆盖原始工具错误
             await self._run_post_hooks(
                 event="post_tool_error",
                 request=request,
                 current_arguments=current_arguments,
                 traces=post_trace,
                 error=str(exc),
-                fail_open=False,
+                fail_open=True,
             )
             return ToolExecutionResult(
                 status="error",
@@ -115,11 +116,19 @@ class ToolExecutor:
         """只跑 pre hooks、不调 invoker。语义收紧：不执行真实工具。"""
         current_arguments = dict(request.arguments)
         pre_trace: list[HookTraceItem] = []
-        denied, current_arguments = await self._run_pre_hooks(
-            request=request,
-            current_arguments=current_arguments,
-            traces=pre_trace,
-        )
+        try:
+            denied, current_arguments = await self._run_pre_hooks(
+                request=request,
+                current_arguments=current_arguments,
+                traces=pre_trace,
+            )
+        except HookExecutionError as exc:
+            return ToolExecutionResult(
+                status="error",
+                output=f"工具执行出错: {exc}",
+                final_arguments=dict(current_arguments),
+                pre_hook_trace=pre_trace,
+            )
         if denied is not None:
             return ToolExecutionResult(
                 status="denied",
@@ -150,25 +159,52 @@ class ToolExecutor:
                 request=request,
                 current_arguments=dict(current_arguments),
             )
-            if not hook.matches(ctx):
+            try:
+                matched = hook.matches(ctx)
+            except Exception as exc:
+                traces.append(
+                    HookTraceItem(
+                        hook_name=hook.name,
+                        event=hook.event,
+                        matched=False,
+                        reason=f"pre hook error (matches): {exc}",
+                    )
+                )
+                raise HookExecutionError(
+                    hook.name, hook.event, "matches", exc
+                ) from exc
+            if not matched:
                 traces.append(
                     HookTraceItem(hook_name=hook.name, event=hook.event, matched=False)
                 )
                 continue
-            outcome = hook.run(ctx)
-            if inspect.isawaitable(outcome):
-                outcome = await outcome
-            if outcome.updated_input is not None:
-                current_arguments = dict(outcome.updated_input)
-            traces.append(
-                HookTraceItem(
+            try:
+                outcome = hook.run(ctx)
+                if inspect.isawaitable(outcome):
+                    outcome = await outcome
+                if outcome.updated_input is not None:
+                    # 原地更新，确保后续 hook 失败时 execute/preflight 仍能看到
+                    # 已经生效的最终参数，而不是回退到最初请求。
+                    current_arguments.clear()
+                    current_arguments.update(outcome.updated_input)
+                trace = HookTraceItem(
                     hook_name=hook.name,
                     event=hook.event,
                     matched=True,
                     decision=outcome.decision,
                     reason=outcome.reason,
                 )
-            )
+            except Exception as exc:
+                traces.append(
+                    HookTraceItem(
+                        hook_name=hook.name,
+                        event=hook.event,
+                        matched=True,
+                        reason=f"pre hook error (run): {exc}",
+                    )
+                )
+                raise HookExecutionError(hook.name, hook.event, "run", exc) from exc
+            traces.append(trace)
             if outcome.decision == "deny":
                 return outcome.reason.strip() or "工具调用被拦截", current_arguments
         return None, current_arguments
@@ -176,7 +212,7 @@ class ToolExecutor:
     async def _run_post_hooks(
         self,
         *,
-        event: str,
+        event: HookEvent,
         request: ToolExecutionRequest,
         current_arguments: dict[str, Any],
         traces: list[HookTraceItem],
@@ -194,7 +230,23 @@ class ToolExecutor:
                 result=result,
                 error=error,
             )
-            if not hook.matches(ctx):
+            try:
+                matched = hook.matches(ctx)
+            except Exception as exc:
+                if fail_open:
+                    traces.append(
+                        HookTraceItem(
+                            hook_name=hook.name,
+                            event=hook.event,
+                            matched=False,
+                            reason=f"post hook error (matches): {exc}",
+                        )
+                    )
+                    continue
+                raise HookExecutionError(
+                    hook.name, hook.event, "matches", exc
+                ) from exc
+            if not matched:
                 traces.append(
                     HookTraceItem(hook_name=hook.name, event=hook.event, matched=False)
                 )
@@ -203,14 +255,12 @@ class ToolExecutor:
                 outcome = hook.run(ctx)
                 if inspect.isawaitable(outcome):
                     outcome = await outcome
-                traces.append(
-                    HookTraceItem(
-                        hook_name=hook.name,
-                        event=hook.event,
-                        matched=True,
-                        decision=outcome.decision,
-                        reason=outcome.reason,
-                    )
+                trace = HookTraceItem(
+                    hook_name=hook.name,
+                    event=hook.event,
+                    matched=True,
+                    decision=outcome.decision,
+                    reason=outcome.reason,
                 )
             except Exception as exc:
                 if fail_open:
@@ -219,68 +269,9 @@ class ToolExecutor:
                             hook_name=hook.name,
                             event=hook.event,
                             matched=True,
-                            reason=f"post hook error: {exc}",
+                            reason=f"post hook error (run): {exc}",
                         )
                     )
                     continue
-                raise
-
-    # ── 旧调用点兼容薄壳 ──────────────────────────────────────────
-    # 保留 execute / execute_async 旧签名，内部包成 ToolExecutionRequest 转发到新接口。
-    # 旧调用方（reasoner.execute_async(...)）迁移期可继续用；新调用方应直接用 execute(request)。
-
-    async def execute_async(
-        self,
-        tool_name: str,
-        arguments: dict[str, Any],
-        *,
-        call_id: str = "",
-        tool_batch: dict[str, Any] | None = None,
-        tool_batch_index: int = 0,
-    ) -> tuple[ToolResult, ToolTrace]:
-        """旧签名薄壳：返回 (ToolResult, ToolTrace) 兼容现有 reasoner 调用点。"""
-        request = ToolExecutionRequest(
-            tool_name=tool_name,
-            arguments=dict(arguments),
-            call_id=call_id,
-            tool_batch=dict(tool_batch) if tool_batch else {},
-            tool_batch_index=tool_batch_index,
-        )
-        result = await self.execute(request)
-        # invoker（registry.execute）返回的就是 ToolResult；若已是 ToolResult 直接用，
-        # 否则包一层。避免嵌套 ToolResult(ToolResult(...))。
-        if isinstance(result.output, ToolResult):
-            tool_result = ToolResult(
-                tool_name=result.output.tool_name or tool_name,
-                output=result.output.output,
-                is_error=result.output.is_error or result.status != "success",
-                metadata={
-                    **result.output.metadata,
-                    "pre_hook_trace": [
-                        dict(t.__dict__) for t in result.pre_hook_trace
-                    ],
-                    "post_hook_trace": [
-                        dict(t.__dict__) for t in result.post_hook_trace
-                    ],
-                },
-            )
-        else:
-            tool_result = ToolResult(
-                tool_name=tool_name,
-                output=result.output,
-                is_error=result.status != "success",
-                metadata={
-                    "pre_hook_trace": [
-                        dict(t.__dict__) for t in result.pre_hook_trace
-                    ],
-                    "post_hook_trace": [
-                        dict(t.__dict__) for t in result.post_hook_trace
-                    ],
-                },
-            )
-        trace = ToolTrace(
-            tool_name=tool_name,
-            arguments=result.final_arguments,
-            status=result.status,
-        )
-        return tool_result, trace
+                raise HookExecutionError(hook.name, hook.event, "run", exc) from exc
+            traces.append(trace)

@@ -128,7 +128,7 @@ from amadeus.session.store import (
     fetch_messages,
     search_messages,
 )
-from amadeus.tools import Tool, ToolExecutionRequest, ToolHook, ToolResult, ToolTrace
+from amadeus.tools import Tool, ToolExecutionRequest, ToolHook, ToolResult
 
 __all__ = [
     "ActiveSkillsPromptBlock",
@@ -220,7 +220,6 @@ __all__ = [
     "ToolExecutionRequest",
     "ToolHook",
     "ToolResult",
-    "ToolTrace",
     "TurnCommitted",
     "TurnLifecycle",
     "build_markdown_memory_runtime",

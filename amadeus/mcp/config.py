@@ -1,23 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
-
-TransportType = Literal["stdio", "http"]
+from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(frozen=True)
 class McpServerConfig:
-    """单个 MCP server 的连接配置（与 mcp_servers 表行对应）。
-
-    放在独立模块以便 db.mcp_servers 不触发 amadeus.mcp 包全加载（避免
-    与 amadeus.session/memory 的预存在循环 import）。
-    """
+    """当前进程内的本地 stdio MCP server 配置。"""
 
     name: str
-    transport_type: TransportType
-    command: list[str] | None = None  # stdio
-    url: str | None = None  # http
-    env: dict[str, str] | None = None
-    cwd: str | None = None
-    headers: dict[str, str] | None = None  # http
+    command: list[str] = field(repr=False)
+    env: dict[str, str] | None = field(default=None, repr=False)
+    cwd: str | None = field(default=None, repr=False)
+
+
+__all__ = ["McpServerConfig"]

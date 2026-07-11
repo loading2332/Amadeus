@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+from amadeus.session.identity import SessionRef
+
 
 class TurnVisibleSet:
     """本轮可见工具集：always_on ∪ 本轮已解锁。
@@ -31,6 +33,9 @@ class TurnVisibleSet:
     def visible_names(self) -> set[str]:
         return self._always_on | self._unlocked
 
+    def warm_up_from_discovery(self) -> None:
+        self._discovery.warm_up(self)
+
     def consume_unlock_targets(self, tool_search_result_text: str) -> list[str]:
         """解析 tool_search 返回的 JSON 里的工具名（select: 即解锁单个，
         普通 search 返回候选可按 always_on=False 阈值考虑解锁候选，本实现保守只把
@@ -42,11 +47,7 @@ class TurnVisibleSet:
         except (json.JSONDecodeError, TypeError):
             return []
         if not isinstance(payload, list):
-            # 兼容 output 形态——如果直接传的是 list
-            if isinstance(tool_search_result_text, list):
-                payload = tool_search_result_text
-            else:
-                return []
+            return []
         unlocked: list[str] = []
         for entry in payload:
             if isinstance(entry, dict) and "name" in entry:
@@ -87,3 +88,29 @@ class ToolDiscoveryState:
 
     def __len__(self) -> int:
         return len(self._cache)
+
+
+class SessionToolDiscoveryStore:
+    """按结构化 session 隔离的 ToolDiscoveryState 有界缓存。"""
+
+    def __init__(
+        self,
+        *,
+        session_capacity: int = 256,
+        tool_capacity: int = 64,
+    ) -> None:
+        self._session_capacity = session_capacity
+        self._tool_capacity = tool_capacity
+        self._states: OrderedDict[SessionRef, ToolDiscoveryState] = OrderedDict()
+
+    def for_session(self, session: SessionRef) -> ToolDiscoveryState:
+        state = self._states.pop(session, None)
+        if state is None:
+            state = ToolDiscoveryState(capacity=self._tool_capacity)
+        self._states[session] = state
+        if len(self._states) > self._session_capacity:
+            self._states.popitem(last=False)
+        return state
+
+    def __len__(self) -> int:
+        return len(self._states)

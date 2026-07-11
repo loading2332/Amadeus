@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from amadeus.app.workspace import initialize_workspace
 from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
@@ -55,7 +55,6 @@ from amadeus.tools.undo_memory_by_source import (
 )
 # mcp imports 放在 memory/session/tools 之后，避免触发 amadeus.mcp.__init__
 # 时机过早导致 session/memory 循环 import（见文件顶部注释）
-from amadeus.db.mcp_servers import McpServersStore
 from amadeus.mcp import (
     McpAddTool,
     McpListTool,
@@ -83,6 +82,7 @@ class RuntimeConfig:
     memory_hypothesis_retrieval_enabled: bool = True
     memory_hypothesis_timeout_seconds: float = 2.0
     light_model: str | None = None
+    mcp_mode: Literal["disabled", "local_trusted"] = "disabled"
 
 class AppState(str, Enum):  # noqa: UP042
     """Explicit lifecycle states for a composed passive application."""
@@ -145,9 +145,6 @@ class PassiveApp:
                 self.runtime.set_after_turn_plugin_modules(
                     self.plugin_manager.after_turn_modules
                 )
-                # 后台重连已持久化的 MCP server，失败不阻断启动
-                if self.mcp_server_registry is not None:
-                    self.mcp_server_registry.start_connect_all_background()
             except BaseException:
                 try:
                     self.runtime.set_before_turn_plugin_modules([])
@@ -199,7 +196,7 @@ class PassiveApp:
                 if first_error is None:
                     first_error = error
             try:
-                # 断开所有 MCP server 子进程/HTTP 连接，须在 postgres 关闭前
+                # 断开所有本地 MCP server 子进程，须在 postgres 关闭前
                 if self.mcp_server_registry is not None:
                     await self.mcp_server_registry.shutdown()
             except BaseException as error:
@@ -311,6 +308,11 @@ def load_runtime_config(
         default=2.0,
     )
     light_model = _config_value("OPENAI_LIGHT_MODEL", file_values)
+    mcp_mode: Literal["disabled", "local_trusted"] = (
+        "local_trusted"
+        if _config_value("AMADEUS_MCP_MODE", file_values) == "local_trusted"
+        else "disabled"
+    )
     if long_term_memory_enabled and not embedding_model:
         raise ValueError("Missing Amadeus runtime config: OPENAI_EMBEDDING_MODEL")
     return RuntimeConfig(
@@ -333,6 +335,7 @@ def load_runtime_config(
         memory_hypothesis_retrieval_enabled=memory_hypothesis_retrieval_enabled,
         memory_hypothesis_timeout_seconds=memory_hypothesis_timeout_seconds,
         light_model=light_model,
+        mcp_mode=mcp_mode,
     )
 
 
@@ -373,15 +376,9 @@ def build_passive_app(
     tool_registry.register(EditFileTool(), risk="write", always_on=True)
     tool_registry.register(ListDirTool(), risk="read-only", always_on=True)
 
-    async def _tool_invoker(name: str, arguments: dict[str, Any]) -> Any:
-        # 意图字段 purpose 在 invoker 层硬编码 pop（不走 hook 链）。
-        # ID3 决策：plumbing 归协议层，不进 hook trace。
-        arguments.pop("purpose", None)
-        return await tool_registry.execute(name, arguments)
-
     tool_executor = ToolExecutor(
         hooks=[ReadOnlyFilesystemHook(workspace_root=config.workspace_root)],
-        invoker=_tool_invoker,
+        invoker=tool_registry.execute,
     )
     long_term_memory = None
     if config.long_term_memory_enabled and config.embedding_model:
@@ -468,32 +465,27 @@ def build_passive_app(
         search_hint="发现 搜索 加载 工具 tool",
     )
 
-    # ── MCP 接入（MD1-MD7）─────────────────────────────────────────
-    # postgres 启用时持久化 mcp_servers 配置；后台重连已存 server 不阻塞主服务。
-    mcp_store = McpServersStore(db=postgres_db) if postgres_db is not None else None
-    mcp_server_registry = McpServerRegistry(
-        tool_registry=tool_registry,
-        store=mcp_store,
-    )
-    tool_registry.register(
-        McpAddTool(mcp_registry=mcp_server_registry),
-        risk="write",
-        always_on=True,
-        search_hint="添加 连接 MCP server",
-    )
-    tool_registry.register(
-        McpRemoveTool(mcp_registry=mcp_server_registry),
-        risk="write",
-        always_on=True,
-        search_hint="移除 断开 MCP server",
-    )
-    tool_registry.register(
-        McpListTool(mcp_registry=mcp_server_registry),
-        risk="read-only",
-        always_on=True,
-        search_hint="列出 MCP server",
-    )
-    # 后台重连已持久化的 server 在 app.start() 里启动（那时才有 event loop）
+    mcp_server_registry: McpServerRegistry | None = None
+    if config.mcp_mode == "local_trusted":
+        mcp_server_registry = McpServerRegistry(tool_registry=tool_registry)
+        tool_registry.register(
+            McpAddTool(mcp_registry=mcp_server_registry),
+            risk="write",
+            always_on=True,
+            search_hint="添加 连接 MCP server",
+        )
+        tool_registry.register(
+            McpRemoveTool(mcp_registry=mcp_server_registry),
+            risk="write",
+            always_on=True,
+            search_hint="移除 断开 MCP server",
+        )
+        tool_registry.register(
+            McpListTool(mcp_registry=mcp_server_registry),
+            risk="read-only",
+            always_on=True,
+            search_hint="列出 MCP server",
+        )
     runtime = PassiveRuntime(
         workspace_root=config.workspace_root,
         provider=provider,

@@ -13,44 +13,13 @@ from amadeus.tools.search.document import ToolDocument
 RiskLevel = Literal["read-only", "write", "external-side-effect"]
 SourceType = Literal["builtin", "mcp", "plugin"]
 
-# ── 意图字段（progress description 软约束）─────────────────────────────
-# ID1~ID5 决策：字段名固定 `purpose`（不撞 recall_memory 已用 `intent`）；
-# 5-12 个字写在 description 文本里，**不**设 minLength / maxLength 硬约束；
-# 不做"工具自声明 purpose 则不注入"的兼容分支——所有工具一律注入 + execute 前 pop。
-_PURPOSE_FIELD = "purpose"
-_PURPOSE_SCHEMA: dict[str, Any] = {
-    "type": "string",
-    "description": (
-        "用 5-12 个字说明这次工具调用的意图，只写给用户看的短语。"
-        "不要复述工具名，不要粘贴长参数。例如：查看目录、读取配置、搜索健康数据。"
-    ),
-}
 
+class ToolNotFoundError(LookupError):
+    """Registry 无法解析工具名时抛出的领域错误。"""
 
-def _inject_purpose(schema: dict[str, Any]) -> dict[str, Any]:
-    """在 OpenAI function schema 的 parameters 里注入 purpose 字段并加入 required。
-
-    deepcopy 避免污染工具自带 parameters。
-    """
-    cloned = copy.deepcopy(schema)
-    function = cloned.get("function")
-    if not isinstance(function, dict):
-        return cloned
-    parameters = function.get("parameters")
-    if not isinstance(parameters, dict):
-        return cloned
-    properties = parameters.get("properties")
-    if not isinstance(properties, dict):
-        properties = {}
-        parameters["properties"] = properties
-    properties[_PURPOSE_FIELD] = dict(_PURPOSE_SCHEMA)
-    required = parameters.get("required")
-    if isinstance(required, list):
-        if _PURPOSE_FIELD not in required:
-            required.append(_PURPOSE_FIELD)
-    else:
-        parameters["required"] = [_PURPOSE_FIELD]
-    return cloned
+    def __init__(self, tool_name: str) -> None:
+        self.tool_name = tool_name
+        super().__init__(f"工具 {tool_name!r} 不存在")
 
 
 @dataclass(frozen=True)
@@ -186,29 +155,26 @@ class ToolRegistry:
     async def execute(self, name: str, arguments: dict[str, Any]) -> Any:
         """注册表的执行入口，作为 ToolExecutor 默认的 invoker provider。
 
-        工具不存在时返回错误字符串（不抛，让上层 ToolExecutor 当 error 处理）。
+        工具名解析失败属于执行失败，必须抛 typed error，让 ToolExecutor
+        统一归一为 ``status="error"``，不能伪装成普通成功输出。
         """
         tool = self._tools.get(name)
         if tool is None:
-            return f"工具 '{name}' 不存在"
+            raise ToolNotFoundError(name)
         result = tool.execute(**arguments)
         if inspect.isawaitable(result):
             result = await result
         return result
 
     def get_schemas(self, names: set[str] | None = None) -> list[dict[str, Any]]:
-        """导出 OpenAI function schema，每条注入 purpose 字段（R4）。"""
+        """导出远端工具的纯业务 schema；宿主字段由 Provider adapter 包装。"""
         if names is None:
             tools = list(self._tools.values())
         else:
             tools = [
                 self._tools[name] for name in self._tools if name in names
             ]
-        return [_inject_purpose(self._tool_to_schema(tool)) for tool in tools]
-
-    def export_openai_tools(self) -> list[dict[str, Any]]:
-        """旧调用点兼容薄壳；等价于 get_schemas(names=None)。"""
-        return self.get_schemas(names=None)
+        return [self._tool_to_schema(tool) for tool in tools]
 
     @staticmethod
     def _tool_to_schema(tool: Tool) -> dict[str, Any]:
@@ -217,6 +183,6 @@ class ToolRegistry:
             "function": {
                 "name": tool.name,
                 "description": tool.description,
-                "parameters": tool.parameters,
+                "parameters": copy.deepcopy(tool.parameters),
             },
         }

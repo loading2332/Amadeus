@@ -35,6 +35,7 @@ from amadeus.evaluation.langsmith_sync import (
 )
 from amadeus.memory.engine import MemoryWriteRequest
 from amadeus.session.identity import SessionRef
+from amadeus.tools.base import ToolExecutionRequest
 
 
 @dataclass(frozen=True)
@@ -304,10 +305,13 @@ async def _run_write_case(
     source_refs = _collect_source_refs_from_memories(written_memories)
     memory_trace: dict[str, Any] = {}
     if case.mode == "write_then_recall":
-        recall_result, _recall_trace = await app.tool_executor.execute_async(
-            "recall_memory",
-            {"query": str(case.input_payload["recall_query"])},
+        recall_execution = await app.tool_executor.execute(
+            ToolExecutionRequest(
+                tool_name="recall_memory",
+                arguments={"query": str(case.input_payload["recall_query"])},
+            )
         )
+        recall_result = recall_execution.output
         recall_output = (
             recall_result.output if isinstance(recall_result.output, dict) else {}
         )
@@ -316,10 +320,13 @@ async def _run_write_case(
         memory_trace = dict(recall_output.get("trace", {}))
         source_refs = _collect_source_refs(recall_items)
         if source_refs:
-            fetch_result, _fetch_trace = await app.tool_executor.execute_async(
-                "fetch_messages",
-                {"source_refs": source_refs},
+            fetch_execution = await app.tool_executor.execute(
+                ToolExecutionRequest(
+                    tool_name="fetch_messages",
+                    arguments={"source_refs": source_refs},
+                )
             )
+            fetch_result = fetch_execution.output
             if isinstance(fetch_result.output, dict):
                 raw_messages = fetch_result.output.get("messages")
                 if isinstance(raw_messages, list):
