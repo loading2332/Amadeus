@@ -12,3 +12,4 @@ sessions.db
 memory/*.db
 memory/*.md
 runtime-artifacts/*.log
+.codex
