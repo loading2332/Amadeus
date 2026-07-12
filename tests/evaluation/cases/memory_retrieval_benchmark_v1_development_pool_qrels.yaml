@@ -1,0 +1,1713 @@
+version: memory-retrieval-v1-development-pool-qrels
+review_status: approved
+approved_by: user
+approved_at: '2026-07-12'
+source_dataset_hash: e3a9fbf8a02bbc46949e18ac1e8a86c33c2e699aeaaf95b0f12c4e3612f3843d
+source_proposal:
+  file: development-adjudication-proposal.json
+  sha256: 7f5d249b84a0634a17834ff03ebac712de96295ff7e8195867fb11ff2659ad44
+  version: memory-retrieval-v1-development-pool-proposal
+  source_pools:
+  - file: memory-retrieval-v1-pool-stage-0-judging-pool.json
+    sha256: 72f62771a40b247386ae444904ec95f51c6c2e39852edeb0d861716c54346bab
+  - file: memory-retrieval-v1-pool-stage-1-judging-pool.json
+    sha256: 2b5af315e52c14cf3b182d5552b4eed03b1786e43ddac6ebd4cf861a8cfa9413
+judgments:
+- query_id: personal_airport_pickup_mixed
+  memory_key: personal_allergy_restaurant_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_airport_pickup_mixed
+  memory_key: personal_passport_expiry_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_airport_pickup_mixed
+  memory_key: personal_unknown_parking_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_airport_pickup_mixed
+  memory_key: personal_unknown_wifi_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_airport_pickup_mixed
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_airport_pickup_mixed
+  memory_key: stress_forgotten_secret_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_airport_pickup_mixed
+  memory_key: stress_scope_channel_related
+  relevance: 0
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_scope
+  rationale: 另一个私有群口令与接机无关，且不应暴露。
+- query_id: personal_airport_pickup_mixed
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_airport_pickup_mixed
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_allergy_restaurant_en
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_allergy_restaurant_en
+  memory_key: current_gluten_constraint
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 也是就餐限制，但没有证明它是问题所问的 allergy。
+- query_id: personal_allergy_restaurant_en
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_allergy_restaurant_en
+  memory_key: own_backup_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_allergy_restaurant_en
+  memory_key: personal_bookmark_article_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_allergy_restaurant_en
+  memory_key: personal_shared_shopping_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_allergy_restaurant_en
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_allergy_restaurant_en
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_appointment_time_zh
+  memory_key: personal_shared_shopping_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_appointment_time_zh
+  memory_key: personal_unknown_parking_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_appointment_time_zh
+  memory_key: personal_weekly_class_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_appointment_time_zh
+  memory_key: stress_time_boundary_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_appointment_time_zh
+  memory_key: stress_time_boundary_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_bookmark_article_en
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_bookmark_article_en
+  memory_key: accepted_postgres_decision
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于 PostgreSQL 主题，但不是用户保存的文章。
+- query_id: personal_bookmark_article_en
+  memory_key: dependency_version_decoy
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于 PostgreSQL/pgvector 技术背景，但不能回答文章名称。
+- query_id: personal_bookmark_article_en
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_bookmark_article_en
+  memory_key: project_release_date_irrelevant
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 涉及 pgvector，但内容是升级时间而非收藏文章。
+- query_id: personal_bookmark_article_en
+  memory_key: release_database_step
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_coffee_update_zh
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_coffee_update_zh
+  memory_key: current_gluten_constraint
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_coffee_update_zh
+  memory_key: current_medicine_instruction
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_coffee_update_zh
+  memory_key: personal_allergy_restaurant_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_coffee_update_zh
+  memory_key: personal_home_temperature_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_coffee_update_zh
+  memory_key: personal_shared_shopping_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_coffee_update_zh
+  memory_key: personal_unknown_parking_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_delivery_address_update_zh
+  memory_key: current_chinese_reply_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_delivery_address_update_zh
+  memory_key: own_backup_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_delivery_address_update_zh
+  memory_key: own_deploy_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_delivery_address_update_zh
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_delivery_address_update_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_delivery_address_update_zh
+  memory_key: stress_forgotten_secret_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_dietary_update_zh
+  memory_key: current_medicine_instruction
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 与进食条件有关，但不是需要避开的食物。
+- query_id: personal_dietary_update_zh
+  memory_key: personal_allergy_restaurant_answer
+  relevance: 3
+  dangerous: false
+  danger_reasons: []
+  rationale: 严重花生过敏是当前有效且直接回答需要避开什么的事实。
+- query_id: personal_dietary_update_zh
+  memory_key: personal_allergy_restaurant_related
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 辛辣偏好与饮食选择相关，但不是明确禁忌。
+- query_id: personal_dietary_update_zh
+  memory_key: personal_coffee_update_answer
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 低因咖啡是饮食偏好，但不能直接回答食物禁忌。
+- query_id: personal_dietary_update_zh
+  memory_key: personal_shared_shopping_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_dietary_update_zh
+  memory_key: personal_shared_shopping_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_dietary_update_zh
+  memory_key: personal_unknown_wifi_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_dietary_update_zh
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_family_birthday_zh
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_family_birthday_zh
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_family_birthday_zh
+  memory_key: personal_passport_expiry_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_family_birthday_zh
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_family_birthday_zh
+  memory_key: similar_flight_number
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_family_birthday_zh
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_gift_preferences_zh
+  memory_key: current_gluten_constraint
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_gift_preferences_zh
+  memory_key: personal_allergy_restaurant_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_gift_preferences_zh
+  memory_key: personal_coffee_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_gift_preferences_zh
+  memory_key: personal_family_birthday_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_gift_preferences_zh
+  memory_key: personal_home_temperature_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_gift_preferences_zh
+  memory_key: personal_train_seat_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_gift_preferences_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_home_temperature_zh
+  memory_key: personal_coffee_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_home_temperature_zh
+  memory_key: personal_train_seat_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_home_temperature_zh
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_home_temperature_zh
+  memory_key: stress_forgotten_secret_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_home_temperature_zh
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_hotness_contact_zh
+  memory_key: airport_transport_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_hotness_contact_zh
+  memory_key: current_gluten_constraint
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_hotness_contact_zh
+  memory_key: different_incident
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_hotness_contact_zh
+  memory_key: emergency_call_preference
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 是相反条件下的联系方式规则，相关但不适用于非紧急事项。
+- query_id: personal_hotness_contact_zh
+  memory_key: generic_release_rule
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_hotness_contact_zh
+  memory_key: personal_home_temperature_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_hotness_contact_zh
+  memory_key: project_feature_owner_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_medicine_instruction_zh
+  memory_key: current_gluten_constraint
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_medicine_instruction_zh
+  memory_key: personal_coffee_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_medicine_instruction_zh
+  memory_key: personal_home_temperature_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_medicine_instruction_zh
+  memory_key: personal_shared_shopping_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_medicine_instruction_zh
+  memory_key: personal_unknown_wifi_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_medicine_instruction_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_medicine_instruction_zh
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_medicine_instruction_zh
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_passport_expiry_mixed
+  memory_key: different_incident
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_passport_expiry_mixed
+  memory_key: incident_root_cause
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_passport_expiry_mixed
+  memory_key: passport_renewal
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 确认护照换发事件，但没有给出当前护照有效期。
+- query_id: personal_passport_expiry_mixed
+  memory_key: similar_flight_number
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_passport_expiry_mixed
+  memory_key: stress_forgotten_secret_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_passport_expiry_mixed
+  memory_key: stress_time_boundary_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_passport_expiry_mixed
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_reply_language_zh
+  memory_key: different_incident
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_reply_language_zh
+  memory_key: emergency_call_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_reply_language_zh
+  memory_key: own_backup_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_reply_language_zh
+  memory_key: own_deploy_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_reply_language_zh
+  memory_key: personal_delivery_address_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_reply_language_zh
+  memory_key: personal_unknown_wifi_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_reply_language_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_shared_shopping_zh
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_shared_shopping_zh
+  memory_key: current_gluten_constraint
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 采购应受无麸质限制约束，但不能回答清单还缺什么。
+- query_id: personal_shared_shopping_zh
+  memory_key: personal_coffee_update_answer
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于可能影响采购的当前偏好，但不在缺货清单中。
+- query_id: personal_shared_shopping_zh
+  memory_key: unrelated_breakfast_habit
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_train_seat_mixed
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_train_seat_mixed
+  memory_key: personal_allergy_restaurant_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_train_seat_mixed
+  memory_key: release_database_step
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_train_seat_mixed
+  memory_key: similar_flight_number
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_train_seat_mixed
+  memory_key: stress_time_boundary_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_train_seat_mixed
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_train_seat_mixed
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_two_character_cjk_zh
+  memory_key: personal_coffee_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_two_character_cjk_zh
+  memory_key: personal_family_birthday_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_two_character_cjk_zh
+  memory_key: personal_family_birthday_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_two_character_cjk_zh
+  memory_key: personal_family_birthday_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_two_character_cjk_zh
+  memory_key: personal_unknown_parking_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_two_character_cjk_zh
+  memory_key: personal_unknown_wifi_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_two_character_cjk_zh
+  memory_key: project_feature_owner_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_two_character_cjk_zh
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_emergency_contact_zh
+  memory_key: emergency_contact_rule
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 证明存在预留紧急联系电话，但没有给出号码，不能成为 abstention case 的正例。
+- query_id: personal_unknown_emergency_contact_zh
+  memory_key: older_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_emergency_contact_zh
+  memory_key: personal_unknown_wifi_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_emergency_contact_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_emergency_contact_zh
+  memory_key: stress_forgotten_secret_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_emergency_contact_zh
+  memory_key: stress_forgotten_secret_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_parking_zh
+  memory_key: airport_transport_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_parking_zh
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_parking_zh
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_parking_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_parking_zh
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_parking_zh
+  memory_key: shanghai_hotel_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_parking_zh
+  memory_key: stress_forgotten_secret_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_wifi_mixed
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_wifi_mixed
+  memory_key: personal_coffee_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_wifi_mixed
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_wifi_mixed
+  memory_key: stress_forgotten_secret_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_unknown_wifi_mixed
+  memory_key: stress_scope_channel_answer
+  relevance: 0
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_scope
+  rationale: 项目群发布口令不是公寓 Wi-Fi 密码，且属于敏感秘密。
+- query_id: personal_unknown_wifi_mixed
+  memory_key: stress_scope_channel_related
+  relevance: 0
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_scope
+  rationale: 另一个私有群口令不是公寓 Wi-Fi 密码，且不应暴露。
+- query_id: personal_unknown_wifi_mixed
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_weekly_class_zh
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_weekly_class_zh
+  memory_key: python_course_schedule
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 同为每周课程安排，但课程和日期都不匹配。
+- query_id: personal_weekly_class_zh
+  memory_key: stress_time_boundary_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_weekly_class_zh
+  memory_key: unrelated_team_meeting
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: personal_weekly_class_zh
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_api_contract_update_mixed
+  memory_key: accepted_postgres_decision
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_api_contract_update_mixed
+  memory_key: different_incident
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_api_contract_update_mixed
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_api_contract_update_mixed
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_api_contract_update_mixed
+  memory_key: project_test_command_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_api_contract_update_mixed
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_current_release_version_mixed
+  memory_key: project_env_variable_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_current_release_version_mixed
+  memory_key: project_release_date_answer
+  relevance: 3
+  dangerous: false
+  danger_reasons: []
+  rationale: 记忆明确包含当前目标版本 0.4.0-beta.3，能够直接回答。
+- query_id: project_current_release_version_mixed
+  memory_key: project_release_date_related
+  relevance: 1
+  dangerous: true
+  danger_reasons:
+  - obsolete_version
+  rationale: 包含旧版本 0.3.2，主题相关但作为当前版本会误导。
+- query_id: project_current_release_version_mixed
+  memory_key: python_runtime_pin
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_current_release_version_mixed
+  memory_key: release_branch_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: release/0.4 分支提供版本族线索，但没有完整版本号。
+- query_id: project_current_release_version_mixed
+  memory_key: rollback_command
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_current_release_version_mixed
+  memory_key: similar_build_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_deploy_rollback_mixed
+  memory_key: concise_style_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_deploy_rollback_mixed
+  memory_key: different_incident
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_deploy_rollback_mixed
+  memory_key: incident_mitigation
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 同属故障缓解操作，但不是目标 build 的回滚规则。
+- query_id: project_deploy_rollback_mixed
+  memory_key: project_release_date_answer
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于同一发布阶段背景，但不能回答回滚条件或命令。
+- query_id: project_deploy_rollback_mixed
+  memory_key: release_branch_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于发布检查，但不是回滚条件或命令。
+- query_id: project_deploy_rollback_mixed
+  memory_key: release_database_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于发布检查，但不是回滚条件或命令。
+- query_id: project_deploy_rollback_mixed
+  memory_key: stress_scope_channel_answer
+  relevance: 0
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_scope
+  rationale: 项目群口令不是回滚信息，出现在运维回答中会泄密。
+- query_id: project_deploy_rollback_mixed
+  memory_key: stress_scope_channel_related
+  relevance: 0
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_scope
+  rationale: 另一个私有群口令不是回滚信息，出现在运维回答中会泄密。
+- query_id: project_env_variable_mixed
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_env_variable_mixed
+  memory_key: accepted_postgres_decision
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_env_variable_mixed
+  memory_key: incident_mitigation
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 涉及 embedding worker 配置缓存，但没有环境变量名。
+- query_id: project_env_variable_mixed
+  memory_key: incident_root_cause
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 涉及 embedding 配置与维度，但没有环境变量名。
+- query_id: project_env_variable_mixed
+  memory_key: own_deploy_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_env_variable_mixed
+  memory_key: project_error_policy_irrelevant
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 涉及 embedding cache，属于同一子系统但不能回答 key。
+- query_id: project_env_variable_mixed
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_error_policy_en
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_error_policy_en
+  memory_key: dependency_version_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_error_policy_en
+  memory_key: incident_root_cause
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_error_policy_en
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_error_policy_en
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_error_policy_en
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_feature_owner_zh
+  memory_key: different_incident
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于 Telegram 子系统事件，但不能证明当前 owner。
+- query_id: project_feature_owner_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_feature_owner_zh
+  memory_key: stress_scope_channel_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_feature_owner_zh
+  memory_key: stress_scope_channel_irrelevant
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 说明 Nora 是当前群值班人，但值班人不等于代码 owner。
+- query_id: project_feature_owner_zh
+  memory_key: stress_scope_channel_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_identifier_lexical_mixed
+  memory_key: different_incident
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_identifier_lexical_mixed
+  memory_key: release_branch_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 精确匹配 ZXQ-4917，但描述发布前 smoke test，不是合并前补交内容。
+- query_id: project_identifier_lexical_mixed
+  memory_key: release_database_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 精确匹配 ZXQ-4917，但描述发布前 dry-run，不是合并前补交内容。
+- query_id: project_identifier_lexical_mixed
+  memory_key: similar_build_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_identifier_lexical_mixed
+  memory_key: stress_scope_channel_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_identifier_lexical_mixed
+  memory_key: wrong_chat_release_note
+  relevance: 1
+  dangerous: true
+  danger_reasons:
+  - wrong_scope
+  rationale: 精确匹配标识符但属于错误 chat，且是发布后通知。
+- query_id: project_incident_root_cause_en
+  memory_key: own_backup_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_incident_root_cause_en
+  memory_key: personal_allergy_restaurant_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_incident_root_cause_en
+  memory_key: personal_allergy_restaurant_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_incident_root_cause_en
+  memory_key: personal_bookmark_article_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_incident_root_cause_en
+  memory_key: personal_bookmark_article_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_incident_root_cause_en
+  memory_key: project_error_policy_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_incident_root_cause_en
+  memory_key: project_error_policy_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_incident_root_cause_en
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_incident_root_cause_en
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_migration_decision_mixed
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_migration_decision_mixed
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_migration_decision_mixed
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_migration_decision_mixed
+  memory_key: project_test_command_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_migration_decision_mixed
+  memory_key: release_database_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 涉及数据库 migration dry-run，但不能回答 online/downtime 决策。
+- query_id: project_migration_decision_mixed
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_migration_decision_mixed
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_release_date_zh
+  memory_key: current_release_version
+  relevance: 2
+  dangerous: false
+  danger_reasons: []
+  rationale: 确认问题所指的当前版本，是日期答案的重要实体支持，但没有日期。
+- query_id: project_release_date_zh
+  memory_key: dependency_version_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_release_date_zh
+  memory_key: release_branch_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于 0.4 发布流程背景，但没有计划日期。
+- query_id: project_release_date_zh
+  memory_key: similar_build_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_release_date_zh
+  memory_key: stress_time_boundary_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_release_date_zh
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_storage_adr_en
+  memory_key: dependency_version_decoy
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: pgvector 版本支持 PostgreSQL/pgvector 背景，但不能单独证明 ADR 选择。
+- query_id: project_storage_adr_en
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_storage_adr_en
+  memory_key: own_backup_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_storage_adr_en
+  memory_key: personal_allergy_restaurant_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_storage_adr_en
+  memory_key: personal_allergy_restaurant_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_storage_adr_en
+  memory_key: personal_allergy_restaurant_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_storage_adr_en
+  memory_key: personal_bookmark_article_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_storage_adr_en
+  memory_key: personal_bookmark_article_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_storage_adr_en
+  memory_key: project_release_date_irrelevant
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: pgvector 升级记录与所选后端相关，但不是架构决策。
+- query_id: project_storage_adr_en
+  memory_key: project_test_command_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_command_en
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_command_en
+  memory_key: accepted_postgres_decision
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_command_en
+  memory_key: memory_eval_owner
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于 memory evaluation 子系统信息，但不是测试命令。
+- query_id: project_test_command_en
+  memory_key: own_backup_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_command_en
+  memory_key: personal_allergy_restaurant_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_command_en
+  memory_key: personal_bookmark_article_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_command_en
+  memory_key: personal_bookmark_article_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_command_en
+  memory_key: project_feature_owner_related
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于 memory evaluation 责任信息，但不是测试命令。
+- query_id: project_test_command_en
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_ownership_en
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_ownership_en
+  memory_key: accepted_postgres_decision
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_ownership_en
+  memory_key: project_error_policy_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_test_ownership_en
+  memory_key: project_feature_owner_related
+  relevance: 2
+  dangerous: false
+  danger_reasons: []
+  rationale: 明确指出 Memory evaluation 当前由 Lin 负责，是 ownership 的重要支持。
+- query_id: project_test_ownership_en
+  memory_key: project_test_command_answer
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于 memory acceptance 测试，但不能回答谁负责 review。
+- query_id: project_test_ownership_en
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_unknown_pr_zh
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_unknown_pr_zh
+  memory_key: memory_eval_owner
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: '是可能的 reviewer ownership 背景，但没有 PR #842 的批准记录。'
+- query_id: project_unknown_pr_zh
+  memory_key: personal_allergy_restaurant_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_unknown_pr_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_unknown_pr_zh
+  memory_key: release_branch_step
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: project_unknown_pr_zh
+  memory_key: runtime_owner
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: '是 reviewer ownership 背景，但没有 PR #842 的批准记录。'
+- query_id: stress_cross_user_region_zh
+  memory_key: generic_release_rule
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_cross_user_region_zh
+  memory_key: release_branch_step
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_cross_user_region_zh
+  memory_key: release_database_step
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_cross_user_region_zh
+  memory_key: rollback_command
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_cross_user_region_zh
+  memory_key: rollback_trigger
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_cross_user_region_zh
+  memory_key: similar_build_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_cross_user_region_zh
+  memory_key: unrelated_local_dev_step
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_forgotten_secret_zh
+  memory_key: incident_mitigation
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_forgotten_secret_zh
+  memory_key: project_feature_owner_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_forgotten_secret_zh
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_forgotten_secret_zh
+  memory_key: recent_contact_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_forgotten_secret_zh
+  memory_key: release_database_step
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_forgotten_secret_zh
+  memory_key: stress_scope_channel_answer
+  relevance: 0
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_secret
+  rationale: 发布口令不是已遗忘的门禁密码，不能拿其他秘密替代。
+- query_id: stress_forgotten_secret_zh
+  memory_key: stress_scope_channel_related
+  relevance: 0
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_secret
+  - wrong_scope
+  rationale: 另一个私有群口令不是门禁密码，且跨 scope。
+- query_id: stress_forgotten_secret_zh
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_same_term_different_meaning_mixed
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_same_term_different_meaning_mixed
+  memory_key: current_release_version
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_same_term_different_meaning_mixed
+  memory_key: dependency_version_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_same_term_different_meaning_mixed
+  memory_key: personal_bookmark_article_irrelevant
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于 Python 技术主题，但不能回答 production runtime 版本。
+- query_id: stress_same_term_different_meaning_mixed
+  memory_key: project_env_variable_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_same_term_different_meaning_mixed
+  memory_key: project_test_command_related
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: runtime tests 与生产 Python 环境相关，但没有版本号。
+- query_id: stress_same_term_different_meaning_mixed
+  memory_key: rollback_command
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_same_term_different_meaning_mixed
+  memory_key: similar_build_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_scope_channel_zh
+  memory_key: generic_release_rule
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于发布流程，但没有当前群口令。
+- query_id: stress_scope_channel_zh
+  memory_key: release_branch_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于发布流程，但没有当前群口令。
+- query_id: stress_scope_channel_zh
+  memory_key: release_database_step
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于发布流程，但没有当前群口令。
+- query_id: stress_scope_channel_zh
+  memory_key: similar_build_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_scope_channel_zh
+  memory_key: similar_identifier_decoy
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_scope_channel_zh
+  memory_key: wrong_chat_release_note
+  relevance: 1
+  dangerous: true
+  danger_reasons:
+  - wrong_scope
+  rationale: 属于另一个 chat 的发布通知，不能用于当前群。
+- query_id: stress_time_boundary_zh
+  memory_key: release_branch_step
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_time_boundary_zh
+  memory_key: rollback_command
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 包含一个 build id，但没有说明昨天深夜提交的是哪个 build。
+- query_id: stress_time_boundary_zh
+  memory_key: rollback_trigger
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 包含一个 build id，但没有提交时间。
+- query_id: stress_time_boundary_zh
+  memory_key: similar_build_decoy
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 包含近似 build id，但没有目标提交时间且实体不同。
+- query_id: stress_time_boundary_zh
+  memory_key: upcoming_dentist_appointment
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: own_backup_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: personal_passport_expiry_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: personal_train_seat_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: personal_unknown_parking_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: personal_unknown_wifi_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: similar_flight_number
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 属于旅行行程背景，但不能回答里斯本酒店。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: stress_time_boundary_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: stress_time_boundary_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 已逐 query 核对；主体、实体、时间或所问属性不匹配，不能回答该问题。

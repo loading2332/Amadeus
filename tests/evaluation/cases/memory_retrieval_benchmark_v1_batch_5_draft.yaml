@@ -1,0 +1,612 @@
+version: memory-retrieval-v1-batch-5-draft
+review_status: draft
+corpora:
+- id: stress_forgotten_secret
+  memories:
+  - key: stress_forgotten_secret_answer
+    summary: 门禁临时密码已按用户要求遗忘。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: stress_forgotten_secret_related
+    summary: 旧记录曾包含门禁临时密码 7391。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: stress_forgotten_secret_irrelevant
+    summary: 物业电话是 021-5550-9876。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: stress_time_boundary
+  memories:
+  - key: stress_time_boundary_answer
+    summary: 2026 年 7 月 11 日 23:58 提交的是 build-a91c。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: stress_time_boundary_related
+    summary: 2026 年 7 月 12 日 00:03 提交的是 build-a92d。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: stress_time_boundary_irrelevant
+    summary: 2026 年 7 月 11 日上午提交了文档。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_personal_pet_food
+  memories:
+  - key: holdout_personal_pet_food_answer
+    summary: 猫目前改吃低敏配方粮。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_pet_food_related
+    summary: 猫以前吃鸡肉配方粮。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: holdout_personal_pet_food_irrelevant
+    summary: 用户喜欢鸡肉沙拉。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_personal_tax_document
+  memories:
+  - key: holdout_personal_tax_document_answer
+    summary: 报税文件编号是 TAX-CN-8842。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_tax_document_related
+    summary: 保险文件编号是 TAX-CN-8482。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_tax_document_irrelevant
+    summary: 报税截止日期是五月底。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_personal_call_time
+  memories:
+  - key: holdout_personal_call_time_answer
+    summary: The call with Maya is at 10:30 on July 13, 2026.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_call_time_related
+    summary: The call with Mina is at 10:30 on July 14, 2026.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_call_time_irrelevant
+    summary: Maya sent an email yesterday.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_personal_unknown_insurance
+  memories:
+  - key: holdout_personal_unknown_insurance_answer
+    summary: 用户购买过旅行保险。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_unknown_insurance_related
+    summary: 用户汽车保险号是 AUTO-771。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_unknown_insurance_irrelevant
+    summary: 用户下月计划旅行。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_project_queue_choice
+  memories:
+  - key: holdout_project_queue_choice_answer
+    summary: The worker design chose PostgreSQL SKIP LOCKED.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_queue_choice_related
+    summary: An early draft proposed Redis Streams.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: holdout_project_queue_choice_irrelevant
+    summary: The scheduler uses APScheduler.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_project_config_key
+  memories:
+  - key: holdout_project_config_key_answer
+    summary: The lexical kill switch is memory.lexical_enabled.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_config_key_related
+    summary: The vector switch is memory.vector_enabled.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_config_key_irrelevant
+    summary: The retry key is runtime.max_retries.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_project_schema_update
+  memories:
+  - key: holdout_project_schema_update_answer
+    summary: 当前候选并集字段是 candidate_count。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_schema_update_related
+    summary: 旧草案字段是 union_size。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: holdout_project_schema_update_irrelevant
+    summary: lane 数量字段是 lane_counts。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_stress_cross_user
+  memories:
+  - key: holdout_stress_cross_user_answer
+    summary: 另一个用户的数据库密码记录存在但不可访问。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_stress_cross_user_related
+    summary: 当前用户使用 PostgreSQL。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: holdout_stress_cross_user_irrelevant
+    summary: 数据库运行在 WSL Docker。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+queries:
+- id: stress_forgotten_secret_zh
+  family_id: stress_forgotten_secret
+  corpus_id: stress_forgotten_secret
+  split: development
+  review_status: approved
+  review_batch: 5
+  product_scenario: stress
+  memory_capability: knowledge_update
+  language: zh
+  raw_query: 之前保存的门禁临时密码是什么？
+  fixed_hypotheses:
+    event: 门禁临时密码已按用户要求遗忘。
+    general: 与问题“之前保存的门禁临时密码是什么？”对应的长期记忆。
+  strata:
+  - zh
+  - abstention
+  - forgotten
+  - dangerous-obsolete
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: stress_forgotten_secret_answer
+    relevance: 0
+    dangerous: false
+    rationale: 主题接近，但没有问题所需的具体答案。
+  - memory_key: stress_forgotten_secret_related
+    relevance: 0
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: stress_forgotten_secret_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: stress_time_boundary_zh
+  family_id: stress_time_boundary
+  corpus_id: stress_time_boundary
+  split: development
+  review_status: approved
+  review_batch: 5
+  product_scenario: stress
+  memory_capability: temporal_reasoning
+  language: zh
+  raw_query: 昨天深夜提交的是哪个 build？
+  fixed_hypotheses:
+    event: 2026 年 7 月 11 日 23:58 提交的是 build-a91c。
+    general: 与问题“昨天深夜提交的是哪个 build？”对应的长期记忆。
+  strata:
+  - zh
+  - both-lanes
+  - event
+  - time-boundary
+  expected_abstention: false
+  required_memory_keys:
+  - stress_time_boundary_answer
+  judgments:
+  - memory_key: stress_time_boundary_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: stress_time_boundary_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: stress_time_boundary_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_personal_pet_food_zh
+  family_id: holdout_personal_pet_food
+  corpus_id: holdout_personal_pet_food
+  split: holdout
+  review_status: approved
+  review_batch: 5
+  product_scenario: personal_assistant
+  memory_capability: knowledge_update
+  language: zh
+  raw_query: 现在给猫买哪款粮？
+  fixed_hypotheses:
+    event: 猫目前改吃低敏配方粮。
+    general: 与问题“现在给猫买哪款粮？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - preference
+  - knowledge-update
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_personal_pet_food_answer
+  judgments:
+  - memory_key: holdout_personal_pet_food_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_personal_pet_food_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: holdout_personal_pet_food_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_personal_tax_document_mixed
+  family_id: holdout_personal_tax_document
+  corpus_id: holdout_personal_tax_document
+  split: holdout
+  review_status: approved
+  review_batch: 5
+  product_scenario: personal_assistant
+  memory_capability: information_extraction
+  language: mixed
+  raw_query: 报税用的 document ID 是什么？
+  fixed_hypotheses:
+    event: 报税文件编号是 TAX-CN-8842。
+    general: 与问题“报税用的 document ID 是什么？”对应的长期记忆。
+  strata:
+  - mixed
+  - both-lanes
+  - fact
+  - rare-identifier
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_personal_tax_document_answer
+  judgments:
+  - memory_key: holdout_personal_tax_document_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_personal_tax_document_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_personal_tax_document_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_personal_call_time_en
+  family_id: holdout_personal_call_time
+  corpus_id: holdout_personal_call_time
+  split: holdout
+  review_status: approved
+  review_batch: 5
+  product_scenario: personal_assistant
+  memory_capability: temporal_reasoning
+  language: en
+  raw_query: When is my call with Maya tomorrow?
+  fixed_hypotheses:
+    event: The call with Maya is at 10:30 on July 13, 2026.
+    general: 与问题“When is my call with Maya tomorrow?”对应的长期记忆。
+  strata:
+  - en
+  - vector
+  - event
+  - temporal-reasoning
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_personal_call_time_answer
+  judgments:
+  - memory_key: holdout_personal_call_time_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_personal_call_time_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_personal_call_time_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_personal_unknown_insurance_zh
+  family_id: holdout_personal_unknown_insurance
+  corpus_id: holdout_personal_unknown_insurance
+  split: holdout
+  review_status: approved
+  review_batch: 5
+  product_scenario: personal_assistant
+  memory_capability: abstention
+  language: zh
+  raw_query: 我的旅行保险保单号是多少？
+  fixed_hypotheses:
+    event: 用户购买过旅行保险。
+    general: 与问题“我的旅行保险保单号是多少？”对应的长期记忆。
+  strata:
+  - zh
+  - abstention
+  - fact
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: holdout_personal_unknown_insurance_answer
+    relevance: 0
+    dangerous: false
+    rationale: 主题接近，但没有问题所需的具体答案。
+  - memory_key: holdout_personal_unknown_insurance_related
+    relevance: 0
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_personal_unknown_insurance_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_project_queue_choice_en
+  family_id: holdout_project_queue_choice
+  corpus_id: holdout_project_queue_choice
+  split: holdout
+  review_status: approved
+  review_batch: 5
+  product_scenario: project_assistant
+  memory_capability: cross_session
+  language: en
+  raw_query: Which queue backend did the worker design choose?
+  fixed_hypotheses:
+    event: The worker design chose PostgreSQL SKIP LOCKED.
+    general: 与问题“Which queue backend did the worker design choose?”对应的长期记忆。
+  strata:
+  - en
+  - vector
+  - fact
+  - dangerous-obsolete
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_project_queue_choice_answer
+  judgments:
+  - memory_key: holdout_project_queue_choice_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_project_queue_choice_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: holdout_project_queue_choice_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_project_config_key_mixed
+  family_id: holdout_project_config_key
+  corpus_id: holdout_project_config_key
+  split: holdout
+  review_status: approved
+  review_batch: 5
+  product_scenario: project_assistant
+  memory_capability: information_extraction
+  language: mixed
+  raw_query: memory lexical kill switch 的 config key？
+  fixed_hypotheses:
+    event: The lexical kill switch is memory.lexical_enabled.
+    general: 与问题“memory lexical kill switch 的 config key？”对应的长期记忆。
+  strata:
+  - mixed
+  - both-lanes
+  - fact
+  - exact-identifier
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_project_config_key_answer
+  judgments:
+  - memory_key: holdout_project_config_key_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_project_config_key_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_project_config_key_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_project_schema_update_zh
+  family_id: holdout_project_schema_update
+  corpus_id: holdout_project_schema_update
+  split: holdout
+  review_status: approved
+  review_batch: 5
+  product_scenario: project_assistant
+  memory_capability: knowledge_update
+  language: zh
+  raw_query: trace 里的候选并集字段现在叫什么？
+  fixed_hypotheses:
+    event: 当前候选并集字段是 candidate_count。
+    general: 与问题“trace 里的候选并集字段现在叫什么？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - fact
+  - knowledge-update
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_project_schema_update_answer
+  judgments:
+  - memory_key: holdout_project_schema_update_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_project_schema_update_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: holdout_project_schema_update_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_stress_cross_user_zh
+  family_id: holdout_stress_cross_user
+  corpus_id: holdout_stress_cross_user
+  split: holdout
+  review_status: approved
+  review_batch: 5
+  product_scenario: stress
+  memory_capability: abstention
+  language: zh
+  raw_query: 我的生产数据库密码是什么？
+  fixed_hypotheses:
+    event: 另一个用户的数据库密码记录存在但不可访问。
+    general: 与问题“我的生产数据库密码是什么？”对应的长期记忆。
+  strata:
+  - zh
+  - abstention
+  - cross-user
+  - dangerous
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: holdout_stress_cross_user_answer
+    relevance: 0
+    dangerous: false
+    rationale: 主题接近，但没有问题所需的具体答案。
+  - memory_key: holdout_stress_cross_user_related
+    relevance: 0
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: holdout_stress_cross_user_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。

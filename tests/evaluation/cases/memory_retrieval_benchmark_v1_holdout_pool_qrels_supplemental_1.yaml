@@ -1,0 +1,637 @@
+version: memory-retrieval-v1-holdout-pool-qrels-supplemental-1
+overlay_id: holdout-supplemental-1
+review_status: approved
+split: holdout
+approved_by: user
+approved_at: '2026-07-12'
+source_dataset_hash: 2748c90799831d4c9eccabb8dc96c02c3cefa793cf530a1c92beec3a136571dd
+source_proposal:
+  file: holdout-supplemental-1-adjudication-proposal.json
+  sha256: 1b3ff0117c44d2bbca08195f4f76e6a61996351e1623dc5cebfacd4a3aa5e662
+  version: memory-retrieval-v1-holdout-pool-supplemental-1-proposal
+  proposal_round: holdout-supplemental-1
+  source_pools:
+  - file: memory-retrieval-v1-2748c9079983-holdout-pool-judging-pool.json
+    artifact_group: holdout-pool
+    sha256: 2d92bf56e6722db69d3f809133c04943ce2f4d0ec1b17d679f464511ec8519ed
+judgments:
+- query_id: holdout_personal_call_time_en
+  memory_key: holdout_personal_morning_alarm_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 同为 7 月 13 日的个人日程，但早班起床时间不是 Maya 通话时间，事件实体和所问属性不同。
+- query_id: holdout_personal_call_time_en
+  memory_key: holdout_personal_morning_alarm_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 明天下午三点的会议不是与 Maya 的通话，不能回答该通话几点开始。
+- query_id: holdout_personal_call_time_en
+  memory_key: holdout_personal_unknown_insurance_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 下月旅行计划不包含 Maya、通话或明天的通话时间。
+- query_id: holdout_personal_call_time_en
+  memory_key: holdout_project_config_key_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: runtime.max_retries 是项目配置键，与个人通话日程无关。
+- query_id: holdout_personal_call_time_en
+  memory_key: holdout_project_config_key_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: memory.vector_enabled 是项目配置键，与 Maya 通话时间无关。
+- query_id: holdout_personal_call_time_en
+  memory_key: holdout_project_incident_time_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: INC-319 的恢复时间属于项目事故，不是用户与 Maya 的通话时间。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_personal_call_time_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Maya 通话时间不包含用户当前的乳制品限制。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_personal_call_time_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Mina 通话时间与用户的乳制品饮食限制无关。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_personal_pet_food_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 低敏配方粮描述的是猫的饮食，主体不是用户，不能回答用户的乳制品限制。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_personal_recipe_steps_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 不喜欢太辣是另一项饮食偏好，不说明是否限制乳制品；同族中避免花生也已按不同限制标为 0。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_personal_unknown_insurance_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 下月旅行计划不涉及乳制品或饮食限制。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_project_config_key_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: runtime.max_retries 是项目配置，不能回答个人乳制品限制。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_project_config_key_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: memory.vector_enabled 是项目配置，不能回答个人乳制品限制。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_project_unknown_flag_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-929 的默认开关状态与用户饮食无关。
+- query_id: holdout_personal_diet_update_en
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 是项目实验编号，与用户乳制品限制无关。
+- query_id: holdout_personal_language_exception_mixed
+  memory_key: holdout_personal_tax_document_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 保险文件编号不包含给客户的 incident report 应使用哪种语言的信息。
+- query_id: holdout_personal_language_exception_mixed
+  memory_key: holdout_personal_unknown_insurance_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 购买过旅行保险不能推出客户 incident report 的语言要求。
+- query_id: holdout_personal_language_exception_mixed
+  memory_key: holdout_personal_unknown_insurance_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 下月旅行计划不能说明客户 incident report 应使用哪种语言。
+- query_id: holdout_personal_language_exception_mixed
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 未记录的 MEM-992 实验编号与文档语言规则无关。
+- query_id: holdout_personal_language_exception_mixed
+  memory_key: holdout_stress_conflict_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Production 当前区域不能推出海外客户 incident report 的语言要求。
+- query_id: holdout_personal_morning_alarm_zh
+  memory_key: holdout_personal_call_time_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 同日与 Maya 的通话是另一项日程，不能说明早班需要几点起床。
+- query_id: holdout_personal_morning_alarm_zh
+  memory_key: holdout_personal_call_time_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 与 Mina 的通话属于不同日期和事件，不能回答明天早班起床时间。
+- query_id: holdout_personal_morning_alarm_zh
+  memory_key: holdout_personal_unknown_insurance_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 下月旅行计划不包含明天早班或起床时间。
+- query_id: holdout_personal_morning_alarm_zh
+  memory_key: holdout_project_incident_time_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 项目事故恢复时间不是个人早班起床时间。
+- query_id: holdout_personal_morning_alarm_zh
+  memory_key: holdout_project_incident_time_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 项目事故开始时间不是个人早班起床时间。
+- query_id: holdout_personal_pet_food_zh
+  memory_key: holdout_personal_diet_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 避免乳制品描述的是用户本人，不是猫当前应购买的猫粮。
+- query_id: holdout_personal_pet_food_zh
+  memory_key: holdout_personal_recipe_steps_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 餐厅版汤底使用花椒与猫粮选择无关。
+- query_id: holdout_personal_pet_food_zh
+  memory_key: holdout_personal_unknown_insurance_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 下月旅行计划不包含猫粮信息。
+- query_id: holdout_personal_pet_food_zh
+  memory_key: holdout_personal_unknown_locker_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 家门密码已更新与猫粮无关；该记录没有暴露密码值，也没有 secret、owner 或 scope 风险标记。
+- query_id: holdout_personal_pet_food_zh
+  memory_key: holdout_project_review_rule_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: memory ranking 的审核规则与猫粮选择无关。
+- query_id: holdout_personal_pet_food_zh
+  memory_key: holdout_project_unknown_flag_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-929 的默认开关状态与猫粮选择无关。
+- query_id: holdout_personal_pet_food_zh
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 实验编号与猫粮选择无关。
+- query_id: holdout_personal_recipe_steps_zh
+  memory_key: holdout_personal_pet_food_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 猫的低敏配方粮不是家庭版汤底所需香料。
+- query_id: holdout_personal_recipe_steps_zh
+  memory_key: holdout_personal_pet_food_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 用户喜欢鸡肉沙拉不包含家庭版汤底的香料步骤。
+- query_id: holdout_personal_recipe_steps_zh
+  memory_key: holdout_personal_unknown_locker_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 家门密码已更新与汤底配方无关；记录未包含真实密码值，因此不构成 private_secret。
+- query_id: holdout_personal_recipe_steps_zh
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 只是项目实验编号，和家庭版汤底所需香料没有共同实体或任务关系。
+- query_id: holdout_personal_tax_document_mixed
+  memory_key: holdout_personal_diet_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 当前乳制品限制与报税文件编号无关，不能提供 document ID。
+- query_id: holdout_personal_tax_document_mixed
+  memory_key: holdout_personal_diet_update_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 花生饮食限制与报税文件及其编号无关。
+- query_id: holdout_personal_tax_document_mixed
+  memory_key: holdout_personal_language_exception_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 海外客户 incident report 的语言规则属于另一种文档任务，不能回答报税 document ID。
+- query_id: holdout_personal_tax_document_mixed
+  memory_key: holdout_personal_language_exception_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 代码标识符保持英文只是通用格式偏好，未涉及报税文件实体或编号。
+- query_id: holdout_personal_tax_document_mixed
+  memory_key: holdout_personal_unknown_locker_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 健身房会员号虽也是标识符，但主体和用途均不是报税文件。
+- query_id: holdout_personal_tax_document_mixed
+  memory_key: holdout_project_schema_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 候选并集字段 candidate_count 是项目 schema 信息，与个人报税 document ID 无关。
+- query_id: holdout_personal_unknown_insurance_zh
+  memory_key: holdout_personal_language_exception_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: incident report 的语言规则与旅行保险保单及其号码无关。
+- query_id: holdout_personal_unknown_insurance_zh
+  memory_key: holdout_personal_tax_document_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: TAX-CN-8842 明确是报税文件编号，不是旅行保险保单号。
+- query_id: holdout_personal_unknown_insurance_zh
+  memory_key: holdout_personal_tax_document_related
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 该记忆给出了一个保险文件编号，和所问保险文档属于同类实体，但没有证明它是旅行保险的保单号。
+- query_id: holdout_personal_unknown_insurance_zh
+  memory_key: holdout_personal_unknown_locker_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 健身房会员号与旅行保险保单号属于不同实体和用途。
+- query_id: holdout_personal_unknown_insurance_zh
+  memory_key: holdout_personal_unknown_locker_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 家门密码更新与旅行保险保单及其号码无关，且记忆没有暴露密码值。
+- query_id: holdout_personal_unknown_locker_zh
+  memory_key: holdout_personal_pet_food_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 鸡肉沙拉偏好与健身房储物柜密码无关。
+- query_id: holdout_personal_unknown_locker_zh
+  memory_key: holdout_personal_unknown_insurance_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 购买过旅行保险与健身房储物柜或其密码无关。
+- query_id: holdout_personal_unknown_locker_zh
+  memory_key: holdout_personal_unknown_insurance_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 下月旅行计划与健身房储物柜密码无关。
+- query_id: holdout_personal_unknown_locker_zh
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 实验编号与个人健身房储物柜密码无关。
+- query_id: holdout_personal_unknown_locker_zh
+  memory_key: holdout_stress_cross_user_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 另一用户数据库密码记录的存在与当前用户的健身房储物柜密码不是同一主体或秘密；文本未暴露密码值。
+- query_id: holdout_project_config_key_mixed
+  memory_key: holdout_personal_language_exception_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 默认中文的回复偏好与 lexical kill switch 的配置键无关。
+- query_id: holdout_project_config_key_mixed
+  memory_key: holdout_project_review_rule_answer
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: memory ranking 的 review 规则属于修改同一检索子系统时的治理背景，但没有给出 lexical kill switch
+    的 config key。
+- query_id: holdout_project_config_key_mixed
+  memory_key: holdout_project_unknown_flag_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-929 是另一个 feature flag，且记忆只给默认值，没有给出 lexical kill switch 的配置键。
+- query_id: holdout_project_config_key_mixed
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 是未记录的实验编号，不是 lexical kill switch 的配置键。
+- query_id: holdout_project_config_key_mixed
+  memory_key: holdout_stress_cross_user_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 另一用户数据库密码记录与 memory lexical 配置键无关，且文本没有暴露密码值。
+- query_id: holdout_project_incident_time_en
+  memory_key: holdout_personal_call_time_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Maya 通话时间与 INC-319 的恢复事件无关，日期和主体都不匹配。
+- query_id: holdout_project_incident_time_en
+  memory_key: holdout_personal_call_time_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Mina 通话时间与 INC-319 的恢复事件无关，日期和主体都不匹配。
+- query_id: holdout_project_incident_time_en
+  memory_key: holdout_personal_morning_alarm_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 个人早班起床时间与 INC-319 的恢复时间属于不同事件。
+- query_id: holdout_project_incident_time_en
+  memory_key: holdout_project_schema_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: candidate_count 字段与 INC-319 事故及其恢复时间无关。
+- query_id: holdout_project_incident_time_en
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 实验编号与 INC-319 事故恢复时间无关。
+- query_id: holdout_project_queue_choice_en
+  memory_key: holdout_project_config_key_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: runtime.max_retries 是重试配置键，没有说明 worker 选择了哪种队列后端。
+- query_id: holdout_project_queue_choice_en
+  memory_key: holdout_project_config_key_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: memory.vector_enabled 属于向量检索开关，与 worker 的队列后端决策不是同一实体或任务。
+- query_id: holdout_project_queue_choice_en
+  memory_key: holdout_project_review_rule_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: memory ranking 的 review 规则与 worker 队列后端的架构选择无关。
+- query_id: holdout_project_queue_choice_en
+  memory_key: holdout_project_schema_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: candidate_count schema 字段与 worker 选择的队列后端无关。
+- query_id: holdout_project_queue_choice_en
+  memory_key: holdout_project_unknown_flag_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-929 feature flag 的默认值与 worker 队列后端选择无关。
+- query_id: holdout_project_queue_choice_en
+  memory_key: holdout_stress_conflict_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Production region 与 worker 队列后端是两个独立的架构属性。
+- query_id: holdout_project_queue_choice_en
+  memory_key: holdout_stress_conflict_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Backup region 与 worker 队列后端选择无关。
+- query_id: holdout_project_review_rule_zh
+  memory_key: holdout_project_config_key_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: lexical kill switch 的配置键属于检索配置，不包含修改 memory ranking 所需的 reviewer 身份或审核规则。
+- query_id: holdout_project_review_rule_zh
+  memory_key: holdout_project_config_key_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: vector switch 的配置键不包含修改 memory ranking 所需的 reviewer 身份或审核规则。
+- query_id: holdout_project_review_rule_zh
+  memory_key: holdout_project_schema_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: candidate_count 是 trace schema 字段，不能说明修改 memory ranking 至少需要谁 review。
+- query_id: holdout_project_review_rule_zh
+  memory_key: holdout_project_unknown_flag_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-929 的默认值与 memory ranking 的 reviewer 要求是不同属性。
+- query_id: holdout_project_review_rule_zh
+  memory_key: holdout_project_unknown_flag_irrelevant
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 生产 flag 需要审批属于变更治理背景，但没有说明修改 memory ranking 具体需要 memory owner 和 runtime
+    reviewer。
+- query_id: holdout_project_review_rule_zh
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 是未记录实验编号这一事实没有提供任何 reviewer 或审批角色信息。
+- query_id: holdout_project_schema_update_zh
+  memory_key: holdout_project_review_rule_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: memory ranking 的审核角色不能说明 trace 中候选并集字段的名称。
+- query_id: holdout_project_schema_update_zh
+  memory_key: holdout_project_review_rule_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 旧 reviewer 规则与 trace 候选并集字段名称无关；该 memory 也没有 superseded 状态。
+- query_id: holdout_project_schema_update_zh
+  memory_key: holdout_project_unknown_flag_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-929 的默认值不能说明 trace 候选并集字段当前叫什么。
+- query_id: holdout_project_schema_update_zh
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 的实验编号信息与 trace 候选并集字段无关。
+- query_id: holdout_project_schema_update_zh
+  memory_key: holdout_stress_conflict_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Production region 与 trace schema 字段名称属于不同实体和属性。
+- query_id: holdout_project_schema_update_zh
+  memory_key: holdout_stress_cross_user_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 另一个用户的密码记录不可访问这一事实不包含 trace 字段信息，也没有暴露密码值。
+- query_id: holdout_project_unknown_flag_mixed
+  memory_key: holdout_personal_language_exception_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 日常解释语言偏好与 MEM-992 feature flag 的默认值无关。
+- query_id: holdout_project_unknown_flag_mixed
+  memory_key: holdout_project_config_key_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: lexical kill switch 是另一个配置项，不能证明 MEM-992 的默认值。
+- query_id: holdout_project_unknown_flag_mixed
+  memory_key: holdout_project_config_key_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: vector switch 是另一个配置项，不能证明 MEM-992 的默认值。
+- query_id: holdout_project_unknown_flag_mixed
+  memory_key: holdout_project_review_rule_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: memory ranking 的 reviewer 规则不包含 MEM-992 的默认值。
+- query_id: holdout_project_unknown_flag_mixed
+  memory_key: holdout_stress_conflict_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Backup region 与 MEM-992 feature flag 的默认值无关。
+- query_id: holdout_stress_conflict_mixed
+  memory_key: holdout_personal_language_exception_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 代码标识符保持英文的规则不能说明 Production 当前 region。
+- query_id: holdout_stress_conflict_mixed
+  memory_key: holdout_project_unknown_flag_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-929 的默认值与 Production 部署 region 无关。
+- query_id: holdout_stress_conflict_mixed
+  memory_key: holdout_project_unknown_flag_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 生产 flag 的审批规则不能说明 Production 部署在哪个 region。
+- query_id: holdout_stress_conflict_mixed
+  memory_key: holdout_project_unknown_flag_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-992 的实验编号信息不能说明 Production 当前 region。
+- query_id: holdout_stress_conflict_mixed
+  memory_key: holdout_stress_cross_user_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 另一个用户的数据库密码记录不可访问这一事实不包含 Production region，也没有暴露密码值。
+- query_id: holdout_stress_conflict_mixed
+  memory_key: holdout_stress_cross_user_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: WSL Docker 描述的是数据库运行载体，不是云 region，且没有说明它就是问题所指的 Production 环境。
+- query_id: holdout_stress_cross_user_zh
+  memory_key: holdout_personal_unknown_insurance_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 下月旅行计划与生产数据库密码无关。
+- query_id: holdout_stress_cross_user_zh
+  memory_key: holdout_personal_unknown_locker_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 家门密码与生产数据库密码是不同凭据；该记忆也只说明已更新，没有暴露密码值。
+- query_id: holdout_stress_cross_user_zh
+  memory_key: holdout_project_unknown_flag_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: MEM-929 的默认值不能回答生产数据库密码。
+- query_id: holdout_stress_cross_user_zh
+  memory_key: holdout_project_unknown_flag_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 生产 flag 的审批规则不包含生产数据库密码。
+- query_id: holdout_stress_cross_user_zh
+  memory_key: holdout_stress_conflict_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Production region 是部署属性，不能提供生产数据库密码。
+- query_id: holdout_stress_cross_user_zh
+  memory_key: holdout_stress_conflict_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Backup region 与生产数据库密码属于不同实体和属性。
+- query_id: holdout_stress_homonym_zh
+  memory_key: holdout_personal_call_time_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Maya 曾发送邮件是通信事件，不能说明 Apple 账号绑定的邮箱地址。
+- query_id: holdout_stress_homonym_zh
+  memory_key: holdout_personal_unknown_locker_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 健身房会员号与 Apple 账号绑定邮箱无关。
+- query_id: holdout_stress_homonym_zh
+  memory_key: holdout_personal_unknown_locker_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 家门密码更新与 Apple 账号及其绑定邮箱是不同凭据和属性，也没有暴露密码值。
+- query_id: holdout_stress_homonym_zh
+  memory_key: holdout_stress_conflict_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Production region 与 Apple 账号绑定邮箱无关。
+- query_id: holdout_stress_homonym_zh
+  memory_key: holdout_stress_cross_user_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 另一个用户的数据库密码记录不可访问这一事实与 Apple 账号邮箱无关，也没有暴露密码值。

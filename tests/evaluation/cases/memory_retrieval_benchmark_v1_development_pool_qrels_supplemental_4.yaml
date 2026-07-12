@@ -1,0 +1,46 @@
+version: memory-retrieval-v1-development-pool-qrels-supplemental-4
+overlay_id: supplemental-4
+review_status: approved
+approved_by: user
+approved_at: '2026-07-12'
+source_dataset_hash: ea6f0b38a3306cc76837c3802722532a8af553c63c1362d3a858db0fda6cf6ba
+source_proposal:
+  file: development-supplemental-4-adjudication-proposal.json
+  sha256: 89a121d7493654053857968e9428d35e4520a38a5c88f673bad556afa072641f
+  version: memory-retrieval-v1-development-pool-supplemental-4-proposal
+  proposal_round: supplemental-4
+  source_pools:
+  - file: memory-retrieval-v1-ea6f0b38a330-development-judging-pool.json
+    artifact_group: stage-2
+    sha256: f255e5ec671b0af165b491fd8e74060f9cc623c62d1197cef7062da02f25e79e
+judgments:
+- query_id: personal_allergy_restaurant_en
+  memory_key: personal_bookmark_article_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Python typing guide 与用户需要声明的餐厅过敏原无关。
+- query_id: personal_hotness_contact_zh
+  memory_key: project_feature_owner_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Telegram outbound 的临时代管人不能说明用户偏好的非紧急联系方式。
+- query_id: project_storage_adr_en
+  memory_key: own_deploy_region
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 测试环境部署区域与长期记忆存储后端的架构决策无关。
+- query_id: project_test_command_en
+  memory_key: project_error_policy_irrelevant
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 同属 memory evaluation 流程，但 cache miss policy 不能回答测试命令。
+- query_id: stress_unknown_city_abstention_zh
+  memory_key: accepted_api_field
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: source_ref API 字段与用户在里斯本住过的酒店无关。

@@ -1,0 +1,603 @@
+version: memory-retrieval-v1-batch-4-draft
+review_status: draft
+corpora:
+- id: personal_home_temperature
+  memories:
+  - key: personal_home_temperature_answer
+    summary: 用户睡觉时偏好卧室空调设为 25 度。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_home_temperature_related
+    summary: 用户工作时书房空调设为 23 度。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_home_temperature_irrelevant
+    summary: 用户喜欢温水。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_passport_expiry
+  memories:
+  - key: personal_passport_expiry_answer
+    summary: 用户护照于 2031 年 4 月 10 日过期。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_passport_expiry_related
+    summary: 用户旧护照于 2026 年 4 月过期。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: personal_passport_expiry_irrelevant
+    summary: 用户签证于 2027 年 8 月过期。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_bookmark_article
+  memories:
+  - key: personal_bookmark_article_answer
+    summary: The saved article is 'GIN and GiST Index Types'.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_bookmark_article_related
+    summary: The user saved an article about SQLite WAL.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_bookmark_article_irrelevant
+    summary: The user bookmarked a Python typing guide.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_family_birthday
+  memories:
+  - key: personal_family_birthday_answer
+    summary: 用户姐姐的生日是 9 月 16 日。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_family_birthday_related
+    summary: 用户妹妹的生日是 6 月 19 日。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_family_birthday_irrelevant
+    summary: 用户姐姐喜欢蓝色。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_delivery_address_update
+  memories:
+  - key: personal_delivery_address_update_answer
+    summary: 默认收货地址已改为梧桐路 28 号 3 栋 502。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_delivery_address_update_related
+    summary: 旧默认地址是银杏路 18 号。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: personal_delivery_address_update_irrelevant
+    summary: 公司地址是科技路 66 号。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_unknown_wifi
+  memories:
+  - key: personal_unknown_wifi_answer
+    summary: 用户的新公寓已经开通宽带。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_unknown_wifi_related
+    summary: 旧公寓 Wi-Fi 名为 Home-5G。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_unknown_wifi_irrelevant
+    summary: 用户路由器品牌是 ASUS。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: project_env_variable
+  memories:
+  - key: project_env_variable_answer
+    summary: DashScope embedding 使用 DASHSCOPE_API_KEY。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_env_variable_related
+    summary: OpenAI chat 使用 OPENAI_API_KEY。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_env_variable_irrelevant
+    summary: 数据库使用 AMADEUS_DATABASE_URL。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: project_release_date
+  memories:
+  - key: project_release_date_answer
+    summary: 0.4.0-beta.3 计划在 2026 年 7 月 24 日发布。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_release_date_related
+    summary: 0.3.2 曾计划在 2026 年 6 月发布。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_release_date_irrelevant
+    summary: pgvector 0.8.4 在 2026 年 7 月升级。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: project_error_policy
+  memories:
+  - key: project_error_policy_answer
+    summary: A lexical lane failure keeps vector results and records degraded status.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_error_policy_related
+    summary: A vector lane failure keeps lexical results and records degraded status.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_error_policy_irrelevant
+    summary: Embedding cache miss aborts a formal experiment.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: project_unknown_pr
+  memories:
+  - key: project_unknown_pr_answer
+    summary: 'PR #824 由 Lin approve。'
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_unknown_pr_related
+    summary: 'Issue #842 由 Nora 关闭。'
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_unknown_pr_irrelevant
+    summary: 代码审核要求至少一人批准。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+queries:
+- id: personal_home_temperature_zh
+  family_id: personal_home_temperature
+  corpus_id: personal_home_temperature
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: personal_assistant
+  memory_capability: cross_session
+  language: zh
+  raw_query: 睡觉时卧室空调设多少度？
+  fixed_hypotheses:
+    event: 用户睡觉时偏好卧室空调设为 25 度。
+    general: 与问题“睡觉时卧室空调设多少度？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - preference
+  expected_abstention: false
+  required_memory_keys:
+  - personal_home_temperature_answer
+  judgments:
+  - memory_key: personal_home_temperature_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_home_temperature_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_home_temperature_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_passport_expiry_mixed
+  family_id: personal_passport_expiry
+  corpus_id: personal_passport_expiry
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: personal_assistant
+  memory_capability: temporal_reasoning
+  language: mixed
+  raw_query: 我的 passport 什么时候过期？
+  fixed_hypotheses:
+    event: 用户护照于 2031 年 4 月 10 日过期。
+    general: 与问题“我的 passport 什么时候过期？”对应的长期记忆。
+  strata:
+  - mixed
+  - both-lanes
+  - fact
+  - date-disambiguation
+  expected_abstention: false
+  required_memory_keys:
+  - personal_passport_expiry_answer
+  judgments:
+  - memory_key: personal_passport_expiry_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_passport_expiry_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: personal_passport_expiry_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_bookmark_article_en
+  family_id: personal_bookmark_article
+  corpus_id: personal_bookmark_article
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: personal_assistant
+  memory_capability: information_extraction
+  language: en
+  raw_query: Which article did I save about PostgreSQL indexing?
+  fixed_hypotheses:
+    event: The saved article is 'GIN and GiST Index Types'.
+    general: 与问题“Which article did I save about PostgreSQL indexing?”对应的长期记忆。
+  strata:
+  - en
+  - vector
+  - fact
+  expected_abstention: false
+  required_memory_keys:
+  - personal_bookmark_article_answer
+  judgments:
+  - memory_key: personal_bookmark_article_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_bookmark_article_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_bookmark_article_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_family_birthday_zh
+  family_id: personal_family_birthday
+  corpus_id: personal_family_birthday
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: personal_assistant
+  memory_capability: temporal_reasoning
+  language: zh
+  raw_query: 姐姐生日是几月几号？
+  fixed_hypotheses:
+    event: 用户姐姐的生日是 9 月 16 日。
+    general: 与问题“姐姐生日是几月几号？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - fact
+  - entity-disambiguation
+  expected_abstention: false
+  required_memory_keys:
+  - personal_family_birthday_answer
+  judgments:
+  - memory_key: personal_family_birthday_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_family_birthday_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_family_birthday_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_delivery_address_update_zh
+  family_id: personal_delivery_address_update
+  corpus_id: personal_delivery_address_update
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: personal_assistant
+  memory_capability: knowledge_update
+  language: zh
+  raw_query: 现在默认收货地址是哪？
+  fixed_hypotheses:
+    event: 默认收货地址已改为梧桐路 28 号 3 栋 502。
+    general: 与问题“现在默认收货地址是哪？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - fact
+  - dangerous-obsolete
+  expected_abstention: false
+  required_memory_keys:
+  - personal_delivery_address_update_answer
+  judgments:
+  - memory_key: personal_delivery_address_update_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_delivery_address_update_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: personal_delivery_address_update_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_unknown_wifi_mixed
+  family_id: personal_unknown_wifi
+  corpus_id: personal_unknown_wifi
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: personal_assistant
+  memory_capability: abstention
+  language: mixed
+  raw_query: 新公寓 Wi-Fi password 是什么？
+  fixed_hypotheses:
+    event: 用户的新公寓已经开通宽带。
+    general: 与问题“新公寓 Wi-Fi password 是什么？”对应的长期记忆。
+  strata:
+  - mixed
+  - abstention
+  - fact
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: personal_unknown_wifi_answer
+    relevance: 0
+    dangerous: false
+    rationale: 主题接近，但没有问题所需的具体答案。
+  - memory_key: personal_unknown_wifi_related
+    relevance: 0
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_unknown_wifi_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: project_env_variable_mixed
+  family_id: project_env_variable
+  corpus_id: project_env_variable
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: project_assistant
+  memory_capability: information_extraction
+  language: mixed
+  raw_query: DashScope embedding 的 env var 叫什么？
+  fixed_hypotheses:
+    event: DashScope embedding 使用 DASHSCOPE_API_KEY。
+    general: 与问题“DashScope embedding 的 env var 叫什么？”对应的长期记忆。
+  strata:
+  - mixed
+  - both-lanes
+  - fact
+  - exact-identifier
+  expected_abstention: false
+  required_memory_keys:
+  - project_env_variable_answer
+  judgments:
+  - memory_key: project_env_variable_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: project_env_variable_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: project_env_variable_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: project_release_date_zh
+  family_id: project_release_date
+  corpus_id: project_release_date
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: project_assistant
+  memory_capability: temporal_reasoning
+  language: zh
+  raw_query: 0.4.0-beta.3 计划哪天发？
+  fixed_hypotheses:
+    event: 0.4.0-beta.3 计划在 2026 年 7 月 24 日发布。
+    general: 与问题“0.4.0-beta.3 计划哪天发？”对应的长期记忆。
+  strata:
+  - zh
+  - both-lanes
+  - event
+  - temporal-reasoning
+  expected_abstention: false
+  required_memory_keys:
+  - project_release_date_answer
+  judgments:
+  - memory_key: project_release_date_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: project_release_date_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: project_release_date_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: project_error_policy_en
+  family_id: project_error_policy
+  corpus_id: project_error_policy
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: project_assistant
+  memory_capability: cross_session
+  language: en
+  raw_query: How should lexical lane failure degrade?
+  fixed_hypotheses:
+    event: A lexical lane failure keeps vector results and records degraded status.
+    general: 与问题“How should lexical lane failure degrade?”对应的长期记忆。
+  strata:
+  - en
+  - vector
+  - procedure
+  expected_abstention: false
+  required_memory_keys:
+  - project_error_policy_answer
+  judgments:
+  - memory_key: project_error_policy_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: project_error_policy_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: project_error_policy_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: project_unknown_pr_zh
+  family_id: project_unknown_pr
+  corpus_id: project_unknown_pr
+  split: development
+  review_status: approved
+  review_batch: 4
+  product_scenario: project_assistant
+  memory_capability: abstention
+  language: zh
+  raw_query: 'PR #842 最后是谁 approve 的？'
+  fixed_hypotheses:
+    event: 'PR #824 由 Lin approve。'
+    general: '与问题“PR #842 最后是谁 approve 的？”对应的长期记忆。'
+  strata:
+  - zh
+  - abstention
+  - fact
+  - identifier-hard-negative
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: project_unknown_pr_answer
+    relevance: 0
+    dangerous: false
+    rationale: 主题接近，但没有问题所需的具体答案。
+  - memory_key: project_unknown_pr_related
+    relevance: 0
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: project_unknown_pr_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。

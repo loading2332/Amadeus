@@ -1,0 +1,31 @@
+version: memory-retrieval-v1-development-pool-qrels-supplemental-2
+overlay_id: supplemental-2
+review_status: approved
+approved_by: user
+approved_at: '2026-07-12'
+source_dataset_hash: 9721b7b6264ab69b7e238c8af7175be10e1cb984729b05b32720c47d1b930d1c
+source_proposal:
+  file: development-supplemental-2-adjudication-proposal.json
+  sha256: e9aef0125c1672665ae92b5c0a3621ed39bb66cc97169cdb288bf9dff5e1898f
+  version: memory-retrieval-v1-development-pool-supplemental-2-proposal
+  proposal_round: supplemental-2
+  source_pools:
+  - file: memory-retrieval-v1-9721b7b6264a-development-judging-pool.json
+    artifact_group: stage-0
+    sha256: bd44e5dea577c896f39213b619150ed8307eef5dd0809750f908ede97795fa4b
+  - file: memory-retrieval-v1-9721b7b6264a-development-judging-pool.json
+    artifact_group: stage-1
+    sha256: 716396898ee3d14890f5499ae44640724f9feb1bc32115fc4eb0449c229c1853
+judgments:
+- query_id: project_incident_root_cause_en
+  memory_key: personal_bookmark_article_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Python typing guide 与 INC-204 事故根因无关，不能提供根因证据。
+- query_id: project_test_command_en
+  memory_key: personal_bookmark_article_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Python typing guide 与 memory acceptance 测试命令无关，不能回答运行命令。

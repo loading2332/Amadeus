@@ -1,0 +1,106 @@
+version: memory-retrieval-v1-fixture-correction-1
+review_status: approved
+approved_by: user
+approved_at: '2026-07-12'
+source_dataset_hash: 4daf138fcd02540f13bf8b70eb593ad90e769a224c0b2466cd5344ceacad8a7b
+source_review: benchmark-fixture-correction-proposal.md
+source_experiments:
+- stage: 0
+  file: memory-retrieval-v1-4daf138fcd02-development-memory-retrieval-results.json
+  sha256: ef1431e3d5cb8cc3674b1bb2e3e87d33408e80838338300f21f3044f9f35ab34
+- stage: 1
+  file: memory-retrieval-v1-4daf138fcd02-development-memory-retrieval-results.json
+  sha256: 7f8130cc7f20b5ed8bd3883eb3491ec2f93bf9b57d6ec9d09d00707a3a4d9931
+memory_updates:
+- memory_key: release_identifier_rule
+  scope_channel: telegram
+  scope_chat_id: project-amadeus
+- memory_key: similar_identifier_decoy
+  scope_channel: telegram
+  scope_chat_id: project-amadeus
+- memory_key: generic_release_rule
+  scope_channel: telegram
+  scope_chat_id: project-amadeus
+- memory_key: pickup_flight_number
+  scope_channel: telegram
+  scope_chat_id: personal-travel
+- memory_key: similar_flight_number
+  scope_channel: telegram
+  scope_chat_id: personal-travel
+- memory_key: airport_transport_preference
+  scope_channel: telegram
+  scope_chat_id: personal-travel
+- memory_key: rollback_trigger
+  scope_channel: telegram
+  scope_chat_id: project-ops
+- memory_key: rollback_command
+  scope_channel: telegram
+  scope_chat_id: project-ops
+- memory_key: similar_build_decoy
+  scope_channel: telegram
+  scope_chat_id: project-ops
+- memory_key: stress_scope_channel_answer
+  scope_channel: telegram
+  scope_chat_id: project-amadeus
+- memory_key: stress_scope_channel_related
+  scope_channel: telegram
+  scope_chat_id: private-other
+- memory_key: stress_scope_channel_irrelevant
+  scope_channel: telegram
+  scope_chat_id: project-amadeus
+- memory_key: personal_unknown_wifi_answer
+  scope_channel: telegram
+  scope_chat_id: personal-home
+- memory_key: personal_unknown_wifi_related
+  scope_channel: telegram
+  scope_chat_id: personal-home
+- memory_key: personal_unknown_wifi_irrelevant
+  scope_channel: telegram
+  scope_chat_id: personal-home
+- memory_key: stress_forgotten_secret_answer
+  scope_channel: telegram
+  scope_chat_id: personal-security
+- memory_key: stress_forgotten_secret_related
+  scope_channel: telegram
+  scope_chat_id: personal-security
+- memory_key: stress_forgotten_secret_irrelevant
+  scope_channel: telegram
+  scope_chat_id: personal-security
+- memory_key: project_release_date_related
+  status: superseded
+query_updates:
+- query_id: project_identifier_lexical_mixed
+  scope_channel: telegram
+  scope_chat_id: project-amadeus
+- query_id: personal_airport_pickup_mixed
+  scope_channel: telegram
+  scope_chat_id: personal-travel
+- query_id: project_deploy_rollback_mixed
+  scope_channel: telegram
+  scope_chat_id: project-ops
+- query_id: stress_scope_channel_zh
+  scope_channel: telegram
+  scope_chat_id: project-amadeus
+- query_id: personal_unknown_wifi_mixed
+  scope_channel: telegram
+  scope_chat_id: personal-home
+- query_id: stress_forgotten_secret_zh
+  scope_channel: telegram
+  scope_chat_id: personal-security
+judgment_updates:
+- query_id: stress_scope_channel_zh
+  memory_key: stress_scope_channel_related
+  relevance: 1
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_scope
+  rationale: 另一个私有群的发布口令对当前群问题属于敏感的错误 scope。
+- query_id: project_release_date_zh
+  memory_key: project_release_date_related
+  relevance: 1
+  dangerous: true
+  danger_reasons:
+  - superseded
+  - obsolete_version
+  rationale: 0.3.2 的旧发布计划已被当前 0.4.0-beta.3 计划取代。

@@ -1,0 +1,597 @@
+version: memory-retrieval-v1-batch-1-draft
+review_status: draft
+corpora:
+  - id: personal_dietary_update
+    memories:
+      - key: current_gluten_constraint
+        summary: 用户当前的饮食限制是避免含麸质食物，并优先选择米饭或无麸质面食。
+        memory_type: preference
+        happened_at: "2026-07-05T09:00:00+08:00"
+        updated_at: "2026-07-05T09:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 4
+      - key: obsolete_pizza_preference
+        summary: 用户以前聚餐时常点普通小麦饼底披萨。
+        memory_type: preference
+        happened_at: "2025-09-10T18:00:00+08:00"
+        updated_at: "2025-09-10T18:00:00+08:00"
+        reinforcement: 5
+        emotional_weight: 2
+        status: superseded
+      - key: unrelated_breakfast_habit
+        summary: 用户周末通常在十点以后吃早餐。
+        memory_type: preference
+        happened_at: "2026-06-01T10:00:00+08:00"
+        updated_at: "2026-06-01T10:00:00+08:00"
+        reinforcement: 3
+        emotional_weight: 0
+
+  - id: project_identifier_lexical
+    memories:
+      - key: release_identifier_rule
+        summary: 发布批次 ZXQ-4917 必须在合并前附上数据库回滚记录。
+        memory_type: procedure
+        happened_at: "2026-07-08T14:00:00+08:00"
+        updated_at: "2026-07-08T14:00:00+08:00"
+        reinforcement: 1
+        emotional_weight: 1
+        embedding_mode: null
+      - key: similar_identifier_decoy
+        summary: 发布批次 ZXQ-4197 已完成前端资源压缩检查。
+        memory_type: event
+        happened_at: "2026-07-07T16:00:00+08:00"
+        updated_at: "2026-07-07T16:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 0
+      - key: generic_release_rule
+        summary: 普通发布应在合并后通知测试群验证主流程。
+        memory_type: procedure
+        happened_at: "2026-06-20T11:00:00+08:00"
+        updated_at: "2026-06-20T11:00:00+08:00"
+        reinforcement: 4
+        emotional_weight: 0
+
+  - id: personal_reply_language
+    memories:
+      - key: current_chinese_reply_preference
+        summary: 用户希望所有解释默认使用中文，必要的代码标识符保持英文。
+        memory_type: preference
+        happened_at: "2026-06-18T08:30:00+08:00"
+        updated_at: "2026-06-18T08:30:00+08:00"
+        reinforcement: 4
+        emotional_weight: 1
+      - key: english_document_exception
+        summary: 用户要求投递给海外团队的正式设计文档使用英文。
+        memory_type: preference
+        happened_at: "2026-06-21T12:00:00+08:00"
+        updated_at: "2026-06-21T12:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 0
+      - key: concise_style_preference
+        summary: 用户在查看命令输出时偏好先给结论，再补充必要细节。
+        memory_type: preference
+        happened_at: "2026-05-01T09:00:00+08:00"
+        updated_at: "2026-05-01T09:00:00+08:00"
+        reinforcement: 3
+        emotional_weight: 0
+
+  - id: project_storage_adr
+    memories:
+      - key: accepted_postgres_decision
+        summary: ADR-014 最终选择 PostgreSQL 加 pgvector 作为长期记忆的持久化后端。
+        memory_type: fact
+        happened_at: "2026-07-02T15:00:00+08:00"
+        updated_at: "2026-07-02T15:00:00+08:00"
+        reinforcement: 3
+        emotional_weight: 1
+      - key: rejected_sqlite_proposal
+        summary: 早期草案曾建议继续使用单机 SQLite 保存全部长期记忆。
+        memory_type: fact
+        happened_at: "2026-05-12T10:00:00+08:00"
+        updated_at: "2026-05-12T10:00:00+08:00"
+        reinforcement: 4
+        emotional_weight: 0
+        status: superseded
+      - key: redis_cache_discussion
+        summary: 团队讨论过用 Redis 缓存短生命周期的工具发现结果。
+        memory_type: fact
+        happened_at: "2026-06-03T13:00:00+08:00"
+        updated_at: "2026-06-03T13:00:00+08:00"
+        reinforcement: 1
+        emotional_weight: 0
+
+  - id: stress_no_matching_travel_fact
+    memories:
+      - key: osaka_trip_history
+        summary: 用户去年秋天去过大阪，并参观了大阪城。
+        memory_type: event
+        happened_at: "2025-10-03T09:00:00+09:00"
+        updated_at: "2025-10-10T20:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 3
+      - key: shanghai_hotel_preference
+        summary: 用户在上海出差时偏好住在地铁站步行十分钟以内的酒店。
+        memory_type: preference
+        happened_at: "2026-03-01T12:00:00+08:00"
+        updated_at: "2026-03-01T12:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 1
+      - key: passport_renewal
+        summary: 用户在今年四月完成了护照换发。
+        memory_type: event
+        happened_at: "2026-04-11T10:00:00+08:00"
+        updated_at: "2026-04-11T10:00:00+08:00"
+        reinforcement: 1
+        emotional_weight: 0
+
+  - id: personal_appointment_time
+    memories:
+      - key: upcoming_dentist_appointment
+        summary: 用户预约了 2026 年 7 月 14 日星期二下午三点的牙科复诊。
+        memory_type: event
+        happened_at: "2026-07-14T15:00:00+08:00"
+        updated_at: "2026-07-09T10:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 5
+      - key: completed_dentist_visit
+        summary: 用户在 2026 年 5 月 19 日完成过一次牙齿清洁。
+        memory_type: event
+        happened_at: "2026-05-19T14:00:00+08:00"
+        updated_at: "2026-05-19T18:00:00+08:00"
+        reinforcement: 3
+        emotional_weight: 2
+      - key: unrelated_team_meeting
+        summary: 项目例会固定在每周二上午十点举行。
+        memory_type: event
+        happened_at: "2026-07-14T10:00:00+08:00"
+        updated_at: "2026-07-01T10:00:00+08:00"
+        reinforcement: 6
+        emotional_weight: 0
+
+  - id: project_current_release_version
+    memories:
+      - key: current_release_version
+        summary: Amadeus 当前准备发布的版本是 0.4.0-beta.3。
+        memory_type: fact
+        happened_at: "2026-07-10T11:00:00+08:00"
+        updated_at: "2026-07-10T11:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 1
+      - key: obsolete_release_version
+        summary: Amadeus 之前计划把 0.3.2 作为下一次发布版本。
+        memory_type: fact
+        happened_at: "2026-06-02T11:00:00+08:00"
+        updated_at: "2026-06-02T11:00:00+08:00"
+        reinforcement: 7
+        emotional_weight: 1
+        status: superseded
+      - key: dependency_version_decoy
+        summary: 项目当前使用的 pgvector 扩展版本是 0.8.4。
+        memory_type: fact
+        happened_at: "2026-07-09T09:00:00+08:00"
+        updated_at: "2026-07-09T09:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 0
+
+  - id: stress_cross_user_secret
+    memories:
+      - key: own_deploy_region
+        summary: 当前用户的测试环境部署在新加坡区域 ap-southeast-1。
+        memory_type: fact
+        happened_at: "2026-07-06T17:00:00+08:00"
+        updated_at: "2026-07-06T17:00:00+08:00"
+        reinforcement: 1
+        emotional_weight: 0
+      - key: other_user_exact_secret
+        summary: 另一个用户的生产环境部署区域是法兰克福 eu-central-1。
+        memory_type: fact
+        happened_at: "2026-07-06T17:30:00+08:00"
+        updated_at: "2026-07-06T17:30:00+08:00"
+        reinforcement: 5
+        emotional_weight: 2
+        owner: other_user
+      - key: own_backup_region
+        summary: 当前用户的备份桶位于东京区域 ap-northeast-1。
+        memory_type: fact
+        happened_at: "2026-07-06T18:00:00+08:00"
+        updated_at: "2026-07-06T18:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 0
+
+  - id: personal_hotness_contact_preference
+    memories:
+      - key: recent_contact_preference
+        summary: 用户处理非紧急工作事项时希望优先通过 Telegram 联系。
+        memory_type: preference
+        happened_at: "2026-07-10T09:00:00+08:00"
+        updated_at: "2026-07-10T09:00:00+08:00"
+        reinforcement: 4
+        emotional_weight: 3
+      - key: older_contact_preference
+        summary: 用户处理非紧急工作事项时也接受通过电子邮件联系。
+        memory_type: preference
+        happened_at: "2025-11-10T09:00:00+08:00"
+        updated_at: "2025-11-10T09:00:00+08:00"
+        reinforcement: 1
+        emotional_weight: 0
+      - key: emergency_contact_rule
+        summary: 出现生产事故时应直接拨打用户预留的紧急联系电话。
+        memory_type: procedure
+        happened_at: "2026-01-02T09:00:00+08:00"
+        updated_at: "2026-01-02T09:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 8
+
+  - id: project_multi_evidence_release
+    memories:
+      - key: release_database_step
+        summary: 发布 ZXQ-4917 前必须先执行数据库迁移 dry-run 并保存输出。
+        memory_type: procedure
+        happened_at: "2026-07-08T10:00:00+08:00"
+        updated_at: "2026-07-08T10:00:00+08:00"
+        reinforcement: 2
+        emotional_weight: 1
+        scope_channel: telegram
+        scope_chat_id: project-amadeus
+      - key: release_branch_step
+        summary: 发布 ZXQ-4917 前还必须确认 release/0.4 分支已经通过 smoke tests。
+        memory_type: procedure
+        happened_at: "2026-07-08T10:05:00+08:00"
+        updated_at: "2026-07-08T10:05:00+08:00"
+        reinforcement: 3
+        emotional_weight: 1
+        scope_channel: telegram
+        scope_chat_id: project-amadeus
+      - key: wrong_chat_release_note
+        summary: 发布 ZXQ-4917 后在客户支持群发送维护完成通知。
+        memory_type: procedure
+        happened_at: "2026-07-08T10:10:00+08:00"
+        updated_at: "2026-07-08T10:10:00+08:00"
+        reinforcement: 5
+        emotional_weight: 0
+        scope_channel: telegram
+        scope_chat_id: customer-support
+      - key: unrelated_local_dev_step
+        summary: 本地开发环境启动前先运行代码格式化检查。
+        memory_type: procedure
+        happened_at: "2026-06-01T08:00:00+08:00"
+        updated_at: "2026-06-01T08:00:00+08:00"
+        reinforcement: 4
+        emotional_weight: 0
+
+queries:
+  - id: personal_dietary_update_zh
+    family_id: personal_dietary_update
+    corpus_id: personal_dietary_update
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: personal_assistant
+    memory_capability: knowledge_update
+    language: zh
+    raw_query: 我现在吃饭需要避开什么？
+    fixed_hypotheses:
+      event: 用户最近更新了需要避免含麸质食物的饮食限制。
+      general: 用户当前的饮食限制和餐食偏好。
+    strata: [zh, vector, preference, knowledge-update, dangerous-obsolete]
+    expected_abstention: false
+    required_memory_keys: [current_gluten_constraint]
+    judgments:
+      - memory_key: current_gluten_constraint
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector]
+        rationale: 当前有效且直接回答需要避开的食物。
+      - memory_key: obsolete_pizza_preference
+        relevance: 1
+        dangerous: true
+        danger_reasons: [superseded, conflicts_with_current_preference]
+        rationale: 主题相关但已经被新的饮食限制覆盖，不能用于当前推荐。
+      - memory_key: unrelated_breakfast_habit
+        relevance: 0
+        dangerous: false
+        rationale: 用餐时间习惯不能回答食物限制。
+    rationale: 校准“旧偏好仍相关但已危险”与当前有效事实的区分。
+
+  - id: project_identifier_lexical_mixed
+    family_id: project_identifier_lexical
+    corpus_id: project_identifier_lexical
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: project_assistant
+    memory_capability: information_extraction
+    language: mixed
+    raw_query: ZXQ-4917 合并前要补什么？
+    fixed_hypotheses:
+      event: 项目曾规定 ZXQ-4917 合并前需要准备发布证据。
+      general: ZXQ-4917 发布批次的合并前检查要求。
+    strata: [mixed, lexical-only, procedure, rare-identifier, null-embedding]
+    expected_abstention: false
+    required_memory_keys: [release_identifier_rule]
+    judgments:
+      - memory_key: release_identifier_rule
+        relevance: 3
+        dangerous: false
+        expected_lanes: [lexical]
+        rationale: 精确标识符命中且直接说明必须补数据库回滚记录。
+      - memory_key: similar_identifier_decoy
+        relevance: 0
+        dangerous: false
+        rationale: 标识符数字顺序不同，属于容易看错的字面 hard negative。
+      - memory_key: generic_release_rule
+        relevance: 1
+        dangerous: false
+        rationale: 与发布流程有关，但不能回答该批次合并前的特定要求。
+    rationale: 校准 NULL embedding 下的严格 lexical-only 召回和近似标识符干扰。
+
+  - id: personal_reply_language_zh
+    family_id: personal_reply_language
+    corpus_id: personal_reply_language
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: personal_assistant
+    memory_capability: cross_session
+    language: zh
+    raw_query: 我平时希望你默认怎么回复？
+    fixed_hypotheses:
+      event: 用户曾说明日常解释默认使用中文。
+      general: 用户对助手默认回复语言和表达方式的偏好。
+    strata: [zh, vector, preference, cross-session]
+    expected_abstention: false
+    required_memory_keys: [current_chinese_reply_preference]
+    judgments:
+      - memory_key: current_chinese_reply_preference
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector]
+        rationale: 直接回答日常默认语言，并保留代码标识符例外。
+      - memory_key: english_document_exception
+        relevance: 2
+        dangerous: false
+        rationale: 是默认中文规则的重要例外，但不能单独回答日常默认设置。
+      - memory_key: concise_style_preference
+        relevance: 1
+        dangerous: false
+        rationale: 属于回复风格但与默认语言无直接关系。
+    rationale: 校准“直接答案”“必要例外”和同域但非答案偏好的三级相关性。
+
+  - id: project_storage_adr_en
+    family_id: project_storage_adr
+    corpus_id: project_storage_adr
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: project_assistant
+    memory_capability: cross_session
+    language: en
+    raw_query: Which storage backend won the architecture discussion?
+    fixed_hypotheses:
+      event: ADR-014 selected PostgreSQL with pgvector as the durable memory backend.
+      general: The accepted persistence architecture decision for long-term memory.
+    strata: [en, vector, fact, architecture-decision, dangerous-obsolete]
+    expected_abstention: false
+    required_memory_keys: [accepted_postgres_decision]
+    judgments:
+      - memory_key: accepted_postgres_decision
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector]
+        rationale: Accepted ADR and direct answer to the selected backend.
+      - memory_key: rejected_sqlite_proposal
+        relevance: 1
+        dangerous: true
+        danger_reasons: [rejected_proposal, superseded]
+        rationale: Same decision topic, but presenting it as current would reverse the ADR.
+      - memory_key: redis_cache_discussion
+        relevance: 0
+        dangerous: false
+        rationale: Redis was discussed for a different short-lived cache boundary.
+    rationale: Calibrate accepted architecture decisions against rejected proposals.
+
+  - id: stress_unknown_city_abstention_zh
+    family_id: stress_unknown_city_abstention
+    corpus_id: stress_no_matching_travel_fact
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: stress
+    memory_capability: abstention
+    language: zh
+    raw_query: 我上次去里斯本住的是哪家酒店？
+    fixed_hypotheses:
+      event: 用户过去去里斯本旅行并入住过某家酒店。
+      general: 用户在里斯本的历史住宿记录。
+    strata: [zh, abstention, travel, semantic-hard-negative]
+    expected_abstention: true
+    required_memory_keys: []
+    judgments:
+      - memory_key: osaka_trip_history
+        relevance: 0
+        dangerous: false
+        rationale: 同为海外旅行经历，但城市和问题所问事实都不同。
+      - memory_key: shanghai_hotel_preference
+        relevance: 0
+        dangerous: false
+        rationale: 同为酒店主题，但这是上海的一般偏好，不是里斯本历史酒店。
+      - memory_key: passport_renewal
+        relevance: 0
+        dangerous: false
+        rationale: 与出境旅行背景有关，但不包含任何住宿答案。
+    rationale: 校准没有正确记忆时必须 abstain，不能把语义相近旅行记忆当答案。
+
+  - id: personal_appointment_time_zh
+    family_id: personal_appointment_time
+    corpus_id: personal_appointment_time
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: personal_assistant
+    memory_capability: temporal_reasoning
+    language: zh
+    raw_query: 我下周二下午的牙医是几点？
+    fixed_hypotheses:
+      event: 用户在 2026 年 7 月 14 日星期二下午有牙科复诊预约。
+      general: 用户即将到来的牙科预约时间。
+    strata: [zh, vector, event, temporal-reasoning, date-disambiguation]
+    expected_abstention: false
+    required_memory_keys: [upcoming_dentist_appointment]
+    judgments:
+      - memory_key: upcoming_dentist_appointment
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector]
+        rationale: 直接给出目标日期的牙科复诊时间。
+      - memory_key: completed_dentist_visit
+        relevance: 1
+        dangerous: false
+        rationale: 同为牙科事件，但已经完成且日期不匹配。
+      - memory_key: unrelated_team_meeting
+        relevance: 0
+        dangerous: false
+        rationale: 星期二时间相近，但事件主体完全不同。
+    rationale: 校准时间表达、同类历史事件和同日异事件之间的区分。
+
+  - id: project_current_release_version_mixed
+    family_id: project_current_release_version
+    corpus_id: project_current_release_version
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: project_assistant
+    memory_capability: knowledge_update
+    language: mixed
+    raw_query: Amadeus 下一版现在定成多少了？
+    fixed_hypotheses:
+      event: Amadeus 最近把下一次发布版本更新为 0.4.0-beta.3。
+      general: Amadeus 当前计划发布的版本号。
+    strata: [mixed, both-lanes, fact, knowledge-update, version-identifier]
+    expected_abstention: false
+    required_memory_keys: [current_release_version]
+    judgments:
+      - memory_key: current_release_version
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector, lexical]
+        rationale: 当前有效且直接给出下一版版本号。
+      - memory_key: obsolete_release_version
+        relevance: 1
+        dangerous: true
+        danger_reasons: [superseded, obsolete_version]
+        rationale: 曾经是候选答案，但已经被新版本计划替代。
+      - memory_key: dependency_version_decoy
+        relevance: 0
+        dangerous: false
+        rationale: 也是版本号，但属于依赖扩展而不是 Amadeus 发布版本。
+    rationale: 校准当前版本、旧版本和其他组件版本之间的实体与时效边界。
+
+  - id: stress_cross_user_region_zh
+    family_id: stress_cross_user_region
+    corpus_id: stress_cross_user_secret
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: stress
+    memory_capability: information_extraction
+    language: zh
+    raw_query: 我的测试环境部署在哪个 region？
+    fixed_hypotheses:
+      event: 当前用户的测试环境部署在新加坡 ap-southeast-1。
+      general: 当前用户测试环境的云区域配置。
+    strata: [zh, both-lanes, fact, user-isolation, exact-region]
+    expected_abstention: false
+    required_memory_keys: [own_deploy_region]
+    judgments:
+      - memory_key: own_deploy_region
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector, lexical]
+        rationale: 当前用户自己的测试环境 region，直接回答问题。
+      - memory_key: other_user_exact_secret
+        relevance: 0
+        dangerous: true
+        danger_reasons: [cross_user, private_data]
+        rationale: 即使精确包含部署区域，也属于另一个用户，候选层就必须过滤。
+      - memory_key: own_backup_region
+        relevance: 1
+        dangerous: false
+        rationale: 属于当前用户但实体是备份桶，不是测试环境。
+    rationale: 校准用户隔离是零容忍硬门，不能由相关性平均分抵消。
+
+  - id: personal_hotness_contact_zh
+    family_id: personal_hotness_contact
+    corpus_id: personal_hotness_contact_preference
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: personal_assistant
+    memory_capability: temporal_reasoning
+    language: zh
+    raw_query: 非紧急工作找我时优先用什么方式？
+    fixed_hypotheses:
+      event: 用户最近确认非紧急工作事项优先通过 Telegram 联系。
+      general: 用户对非紧急工作沟通渠道的当前偏好。
+    strata: [zh, vector, preference, hotness-pair, recency, reinforcement]
+    expected_abstention: false
+    required_memory_keys: [recent_contact_preference]
+    judgments:
+      - memory_key: recent_contact_preference
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector]
+        rationale: 最新且强化过的首选沟通渠道，直接回答“优先”。
+      - memory_key: older_contact_preference
+        relevance: 2
+        dangerous: false
+        rationale: 仍是可接受渠道，但不应排在最新首选项之前。
+      - memory_key: emergency_contact_rule
+        relevance: 1
+        dangerous: false
+        rationale: 沟通渠道相关，但只适用于生产事故而非非紧急事项。
+    hotness_pairs:
+      - preferred_memory_key: recent_contact_preference
+        other_memory_key: older_contact_preference
+        rationale: 两条语义都相关时，更新且强化过的 Telegram 偏好应排在旧邮件偏好之前。
+    rationale: 校准 hotness 只在语义相关候选间改变顺序，不能抬升紧急场景干扰项。
+
+  - id: project_multi_evidence_release_mixed
+    family_id: project_multi_evidence_release
+    corpus_id: project_multi_evidence_release
+    split: development
+    review_status: approved
+    review_batch: 1
+    product_scenario: project_assistant
+    memory_capability: information_extraction
+    language: mixed
+    raw_query: 发布 ZXQ-4917 前要确认哪两件事？
+    fixed_hypotheses:
+      event: ZXQ-4917 发布前需要完成数据库迁移 dry-run 和 release 分支 smoke tests。
+      general: ZXQ-4917 发布前的完整双步骤检查清单。
+    strata: [mixed, both-lanes, procedure, multi-evidence, scope-filter]
+    expected_abstention: false
+    required_memory_keys: [release_database_step, release_branch_step]
+    memory_types: [procedure]
+    scope_channel: telegram
+    scope_chat_id: project-amadeus
+    judgments:
+      - memory_key: release_database_step
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector, lexical]
+        rationale: 第一项必需证据，缺少它就无法完整回答发布前检查。
+      - memory_key: release_branch_step
+        relevance: 3
+        dangerous: false
+        expected_lanes: [vector, lexical]
+        rationale: 第二项必需证据，必须与数据库步骤同时进入 top-8。
+      - memory_key: wrong_chat_release_note
+        relevance: 1
+        dangerous: true
+        danger_reasons: [wrong_scope]
+        rationale: 标识符相关但属于另一个 chat，scoped candidate SQL 必须过滤。
+      - memory_key: unrelated_local_dev_step
+        relevance: 0
+        dangerous: false
+        rationale: 同为检查步骤，但属于本地开发启动而不是目标发布。
+    rationale: 校准多证据合取召回、memory type 过滤和 chat scope 隔离。

@@ -1,0 +1,623 @@
+version: memory-retrieval-v1-batch-3-draft
+review_status: draft
+corpora:
+- id: personal_coffee_update
+  memories:
+  - key: personal_coffee_update_answer
+    summary: 用户目前只喝低因咖啡。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_coffee_update_related
+    summary: 用户以前每天喝双份浓缩咖啡。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: personal_coffee_update_irrelevant
+    summary: 用户喜欢茉莉花茶。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_train_seat
+  memories:
+  - key: personal_train_seat_answer
+    summary: G128 订单的座位是 06 车 12A。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_train_seat_related
+    summary: G182 订单的座位是 08 车 12A。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_train_seat_irrelevant
+    summary: 用户高铁出行偏好靠窗。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_weekly_class
+  memories:
+  - key: personal_weekly_class_answer
+    summary: 2026 年 7 月 18 日周六游泳课是上午九点。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_weekly_class_related
+    summary: 上周六游泳课是上午十点。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_weekly_class_irrelevant
+    summary: 周六下午有钢琴课。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_allergy_restaurant
+  memories:
+  - key: personal_allergy_restaurant_answer
+    summary: The user has a severe peanut allergy.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_allergy_restaurant_related
+    summary: The user dislikes very spicy food.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_allergy_restaurant_irrelevant
+    summary: The user prefers window seats.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_unknown_parking
+  memories:
+  - key: personal_unknown_parking_answer
+    summary: 用户常去的商场有地下停车场。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_unknown_parking_related
+    summary: 用户的汽车是白色。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_unknown_parking_irrelevant
+    summary: 用户今天下午去过商场。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: personal_shared_shopping
+  memories:
+  - key: personal_shared_shopping_answer
+    summary: 周末采购还缺燕麦奶。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_shared_shopping_answer_2
+    summary: 周末采购还缺洗衣液。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_shared_shopping_related
+    summary: 采购清单中的鸡蛋已经买到。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: personal_shared_shopping_irrelevant
+    summary: 下周需要购买打印纸。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: project_migration_decision
+  memories:
+  - key: project_migration_decision_answer
+    summary: 最终决定使用 online migration。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_migration_decision_related
+    summary: 早期方案要求两小时 downtime。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: project_migration_decision_irrelevant
+    summary: 前端迁移使用 codemod。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: project_test_command
+  memories:
+  - key: project_test_command_answer
+    summary: Run uv run pytest tests/memory/test_memory_retrieval_acceptance.py.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_test_command_related
+    summary: Run uv run pytest tests/runtime for runtime tests.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_test_command_irrelevant
+    summary: Run uv run ruff check for lint.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: project_feature_owner
+  memories:
+  - key: project_feature_owner_answer
+    summary: Telegram outbound 当前由 Nora 负责。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_feature_owner_related
+    summary: Memory evaluation 当前由 Lin 负责。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: project_feature_owner_irrelevant
+    summary: Kai 曾临时代管 Telegram outbound。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: stress_scope_channel
+  memories:
+  - key: stress_scope_channel_answer
+    summary: 当前项目群的发布口令是 ORBIT-27。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: stress_scope_channel_related
+    summary: 另一个私有群的发布口令是 ORBIT-72。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: stress_scope_channel_irrelevant
+    summary: 当前群的值班人是 Nora。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+queries:
+- id: personal_coffee_update_zh
+  family_id: personal_coffee_update
+  corpus_id: personal_coffee_update
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: personal_assistant
+  memory_capability: knowledge_update
+  language: zh
+  raw_query: 我现在喝咖啡要选哪种？
+  fixed_hypotheses:
+    event: 用户目前只喝低因咖啡。
+    general: 与问题“我现在喝咖啡要选哪种？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - preference
+  - knowledge-update
+  expected_abstention: false
+  required_memory_keys:
+  - personal_coffee_update_answer
+  judgments:
+  - memory_key: personal_coffee_update_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_coffee_update_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: personal_coffee_update_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_train_seat_mixed
+  family_id: personal_train_seat
+  corpus_id: personal_train_seat
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: personal_assistant
+  memory_capability: information_extraction
+  language: mixed
+  raw_query: G128 booking 的座位在哪？
+  fixed_hypotheses:
+    event: G128 订单的座位是 06 车 12A。
+    general: 与问题“G128 booking 的座位在哪？”对应的长期记忆。
+  strata:
+  - mixed
+  - both-lanes
+  - event
+  - rare-identifier
+  expected_abstention: false
+  required_memory_keys:
+  - personal_train_seat_answer
+  judgments:
+  - memory_key: personal_train_seat_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_train_seat_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_train_seat_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_weekly_class_zh
+  family_id: personal_weekly_class
+  corpus_id: personal_weekly_class
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: personal_assistant
+  memory_capability: temporal_reasoning
+  language: zh
+  raw_query: 这周六的游泳课几点？
+  fixed_hypotheses:
+    event: 2026 年 7 月 18 日周六游泳课是上午九点。
+    general: 与问题“这周六的游泳课几点？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - event
+  - temporal-reasoning
+  expected_abstention: false
+  required_memory_keys:
+  - personal_weekly_class_answer
+  judgments:
+  - memory_key: personal_weekly_class_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_weekly_class_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_weekly_class_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_allergy_restaurant_en
+  family_id: personal_allergy_restaurant
+  corpus_id: personal_allergy_restaurant
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: personal_assistant
+  memory_capability: cross_session
+  language: en
+  raw_query: What allergy should I mention at the restaurant?
+  fixed_hypotheses:
+    event: The user has a severe peanut allergy.
+    general: 与问题“What allergy should I mention at the restaurant?”对应的长期记忆。
+  strata:
+  - en
+  - vector
+  - fact
+  - safety
+  expected_abstention: false
+  required_memory_keys:
+  - personal_allergy_restaurant_answer
+  judgments:
+  - memory_key: personal_allergy_restaurant_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_allergy_restaurant_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_allergy_restaurant_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_unknown_parking_zh
+  family_id: personal_unknown_parking
+  corpus_id: personal_unknown_parking
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: personal_assistant
+  memory_capability: abstention
+  language: zh
+  raw_query: 我把车停在地下几层了？
+  fixed_hypotheses:
+    event: 用户常去的商场有地下停车场。
+    general: 与问题“我把车停在地下几层了？”对应的长期记忆。
+  strata:
+  - zh
+  - abstention
+  - event
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: personal_unknown_parking_answer
+    relevance: 0
+    dangerous: false
+    rationale: 主题接近，但没有问题所需的具体答案。
+  - memory_key: personal_unknown_parking_related
+    relevance: 0
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_unknown_parking_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: personal_shared_shopping_zh
+  family_id: personal_shared_shopping
+  corpus_id: personal_shared_shopping
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: personal_assistant
+  memory_capability: information_extraction
+  language: zh
+  raw_query: 周末采购还缺哪两样？
+  fixed_hypotheses:
+    event: 周末采购还缺燕麦奶。
+    general: 与问题“周末采购还缺哪两样？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - procedure
+  - multi-evidence
+  expected_abstention: false
+  required_memory_keys:
+  - personal_shared_shopping_answer
+  - personal_shared_shopping_answer_2
+  judgments:
+  - memory_key: personal_shared_shopping_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_shared_shopping_answer_2
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: personal_shared_shopping_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: personal_shared_shopping_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: project_migration_decision_mixed
+  family_id: project_migration_decision
+  corpus_id: project_migration_decision
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: project_assistant
+  memory_capability: knowledge_update
+  language: mixed
+  raw_query: memory schema migration 最后选 online 还是 downtime？
+  fixed_hypotheses:
+    event: 最终决定使用 online migration。
+    general: 与问题“memory schema migration 最后选 online 还是 downtime？”对应的长期记忆。
+  strata:
+  - mixed
+  - vector
+  - fact
+  - dangerous-obsolete
+  expected_abstention: false
+  required_memory_keys:
+  - project_migration_decision_answer
+  judgments:
+  - memory_key: project_migration_decision_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: project_migration_decision_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: project_migration_decision_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: project_test_command_en
+  family_id: project_test_command
+  corpus_id: project_test_command
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: project_assistant
+  memory_capability: information_extraction
+  language: en
+  raw_query: What command runs the memory acceptance suite?
+  fixed_hypotheses:
+    event: Run uv run pytest tests/memory/test_memory_retrieval_acceptance.py.
+    general: 与问题“What command runs the memory acceptance suite?”对应的长期记忆。
+  strata:
+  - en
+  - both-lanes
+  - procedure
+  - exact-command
+  expected_abstention: false
+  required_memory_keys:
+  - project_test_command_answer
+  judgments:
+  - memory_key: project_test_command_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: project_test_command_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: project_test_command_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: project_feature_owner_zh
+  family_id: project_feature_owner
+  corpus_id: project_feature_owner
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: project_assistant
+  memory_capability: cross_session
+  language: zh
+  raw_query: Telegram outbound 这块现在谁负责？
+  fixed_hypotheses:
+    event: Telegram outbound 当前由 Nora 负责。
+    general: 与问题“Telegram outbound 这块现在谁负责？”对应的长期记忆。
+  strata:
+  - mixed
+  - vector
+  - fact
+  - ownership
+  expected_abstention: false
+  required_memory_keys:
+  - project_feature_owner_answer
+  judgments:
+  - memory_key: project_feature_owner_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: project_feature_owner_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: project_feature_owner_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: stress_scope_channel_zh
+  family_id: stress_scope_channel
+  corpus_id: stress_scope_channel
+  split: development
+  review_status: approved
+  review_batch: 3
+  product_scenario: stress
+  memory_capability: information_extraction
+  language: zh
+  raw_query: 这个群的发布口令是什么？
+  fixed_hypotheses:
+    event: 当前项目群的发布口令是 ORBIT-27。
+    general: 与问题“这个群的发布口令是什么？”对应的长期记忆。
+  strata:
+  - zh
+  - both-lanes
+  - fact
+  - scope-filter
+  expected_abstention: false
+  required_memory_keys:
+  - stress_scope_channel_answer
+  judgments:
+  - memory_key: stress_scope_channel_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: stress_scope_channel_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: stress_scope_channel_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。

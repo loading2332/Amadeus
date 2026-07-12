@@ -1,0 +1,41 @@
+version: memory-retrieval-v1-development-pool-qrels-supplemental-1
+overlay_id: supplemental-1
+review_status: approved
+approved_by: user
+approved_at: '2026-07-12'
+source_dataset_hash: 2558260d47c55c3a1c740f19abe8bcf4b013657e226ee427e9b978e356f12d3a
+source_proposal:
+  file: development-supplemental-1-adjudication-proposal.json
+  sha256: 4be03e144a1cec19daee508163807dc7a6c108b105c4c9553a3ddbbcebdb97e0
+  version: memory-retrieval-v1-development-pool-supplemental-1-proposal
+  proposal_round: supplemental-1
+  source_pools:
+  - file: memory-retrieval-v1-pool-verification-stage-0-judging-pool.json
+    sha256: 12fcb88eaa775bc36c3a7dfb10095924b598573f6e1fe71c80be0ea80e11ccef
+  - file: memory-retrieval-v1-pool-verification-stage-1-judging-pool.json
+    sha256: 2a57512f578abc72eed5ffd5f5c76ffa976edb502c8ace5bdf2ed19c2d0d3463
+judgments:
+- query_id: personal_allergy_restaurant_en
+  memory_key: project_env_variable_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 数据库环境变量与用户餐厅过敏原无关，不能回答需声明的 allergy。
+- query_id: project_incident_root_cause_en
+  memory_key: personal_allergy_restaurant_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: INC-204 根因问题与用户辣度偏好无关，不能提供事故根因证据。
+- query_id: project_storage_adr_en
+  memory_key: personal_bookmark_article_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Python typing guide 与存储后端架构决策无关，不能证明哪个后端获选。
+- query_id: project_test_command_en
+  memory_key: personal_allergy_restaurant_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 花生过敏与 memory acceptance 测试命令无关，不能回答运行命令。

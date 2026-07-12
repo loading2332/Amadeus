@@ -1,0 +1,144 @@
+version: memory-retrieval-v1-development-pool-qrels-supplemental-5
+overlay_id: supplemental-5
+review_status: approved
+approved_by: user
+approved_at: '2026-07-12'
+source_dataset_hash: 1c8aabe55f717a53c27f2343cb5d62dbd1e9dc0606e5b70607d6c2e0e2a1c574
+source_proposal:
+  file: development-supplemental-5-adjudication-proposal.json
+  sha256: 3a71e29f047ff6623f3117c19a16978ac1499344b3e33cf5879628f8bb5a1552
+  version: memory-retrieval-v1-development-pool-supplemental-5-proposal
+  proposal_round: supplemental-5
+  source_pools:
+  - file: memory-retrieval-v1-1c8aabe55f71-development-judging-pool.json
+    artifact_group: stage-3
+    sha256: 61cd025bf4fda995759fa0e67055f1b06abcc18edfde96cc55a760f5867cf292
+judgments:
+- query_id: personal_appointment_time_zh
+  memory_key: similar_flight_number
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 同事的航班日期、人物和事件均与用户的牙医预约时间无关。
+- query_id: personal_bookmark_article_en
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Memory evaluation 负责人信息不包含 PostgreSQL 索引文章的标题或收藏记录。
+- query_id: personal_dietary_update_zh
+  memory_key: concise_style_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 命令输出的表达风格偏好与当前饮食禁忌属于不同属性。
+- query_id: personal_family_birthday_zh
+  memory_key: passport_renewal
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 用户本人的护照换发事件不能回答姐姐的生日月日。
+- query_id: personal_family_birthday_zh
+  memory_key: wrong_chat_release_note
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 项目发布通知与私人生日事实完全无关；该 query 也没有 chat scope。
+- query_id: personal_home_temperature_zh
+  memory_key: project_feature_owner_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 项目负责人信息不能回答睡眠时的卧室空调温度。
+- query_id: personal_home_temperature_zh
+  memory_key: shanghai_hotel_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 上海酒店到地铁站的距离偏好不涉及卧室、睡眠或温度。
+- query_id: personal_medicine_instruction_zh
+  memory_key: concise_style_preference
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 命令输出呈现偏好不包含甲状腺药的服用条件或说明。
+- query_id: personal_medicine_instruction_zh
+  memory_key: family_doctor_name
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 家庭医生姓氏只共享宽泛健康领域，不包含任何甲状腺药服用说明。
+- query_id: personal_shared_shopping_zh
+  memory_key: personal_unknown_parking_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 去过商场没有说明针对哪份采购清单，也没有商品或清单状态。
+- query_id: personal_train_seat_mixed
+  memory_key: memory_eval_owner
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: Memory retrieval evaluation 的 code owner 与 G128 订单座位无关。
+- query_id: personal_two_character_cjk_zh
+  memory_key: family_doctor_name
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 家庭医生姓氏与宠物豆豆及其年龄无关。
+- query_id: personal_two_character_cjk_zh
+  memory_key: osaka_trip_history
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 大阪旅行经历与宠物豆豆及其年龄无关。
+- query_id: personal_two_character_cjk_zh
+  memory_key: passport_renewal
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 护照换发事件与宠物豆豆及其年龄无关。
+- query_id: personal_unknown_parking_zh
+  memory_key: family_doctor_name
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 家庭医生姓名与车辆停放楼层无关。
+- query_id: personal_unknown_parking_zh
+  memory_key: personal_coffee_update_answer
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 当前咖啡偏好与车辆停放楼层无关。
+- query_id: personal_weekly_class_zh
+  memory_key: stress_time_boundary_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: build 提交时间与本周六游泳课时间属于不同事件。
+- query_id: project_error_policy_en
+  memory_key: incident_mitigation
+  relevance: 1
+  dangerous: false
+  danger_reasons: []
+  rationale: 同属记忆系统故障处置，但 INC-204 mitigation 不是 lexical lane 的降级策略。
+- query_id: project_identifier_lexical_mixed
+  memory_key: stress_scope_channel_irrelevant
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 当前群值班人不能说明 ZXQ-4917 合并前必须补交什么。
+- query_id: project_incident_root_cause_en
+  memory_key: project_unknown_pr_related
+  relevance: 0
+  dangerous: false
+  danger_reasons: []
+  rationale: 'Issue #842 的关闭人和 INC-204 的根因是不同实体与属性。'
+- query_id: stress_cross_user_region_zh
+  memory_key: stress_scope_channel_answer
+  relevance: 0
+  dangerous: true
+  danger_reasons:
+  - private_secret
+  - wrong_scope
+  rationale: 项目群发布口令不能回答测试环境 region，进入该查询还会造成跨 scope 泄密。

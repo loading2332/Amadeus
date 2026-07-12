@@ -1,0 +1,630 @@
+version: memory-retrieval-v1-batch-2-draft
+review_status: draft
+corpora:
+- id: personal_medicine_instruction
+  memories:
+  - key: current_medicine_instruction
+    summary: 用户当前服用甲状腺药时需要空腹，并在服药后至少三十分钟再吃早餐。
+    memory_type: procedure
+    happened_at: '2026-07-01T07:00:00+08:00'
+    updated_at: '2026-07-01T07:00:00+08:00'
+    reinforcement: 3
+    emotional_weight: 7
+  - key: obsolete_medicine_instruction
+    summary: 用户过去曾把甲状腺药和早餐一起服用。
+    memory_type: procedure
+    happened_at: '2025-08-01T08:00:00+08:00'
+    updated_at: '2025-08-01T08:00:00+08:00'
+    reinforcement: 6
+    emotional_weight: 5
+    status: superseded
+  - key: vitamin_instruction
+    summary: 用户习惯在午饭后服用维生素 D。
+    memory_type: procedure
+    happened_at: '2026-06-10T12:30:00+08:00'
+    updated_at: '2026-06-10T12:30:00+08:00'
+    reinforcement: 4
+    emotional_weight: 1
+- id: personal_airport_pickup
+  memories:
+  - key: pickup_flight_number
+    summary: 用户母亲 2026 年 7 月 18 日乘坐 MU5128 抵达虹桥机场二号航站楼。
+    memory_type: event
+    happened_at: '2026-07-18T16:40:00+08:00'
+    updated_at: '2026-07-09T20:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 6
+    embedding_mode: null
+  - key: similar_flight_number
+    summary: 用户同事 2026 年 7 月 17 日乘坐 MU5218 抵达浦东机场。
+    memory_type: event
+    happened_at: '2026-07-17T18:10:00+08:00'
+    updated_at: '2026-07-08T20:00:00+08:00'
+    reinforcement: 1
+    emotional_weight: 0
+  - key: airport_transport_preference
+    summary: 用户去虹桥机场时通常优先乘坐地铁。
+    memory_type: preference
+    happened_at: '2026-02-01T09:00:00+08:00'
+    updated_at: '2026-02-01T09:00:00+08:00'
+    reinforcement: 3
+    emotional_weight: 0
+- id: personal_gift_preferences
+  memories:
+  - key: partner_gift_dislike
+    summary: 用户的伴侣不喜欢香味浓烈的香水，更喜欢无香的实用礼物。
+    memory_type: preference
+    happened_at: '2026-05-20T19:00:00+08:00'
+    updated_at: '2026-05-20T19:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 5
+  - key: user_perfume_preference
+    summary: 用户自己喜欢木质调香水。
+    memory_type: preference
+    happened_at: '2026-04-15T19:00:00+08:00'
+    updated_at: '2026-04-15T19:00:00+08:00'
+    reinforcement: 4
+    emotional_weight: 2
+  - key: partner_food_preference
+    summary: 用户的伴侣喜欢吃不太甜的芝士蛋糕。
+    memory_type: preference
+    happened_at: '2026-03-01T19:00:00+08:00'
+    updated_at: '2026-03-01T19:00:00+08:00'
+    reinforcement: 3
+    emotional_weight: 3
+- id: personal_unknown_emergency_contact
+  memories:
+  - key: office_contact
+    summary: 用户所在办公室的前台电话是 021-5550-1234。
+    memory_type: fact
+    happened_at: '2026-01-05T09:00:00+08:00'
+    updated_at: '2026-01-05T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 0
+  - key: family_doctor_name
+    summary: 用户常去的家庭医生姓林。
+    memory_type: fact
+    happened_at: '2026-02-08T10:00:00+08:00'
+    updated_at: '2026-02-08T10:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 2
+  - key: emergency_call_preference
+    summary: 遇到紧急情况时用户希望优先打电话而不是发消息。
+    memory_type: preference
+    happened_at: '2026-03-02T10:00:00+08:00'
+    updated_at: '2026-03-02T10:00:00+08:00'
+    reinforcement: 3
+    emotional_weight: 8
+- id: personal_two_character_cjk
+  memories:
+  - key: cat_name_doudou
+    summary: 用户的猫叫豆豆，今年六岁。
+    memory_type: fact
+    happened_at: '2026-04-01T12:00:00+08:00'
+    updated_at: '2026-04-01T12:00:00+08:00'
+    reinforcement: 4
+    emotional_weight: 7
+    embedding_mode: null
+  - key: dog_name_dingding
+    summary: 用户父母家的狗叫丁丁。
+    memory_type: fact
+    happened_at: '2026-03-01T12:00:00+08:00'
+    updated_at: '2026-03-01T12:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 3
+  - key: red_bean_preference
+    summary: 用户喜欢吃红豆馅的点心。
+    memory_type: preference
+    happened_at: '2026-02-01T12:00:00+08:00'
+    updated_at: '2026-02-01T12:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: project_api_contract_update
+  memories:
+  - key: accepted_api_field
+    summary: API 合同已决定使用 source_ref 字段返回记忆来源，不再返回 source_url。
+    memory_type: fact
+    happened_at: '2026-07-07T15:00:00+08:00'
+    updated_at: '2026-07-07T15:00:00+08:00'
+    reinforcement: 3
+    emotional_weight: 1
+  - key: obsolete_api_field
+    summary: API 早期草案使用 source_url 字段返回记忆来源。
+    memory_type: fact
+    happened_at: '2026-05-10T15:00:00+08:00'
+    updated_at: '2026-05-10T15:00:00+08:00'
+    reinforcement: 5
+    emotional_weight: 0
+    status: superseded
+  - key: unrelated_api_field
+    summary: Web API 使用 session_id 字段标识会话编号。
+    memory_type: fact
+    happened_at: '2026-07-01T15:00:00+08:00'
+    updated_at: '2026-07-01T15:00:00+08:00'
+    reinforcement: 3
+    emotional_weight: 0
+- id: project_incident_root_cause
+  memories:
+  - key: incident_root_cause
+    summary: INC-204 的根因是 embedding worker 读取了过期配置，导致向量维度仍为 768。
+    memory_type: fact
+    happened_at: '2026-06-28T21:00:00+08:00'
+    updated_at: '2026-06-29T11:00:00+08:00'
+    reinforcement: 3
+    emotional_weight: 4
+  - key: incident_mitigation
+    summary: INC-204 的临时缓解措施是重启 embedding worker 并清空其配置缓存。
+    memory_type: procedure
+    happened_at: '2026-06-28T22:00:00+08:00'
+    updated_at: '2026-06-29T11:05:00+08:00'
+    reinforcement: 2
+    emotional_weight: 2
+  - key: different_incident
+    summary: INC-240 是 Telegram webhook 证书过期导致的消息中断。
+    memory_type: fact
+    happened_at: '2026-07-03T21:00:00+08:00'
+    updated_at: '2026-07-04T11:00:00+08:00'
+    reinforcement: 4
+    emotional_weight: 3
+- id: project_deploy_rollback
+  memories:
+  - key: rollback_trigger
+    summary: 部署 build-7f3a9c 后若 memory_recall_error_rate 连续五分钟超过 2%，必须回滚。
+    memory_type: procedure
+    happened_at: '2026-07-10T13:00:00+08:00'
+    updated_at: '2026-07-10T13:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 2
+  - key: rollback_command
+    summary: build-7f3a9c 的回滚命令是 amadeus deploy rollback --build build-7f3a9c。
+    memory_type: procedure
+    happened_at: '2026-07-10T13:05:00+08:00'
+    updated_at: '2026-07-10T13:05:00+08:00'
+    reinforcement: 2
+    emotional_weight: 2
+  - key: similar_build_decoy
+    summary: build-7f3a6c 的发布检查要求观察 CPU 使用率十分钟。
+    memory_type: procedure
+    happened_at: '2026-07-09T13:00:00+08:00'
+    updated_at: '2026-07-09T13:00:00+08:00'
+    reinforcement: 4
+    emotional_weight: 0
+- id: project_test_ownership
+  memories:
+  - key: memory_eval_owner
+    summary: Memory retrieval evaluation 的 code owner 是 Lin，review backup 是 Nora。
+    memory_type: fact
+    happened_at: '2026-07-04T10:00:00+08:00'
+    updated_at: '2026-07-04T10:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 0
+  - key: runtime_owner
+    summary: Passive runtime 的 code owner 是 Nora，review backup 是 Kai。
+    memory_type: fact
+    happened_at: '2026-07-04T10:05:00+08:00'
+    updated_at: '2026-07-04T10:05:00+08:00'
+    reinforcement: 3
+    emotional_weight: 0
+  - key: former_memory_owner
+    summary: Memory 模块早期由 Kai 临时代管。
+    memory_type: fact
+    happened_at: '2026-02-04T10:00:00+08:00'
+    updated_at: '2026-02-04T10:00:00+08:00'
+    reinforcement: 5
+    emotional_weight: 0
+    status: superseded
+- id: stress_same_term_different_meaning
+  memories:
+  - key: python_runtime_pin
+    summary: Amadeus 的生产运行时固定使用 Python 3.11。
+    memory_type: fact
+    happened_at: '2026-06-12T09:00:00+08:00'
+    updated_at: '2026-06-12T09:00:00+08:00'
+    reinforcement: 4
+    emotional_weight: 0
+  - key: python_course_schedule
+    summary: 用户报名的 Python 课程安排在每周三晚上。
+    memory_type: event
+    happened_at: '2026-05-12T19:00:00+08:00'
+    updated_at: '2026-05-12T19:00:00+08:00'
+    reinforcement: 3
+    emotional_weight: 2
+  - key: monty_python_preference
+    summary: 用户喜欢 Monty Python 的喜剧电影。
+    memory_type: preference
+    happened_at: '2026-03-12T19:00:00+08:00'
+    updated_at: '2026-03-12T19:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 2
+queries:
+- id: personal_medicine_instruction_zh
+  family_id: personal_medicine_instruction
+  corpus_id: personal_medicine_instruction
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: personal_assistant
+  memory_capability: knowledge_update
+  language: zh
+  raw_query: 甲状腺药现在应该怎么吃？
+  fixed_hypotheses:
+    event: 用户最近获得了新的甲状腺药服用说明。
+    general: 用户当前有效的甲状腺药服用方法。
+  strata:
+  - zh
+  - vector
+  - procedure
+  - knowledge-update
+  - dangerous-obsolete
+  expected_abstention: false
+  required_memory_keys:
+  - current_medicine_instruction
+  judgments:
+  - memory_key: current_medicine_instruction
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效并直接回答服药方法。
+  - memory_key: obsolete_medicine_instruction
+    relevance: 1
+    dangerous: true
+    danger_reasons:
+    - superseded
+    - unsafe_medical_instruction
+    rationale: 主题精确相关但已经失效，作为当前建议可能造成伤害。
+  - memory_key: vitamin_instruction
+    relevance: 0
+    dangerous: false
+    rationale: 同为服药习惯，但药物实体不同。
+  rationale: 校准医疗场景下已失效说明的零容忍过滤。
+- id: personal_airport_pickup_mixed
+  family_id: personal_airport_pickup
+  corpus_id: personal_airport_pickup
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: personal_assistant
+  memory_capability: information_extraction
+  language: mixed
+  raw_query: 接妈妈的 flight number 是多少？
+  fixed_hypotheses:
+    event: 用户母亲近期乘坐某个航班抵达上海，需要接机。
+    general: 用户接母亲时需要确认的航班号。
+  strata:
+  - mixed
+  - lexical
+  - event
+  - lexical-only
+  - rare-identifier
+  expected_abstention: false
+  required_memory_keys:
+  - pickup_flight_number
+  judgments:
+  - memory_key: pickup_flight_number
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - lexical
+    rationale: 直接给出母亲的航班号，且无 embedding。
+  - memory_key: similar_flight_number
+    relevance: 0
+    dangerous: false
+    rationale: 航班号近似，但乘客、日期和机场都不同。
+  - memory_key: airport_transport_preference
+    relevance: 1
+    dangerous: false
+    rationale: 与接机出行相关，但不能回答航班号。
+  rationale: 校准中英混合提问与相似航班标识符。
+- id: personal_gift_preferences_zh
+  family_id: personal_gift_preferences
+  corpus_id: personal_gift_preferences
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: personal_assistant
+  memory_capability: cross_session
+  language: zh
+  raw_query: 给我伴侣挑礼物时要避开什么？
+  fixed_hypotheses:
+    event: 用户曾说明伴侣对某类礼物有明确反感。
+    general: 用户伴侣的礼物偏好与禁忌。
+  strata:
+  - zh
+  - vector
+  - preference
+  - entity-disambiguation
+  expected_abstention: false
+  required_memory_keys:
+  - partner_gift_dislike
+  judgments:
+  - memory_key: partner_gift_dislike
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 直接说明给伴侣选礼物应避开浓香香水。
+  - memory_key: user_perfume_preference
+    relevance: 1
+    dangerous: false
+    rationale: 同为香水偏好，但主体是用户本人。
+  - memory_key: partner_food_preference
+    relevance: 1
+    dangerous: false
+    rationale: 主体正确但属于食物，不是一般礼物禁忌的直接答案。
+  rationale: 校准关系人和偏好对象不能因词面相似而混淆。
+- id: personal_unknown_emergency_contact_zh
+  family_id: personal_unknown_emergency_contact
+  corpus_id: personal_unknown_emergency_contact
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: personal_assistant
+  memory_capability: abstention
+  language: zh
+  raw_query: 我的紧急联系人电话号码是多少？
+  fixed_hypotheses:
+    event: 用户曾保存某位紧急联系人的电话号码。
+    general: 用户个人紧急联系人的电话信息。
+  strata:
+  - zh
+  - abstention
+  - fact
+  - semantic-hard-negative
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: office_contact
+    relevance: 0
+    dangerous: false
+    rationale: 是电话号码但属于办公室前台。
+  - memory_key: family_doctor_name
+    relevance: 0
+    dangerous: false
+    rationale: 是可能与健康相关的人名，但没有电话且不是紧急联系人。
+  - memory_key: emergency_call_preference
+    relevance: 0
+    dangerous: false
+    rationale: 包含紧急和电话概念，但没有联系人号码。
+  rationale: 校准同词高重合时仍应承认语料中没有答案。
+- id: personal_two_character_cjk_zh
+  family_id: personal_two_character_cjk
+  corpus_id: personal_two_character_cjk
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: personal_assistant
+  memory_capability: information_extraction
+  language: zh
+  raw_query: 豆豆几岁了？
+  fixed_hypotheses:
+    event: 用户曾提到名叫豆豆的宠物及其年龄。
+    general: 豆豆的年龄信息。
+  strata:
+  - zh
+  - lexical
+  - fact
+  - lexical-only
+  - cjk-two-character
+  expected_abstention: false
+  required_memory_keys:
+  - cat_name_doudou
+  judgments:
+  - memory_key: cat_name_doudou
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - lexical
+    rationale: 两字名字精确匹配并直接给出年龄，且无 embedding。
+  - memory_key: dog_name_dingding
+    relevance: 0
+    dangerous: false
+    rationale: 同为叠字宠物名，但名字和动物均不同。
+  - memory_key: red_bean_preference
+    relevance: 0
+    dangerous: false
+    rationale: 包含“豆”字但不是名叫豆豆的实体。
+  rationale: 校准 Akashic 规则对两字 CJK chunk 的完整保留。
+- id: project_api_contract_update_mixed
+  family_id: project_api_contract_update
+  corpus_id: project_api_contract_update
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: project_assistant
+  memory_capability: knowledge_update
+  language: mixed
+  raw_query: 记忆来源字段现在叫 source_ref 还是 source_url？
+  fixed_hypotheses:
+    event: API 最近更新了返回记忆来源的字段名。
+    general: 当前 API 合同中的记忆来源字段。
+  strata:
+  - mixed
+  - both-lanes
+  - fact
+  - knowledge-update
+  - dangerous-obsolete
+  expected_abstention: false
+  required_memory_keys:
+  - accepted_api_field
+  judgments:
+  - memory_key: accepted_api_field
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前合同的直接答案。
+  - memory_key: obsolete_api_field
+    relevance: 1
+    dangerous: true
+    danger_reasons:
+    - superseded
+    - obsolete_contract
+    rationale: 旧字段精确匹配 query，但已经失效。
+  - memory_key: unrelated_api_field
+    relevance: 0
+    dangerous: false
+    rationale: 同属 API 字段但用途不同。
+  rationale: 校准旧合同精确命中不能覆盖当前决定。
+- id: project_incident_root_cause_en
+  family_id: project_incident_root_cause
+  corpus_id: project_incident_root_cause
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: project_assistant
+  memory_capability: cross_session
+  language: en
+  raw_query: What was the root cause of INC-204?
+  fixed_hypotheses:
+    event: INC-204 was caused by an embedding worker using stale configuration.
+    general: The confirmed root cause of incident INC-204.
+  strata:
+  - en
+  - both-lanes
+  - fact
+  - incident
+  - identifier-disambiguation
+  expected_abstention: false
+  required_memory_keys:
+  - incident_root_cause
+  judgments:
+  - memory_key: incident_root_cause
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: Confirmed root cause and direct answer.
+  - memory_key: incident_mitigation
+    relevance: 2
+    dangerous: false
+    rationale: Important incident context, but a mitigation is not the cause.
+  - memory_key: different_incident
+    relevance: 0
+    dangerous: false
+    rationale: Similar incident identifier and topic, but a different incident.
+  rationale: 校准根因与缓解措施的角色差异以及近似事件编号。
+- id: project_deploy_rollback_mixed
+  family_id: project_deploy_rollback
+  corpus_id: project_deploy_rollback
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: project_assistant
+  memory_capability: information_extraction
+  language: mixed
+  raw_query: build-7f3a9c 什么情况下回滚，命令是什么？
+  fixed_hypotheses:
+    event: build-7f3a9c 有明确的回滚触发条件和回滚命令。
+    general: build-7f3a9c 的完整回滚操作规则。
+  strata:
+  - mixed
+  - both-lanes
+  - procedure
+  - multi-evidence
+  - rare-identifier
+  expected_abstention: false
+  required_memory_keys:
+  - rollback_trigger
+  - rollback_command
+  judgments:
+  - memory_key: rollback_trigger
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 回答回滚条件，是完整答案的第一条必需证据。
+  - memory_key: rollback_command
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 回答具体命令，是完整答案的第二条必需证据。
+  - memory_key: similar_build_decoy
+    relevance: 0
+    dangerous: false
+    rationale: build id 近似，但属于另一次部署。
+  rationale: 校准精确 build id 下的多证据同时召回。
+- id: project_test_ownership_en
+  family_id: project_test_ownership
+  corpus_id: project_test_ownership
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: project_assistant
+  memory_capability: cross_session
+  language: en
+  raw_query: Who owns memory retrieval evaluation reviews?
+  fixed_hypotheses:
+    event: The team assigned an owner and review backup for memory retrieval evaluation.
+    general: Current ownership of memory retrieval evaluation reviews.
+  strata:
+  - en
+  - vector
+  - fact
+  - entity-disambiguation
+  - dangerous-obsolete
+  expected_abstention: false
+  required_memory_keys:
+  - memory_eval_owner
+  judgments:
+  - memory_key: memory_eval_owner
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: Directly states the current owner and backup.
+  - memory_key: runtime_owner
+    relevance: 0
+    dangerous: false
+    rationale: Current ownership, but for a different subsystem.
+  - memory_key: former_memory_owner
+    relevance: 1
+    dangerous: true
+    danger_reasons:
+    - superseded
+    - obsolete_owner
+    rationale: Same broad module but no longer current and not specifically evaluation.
+  rationale: 校准相邻模块 ownership 与历史 owner 的混淆。
+- id: stress_same_term_different_meaning_mixed
+  family_id: stress_same_term_different_meaning
+  corpus_id: stress_same_term_different_meaning
+  split: development
+  review_status: approved
+  review_batch: 2
+  product_scenario: stress
+  memory_capability: information_extraction
+  language: mixed
+  raw_query: Amadeus production 用哪个 Python version？
+  fixed_hypotheses:
+    event: Amadeus production runtime has a pinned Python version.
+    general: The Python version used by the Amadeus production runtime.
+  strata:
+  - mixed
+  - both-lanes
+  - fact
+  - same-term-different-meaning
+  expected_abstention: false
+  required_memory_keys:
+  - python_runtime_pin
+  judgments:
+  - memory_key: python_runtime_pin
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 实体和属性都匹配，直接回答生产运行时版本。
+  - memory_key: python_course_schedule
+    relevance: 0
+    dangerous: false
+    rationale: Python 指编程课程，不是生产运行时。
+  - memory_key: monty_python_preference
+    relevance: 0
+    dangerous: false
+    rationale: Python 指喜剧团体名称，与技术实体无关。
+  rationale: 校准关键词完全相同但语义实体不同的 hard negatives。

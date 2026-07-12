@@ -1,0 +1,621 @@
+version: memory-retrieval-v1-batch-6-draft
+review_status: draft
+corpora:
+- id: holdout_personal_language_exception
+  memories:
+  - key: holdout_personal_language_exception_answer
+    summary: 给海外客户的 incident report 使用英文。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_language_exception_related
+    summary: 日常解释默认使用中文。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_language_exception_irrelevant
+    summary: 代码标识符保持英文。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_personal_recipe_steps
+  memories:
+  - key: holdout_personal_recipe_steps_answer
+    summary: 家庭版汤底需要加八角。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_recipe_steps_answer_2
+    summary: 家庭版汤底还需要加香叶。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_recipe_steps_related
+    summary: 餐厅版汤底需要加花椒。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_recipe_steps_irrelevant
+    summary: 用户不喜欢太辣。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_personal_morning_alarm
+  memories:
+  - key: holdout_personal_morning_alarm_answer
+    summary: 2026 年 7 月 13 日早班需要 05:50 起床。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_morning_alarm_related
+    summary: 平时工作日起床时间是 07:20。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_morning_alarm_irrelevant
+    summary: 明天下午三点有会议。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_personal_diet_update
+  memories:
+  - key: holdout_personal_diet_update_answer
+    summary: The user currently avoids all dairy products.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_diet_update_related
+    summary: The user previously allowed small amounts of cheese.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: holdout_personal_diet_update_irrelevant
+    summary: The user avoids peanuts.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_personal_unknown_locker
+  memories:
+  - key: holdout_personal_unknown_locker_answer
+    summary: 用户常去星河健身房。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_unknown_locker_related
+    summary: 用户家门密码已更新。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_personal_unknown_locker_irrelevant
+    summary: 健身房会员号是 GYM-2291。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_project_incident_time
+  memories:
+  - key: holdout_project_incident_time_answer
+    summary: INC-319 recovered at 02:14 UTC on July 5, 2026.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_incident_time_related
+    summary: INC-319 started at 01:42 UTC.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_incident_time_irrelevant
+    summary: INC-391 recovered at 02:14 UTC.
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_project_review_rule
+  memories:
+  - key: holdout_project_review_rule_answer
+    summary: 修改 memory ranking 至少需要 memory owner 和一名 runtime reviewer。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_review_rule_related
+    summary: 修改前端样式只需 frontend owner。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: holdout_project_review_rule_irrelevant
+    summary: 旧规则只要求任意一名 reviewer。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_project_unknown_flag
+  memories:
+  - key: holdout_project_unknown_flag_answer
+    summary: feature flag MEM-929 默认关闭。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_unknown_flag_related
+    summary: MEM-992 是尚未记录的实验编号。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_project_unknown_flag_irrelevant
+    summary: 所有生产 flag 需要审批。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_stress_homonym
+  memories:
+  - key: holdout_stress_homonym_answer
+    summary: 用户的 Apple 账号绑定邮箱是 user@example.test。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_stress_homonym_related
+    summary: 用户喜欢吃青苹果。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_stress_homonym_irrelevant
+    summary: 公司邮箱使用 Outlook。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+- id: holdout_stress_conflict
+  memories:
+  - key: holdout_stress_conflict_answer
+    summary: Production 当前迁移到 ap-southeast-1。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+  - key: holdout_stress_conflict_related
+    summary: Production 过去位于 us-west-2。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+    status: superseded
+  - key: holdout_stress_conflict_irrelevant
+    summary: Backup region 是 ap-northeast-1。
+    memory_type: fact
+    happened_at: '2026-07-01T09:00:00+08:00'
+    updated_at: '2026-07-01T09:00:00+08:00'
+    reinforcement: 2
+    emotional_weight: 1
+queries:
+- id: holdout_personal_language_exception_mixed
+  family_id: holdout_personal_language_exception
+  corpus_id: holdout_personal_language_exception
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: personal_assistant
+  memory_capability: cross_session
+  language: mixed
+  raw_query: 给客户的 incident report 用什么语言？
+  fixed_hypotheses:
+    event: 给海外客户的 incident report 使用英文。
+    general: 与问题“给客户的 incident report 用什么语言？”对应的长期记忆。
+  strata:
+  - mixed
+  - vector
+  - preference
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_personal_language_exception_answer
+  judgments:
+  - memory_key: holdout_personal_language_exception_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_personal_language_exception_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_personal_language_exception_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_personal_recipe_steps_zh
+  family_id: holdout_personal_recipe_steps
+  corpus_id: holdout_personal_recipe_steps
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: personal_assistant
+  memory_capability: information_extraction
+  language: zh
+  raw_query: 家庭版汤底要加哪两种香料？
+  fixed_hypotheses:
+    event: 家庭版汤底需要加八角。
+    general: 与问题“家庭版汤底要加哪两种香料？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - procedure
+  - multi-evidence
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_personal_recipe_steps_answer
+  - holdout_personal_recipe_steps_answer_2
+  judgments:
+  - memory_key: holdout_personal_recipe_steps_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_personal_recipe_steps_answer_2
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_personal_recipe_steps_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_personal_recipe_steps_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_personal_morning_alarm_zh
+  family_id: holdout_personal_morning_alarm
+  corpus_id: holdout_personal_morning_alarm
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: personal_assistant
+  memory_capability: temporal_reasoning
+  language: zh
+  raw_query: 明天早班要几点起床？
+  fixed_hypotheses:
+    event: 2026 年 7 月 13 日早班需要 05:50 起床。
+    general: 与问题“明天早班要几点起床？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - event
+  - temporal-reasoning
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_personal_morning_alarm_answer
+  judgments:
+  - memory_key: holdout_personal_morning_alarm_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_personal_morning_alarm_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_personal_morning_alarm_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_personal_diet_update_en
+  family_id: holdout_personal_diet_update
+  corpus_id: holdout_personal_diet_update
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: personal_assistant
+  memory_capability: knowledge_update
+  language: en
+  raw_query: What is my current dairy restriction?
+  fixed_hypotheses:
+    event: The user currently avoids all dairy products.
+    general: 与问题“What is my current dairy restriction?”对应的长期记忆。
+  strata:
+  - en
+  - vector
+  - preference
+  - knowledge-update
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_personal_diet_update_answer
+  judgments:
+  - memory_key: holdout_personal_diet_update_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_personal_diet_update_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: holdout_personal_diet_update_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_personal_unknown_locker_zh
+  family_id: holdout_personal_unknown_locker
+  corpus_id: holdout_personal_unknown_locker
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: personal_assistant
+  memory_capability: abstention
+  language: zh
+  raw_query: 健身房储物柜密码是多少？
+  fixed_hypotheses:
+    event: 用户常去星河健身房。
+    general: 与问题“健身房储物柜密码是多少？”对应的长期记忆。
+  strata:
+  - zh
+  - abstention
+  - fact
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: holdout_personal_unknown_locker_answer
+    relevance: 0
+    dangerous: false
+    rationale: 主题接近，但没有问题所需的具体答案。
+  - memory_key: holdout_personal_unknown_locker_related
+    relevance: 0
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_personal_unknown_locker_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_project_incident_time_en
+  family_id: holdout_project_incident_time
+  corpus_id: holdout_project_incident_time
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: project_assistant
+  memory_capability: temporal_reasoning
+  language: en
+  raw_query: When did INC-319 recover?
+  fixed_hypotheses:
+    event: INC-319 recovered at 02:14 UTC on July 5, 2026.
+    general: 与问题“When did INC-319 recover?”对应的长期记忆。
+  strata:
+  - en
+  - both-lanes
+  - event
+  - identifier-disambiguation
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_project_incident_time_answer
+  judgments:
+  - memory_key: holdout_project_incident_time_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_project_incident_time_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_project_incident_time_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_project_review_rule_zh
+  family_id: holdout_project_review_rule
+  corpus_id: holdout_project_review_rule
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: project_assistant
+  memory_capability: cross_session
+  language: zh
+  raw_query: 改 memory ranking 至少要谁 review？
+  fixed_hypotheses:
+    event: 修改 memory ranking 至少需要 memory owner 和一名 runtime reviewer。
+    general: 与问题“改 memory ranking 至少要谁 review？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - procedure
+  - dangerous-obsolete
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_project_review_rule_answer
+  judgments:
+  - memory_key: holdout_project_review_rule_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_project_review_rule_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: holdout_project_review_rule_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_project_unknown_flag_mixed
+  family_id: holdout_project_unknown_flag
+  corpus_id: holdout_project_unknown_flag
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: project_assistant
+  memory_capability: abstention
+  language: mixed
+  raw_query: feature flag MEM-992 默认值是什么？
+  fixed_hypotheses:
+    event: feature flag MEM-929 默认关闭。
+    general: 与问题“feature flag MEM-992 默认值是什么？”对应的长期记忆。
+  strata:
+  - mixed
+  - abstention
+  - fact
+  - identifier-hard-negative
+  expected_abstention: true
+  required_memory_keys: []
+  judgments:
+  - memory_key: holdout_project_unknown_flag_answer
+    relevance: 0
+    dangerous: false
+    rationale: 主题接近，但没有问题所需的具体答案。
+  - memory_key: holdout_project_unknown_flag_related
+    relevance: 0
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_project_unknown_flag_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_stress_homonym_zh
+  family_id: holdout_stress_homonym
+  corpus_id: holdout_stress_homonym
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: stress
+  memory_capability: information_extraction
+  language: zh
+  raw_query: 苹果账号绑定的是哪个邮箱？
+  fixed_hypotheses:
+    event: 用户的 Apple 账号绑定邮箱是 user@example.test。
+    general: 与问题“苹果账号绑定的是哪个邮箱？”对应的长期记忆。
+  strata:
+  - zh
+  - vector
+  - fact
+  - same-term-different-meaning
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_stress_homonym_answer
+  judgments:
+  - memory_key: holdout_stress_homonym_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_stress_homonym_related
+    relevance: 1
+    dangerous: false
+    rationale: 容易混淆，但不是当前问题的有效答案。
+  - memory_key: holdout_stress_homonym_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
+- id: holdout_stress_conflict_mixed
+  family_id: holdout_stress_conflict
+  corpus_id: holdout_stress_conflict
+  split: holdout
+  review_status: approved
+  review_batch: 6
+  product_scenario: stress
+  memory_capability: knowledge_update
+  language: mixed
+  raw_query: production region 现在到底是哪？
+  fixed_hypotheses:
+    event: Production 当前迁移到 ap-southeast-1。
+    general: 与问题“production region 现在到底是哪？”对应的长期记忆。
+  strata:
+  - mixed
+  - both-lanes
+  - fact
+  - dangerous-obsolete
+  expected_abstention: false
+  required_memory_keys:
+  - holdout_stress_conflict_answer
+  judgments:
+  - memory_key: holdout_stress_conflict_answer
+    relevance: 3
+    dangerous: false
+    expected_lanes:
+    - vector
+    - lexical
+    rationale: 当前有效，直接回答问题。
+  - memory_key: holdout_stress_conflict_related
+    relevance: 1
+    dangerous: true
+    rationale: 容易混淆，但不是当前问题的有效答案。
+    danger_reasons:
+    - superseded
+  - memory_key: holdout_stress_conflict_irrelevant
+    relevance: 0
+    dangerous: false
+    rationale: 同域或词面相近，但实体、时间或问题属性不匹配。
+  rationale: 用于检验相关答案、近邻干扰项和无关项之间的排序边界。
