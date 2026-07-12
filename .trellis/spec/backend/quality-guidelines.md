@@ -301,7 +301,9 @@ localStorage.setItem("amadeus_session_id", String(session_id))
 - `HypothesisProvider.generate(query: str, *, style: str) -> str`
 - `MemoryRetrievalStoreProtocol.search_vector_candidates(..., limit: int) -> list[dict[str, Any]]`
 - `MemoryRetrievalStoreProtocol.search_lexical_candidates(*, terms: tuple[str, ...], ..., limit: int) -> list[dict[str, Any]]`
-- `rank_candidate_lanes(candidates: MemoryCandidateLanes, query_vectors: list[list[float]], query_texts: list[str], *, limit: int, threshold: float, lexical_weight: float = 1.0) -> tuple[list[MemoryRecord], RetrievalLaneTrace]`
+- `MemoryRetrievalParameters.vector_candidate_limit(request_limit: int) -> int`
+- `MemoryRetrievalParameters.lexical_candidate_limit(request_limit: int) -> int`
+- `rank_candidate_lanes(candidates: MemoryCandidateLanes, query_vectors: list[list[float]], query_texts: list[str], *, limit: int, threshold: float, lexical_weight: float = 1.0, rrf_k: int = 60, hotness_alpha: float = 0.2, hotness_half_life_days: float = 14.0, reinforcement_strength: float = 1.0, emotional_half_life_scale: float = 0.5, ranking_now: datetime | None = None) -> tuple[list[MemoryRecord], RetrievalLaneTrace]`
 - `load_runtime_config(...) -> RuntimeConfig`
 
 ### 3. 契约
@@ -315,7 +317,9 @@ localStorage.setItem("amadeus_session_id", String(session_id))
 - `MemoryCandidateLanes` 保留原始 vector groups 与 lexical rows。lane membership、rank 与 contribution 不得从 union 上重新打分推断。
 - Vector candidate 必须先通过 semantic threshold，再做 hotness fusion；整次排序共享同一个时间快照。Lexical candidate 使用 store 返回的 coverage score，不要求 embedding。
 - 最终 RRF 按稳定 id 去重，`k=60`，lexical weight `1.0` 是首轮 deterministic eval 基线，最终参数由 eval 决定。权重为 0 时不得返回零分 lexical-only 结果。
+- candidate window、RRF、threshold 与 hotness 的生产/实验真值由不可变 `MemoryRetrievalParameters` 持有；旧 constructor 字段只能在构造时转换成 profile override，排序过程不得继续读取第二份常量。
 - `candidate_counts.vector/lexical` 表示 SQL 返回的 raw unique candidates；`lane_counts` 表示通过 threshold/score 校验后真正贡献排名的候选；兼容字段 `candidate_count` 表示 union count。
+- public trace 额外记录 profile、fingerprint、effective candidate limits 和每条 vector query 的 raw count；完整 candidate ids 不进入生产 trace，只能通过默认关闭的 `RetrievalCandidateSnapshot` observer 提供给本地实验 runner。
 - Record signals 暴露 1-based `vector_rank` / `lexical_rank` 与两路 RRF contribution；context injection 保留最终融合顺序。
 - Long-term memory 配置 provider 后 hypothesis 默认开启，`AMADEUS_MEMORY_HYPOTHESIS_RETRIEVAL_ENABLED=0` 是 kill switch。
 - Lexical retrieval 默认开启，`AMADEUS_MEMORY_LEXICAL_RETRIEVAL_ENABLED=0` 是 query-level rollback switch。
@@ -388,5 +392,130 @@ ranked, lane_trace = rank_candidate_lanes(
     limit=top_k,
     threshold=threshold,
     lexical_weight=1.0,
+)
+```
+
+## 场景：长期记忆 retrieval 参数实验
+
+### 1. 范围 / 触发
+
+- 触发：新增或修改 Gold Set schema、qrels 指标、检索参数 profile、embedding cache、本地 PostgreSQL sweep、development/holdout 选择或实验 artifacts。
+- 目标：用可复现的公共 `MemoryEngine.recall()` 行为选择参数，同时阻止 AI 自生成标签、跨用户数据、随机 embedding 或 holdout 泄漏制造虚假结论。
+
+### 2. 签名
+
+- `load_memory_retrieval_benchmark(case_file, *, enforce_v1_distribution=True) -> MemoryRetrievalBenchmark`
+- `evaluate_retrieval_observation(query, observation, *, cutoff=8) -> QueryRetrievalMetrics`
+- `aggregate_retrieval_metrics(metrics) -> RetrievalAggregateReport`
+- `run_memory_retrieval_experiment(benchmark, *, profiles, split, ranking_time, db, embedding_provider, embedding_identity, artifacts_dir, formal=False, unlock_holdout=False, embedding_cache_fingerprint=None, ...) -> MemoryRetrievalExperimentReport`
+- `python -m amadeus.evaluation.memory_retrieval_cli prepare-cache --benchmark <yaml> --cache <json> --env <env>`
+- `python -m amadeus.evaluation.memory_retrieval_cli run --benchmark <yaml> --cache <json> --split <development|holdout> --stage <0..5> --ranking-time <ISO> --artifacts <dir>`
+- `python -m amadeus.evaluation.memory_retrieval_cli collect-pool --benchmark <yaml> --cache <json> --split <development|holdout> --stage <0..5> --ranking-time <ISO> --artifacts <dir>`
+- `python -m amadeus.evaluation.memory_retrieval_cli freeze-shortlist --results <stage-results.json> --source-stage <1..5> --profile <name> --output <shortlist.json>`
+- `python -m amadeus.evaluation.memory_retrieval_cli rebase-shortlist --shortlist <stage-5.json> --source-benchmark <selection.yaml> --benchmark <adjudicated.yaml> --approved-overlay <holdout-qrels.yaml> --output <rebased.json>`
+
+### 3. 契约
+
+- qrels 使用 `0..3`；二值 relevant 固定为安全且 `grade >= 2`。`dangerous` 与 relevance 独立；缺少 judgment 是 unknown，不是 grade 0。
+- 同一 `family_id` 的 variants 必须在同一 split；聚合先在 family 内平均，再跨 family macro average。
+- `corpus_id` 是 family fixture 的组织边界，不是检索隔离边界；同一 split 引用的全部 corpora 必须 seed 到同一个实验 user/search universe。development eligible memory 数必须大于最大候选窗口 64，holdout 与 development 的 universe 必须隔离。
+- `review_status=draft` 只能做 runner smoke；formal run 要求 dataset 与每个 family 都是 `approved`，并验证 60/42/18、30/21/9 和 6×10 分布。
+- 正式 `memory_retrieval_benchmark_v1.yaml` 的规范化 `content_hash` 必须写入 task 的 `review/dataset-freeze.md`；测试重新计算并逐字比较 hash。修改正式语料、qrels、split 或 strata 时，必须显式发布新版本并重新审核，不能只更新冻结记录来掩盖漂移。
+- final cutoff 固定为公开 request 的 `8`；参数 profile 不包含 final K。
+- formal run 使用只读、文本哈希 keyed embedding cache；cache identity、维度或 input hash 漂移，以及 cache miss，都必须失败。
+- cache prepare 使用 async provider 时，填充向量与 `provider.aclose()` 必须发生在同一个 event loop；禁止先 `asyncio.run(populate)` 再用第二个 `asyncio.run(aclose)`，否则 httpx transport 绑定的原 loop 已关闭。
+- 每个 corpus 分配带 `memory_retrieval_experiment_id` marker 的随机高位 PostgreSQL user；其他用户干扰项使用另一个 user。清理只删除本次 marker 匹配的 users，依靠 FK cascade 清理其 memory rows；不得 `TRUNCATE`。
+- corpus seed 一次，各 profile 只读复用；fixture SQL 显式冻结 `updated_at`、reinforcement、emotional weight、status 和 NULL embedding。
+- 每个 profile/query 使用相同 frozen hypotheses、embedding 与 ranking time 重跑两次；top ids、candidate keys 或 lane status 不一致即 `nondeterministic_ranking` 硬门失败。
+- Stage 2～4 必须加载上一阶段最多两个 frozen profiles，并校验 source stage、dataset hash、profile fingerprint 和 shortlist hash；变体从完整 inherited parameters `replace()` 当前 stage 字段，禁止从 baseline 重建。
+- Stage 4 可在用户明确批准后收缩为每个 inherited profile 的 hotness baseline；Stage 5 只生成生产 baseline 与最多两个 Stage 4 finalists，并允许冻结最多三个 profile。
+- Holdout pool 只能在 Stage 5 finalists 冻结后以 `split=holdout`、`stage=5`、显式 `unlock_holdout` 收集。unknown 仍须逐 pair 审核；proposal 和 approved qrels overlay 顶层都必须保留 `split: holdout`。
+- 只新增 holdout qrels 会改变全局 dataset hash，但不得重新选参数。`rebase-shortlist` 必须加载 selection source benchmark，验证其 content hash、corpus、去除 judgments 后的 query 合同、全部旧 qrels 和 overlay 新 qrels；只有新 benchmark 恰好等于“source + approved holdout overlay”时才保留 finalist 参数并记录 `selection_dataset_hash` 与新 hash。
+- 正式 holdout 必须在 rebased completeness 为 0 unknown 后运行一次；结果只用于预注册决策，不回流当前参数搜索。
+- artifacts 输出 JSON、CSV 和中文 Markdown，记录 dataset/profile/git/database/provider lineage、逐 case stable keys、候选与质量指标；本任务不采集 P50/P95/elapsed，也不调用 LangSmith/answer LLM/judge。
+
+### 4. 验证与错误矩阵
+
+- draft dataset + `formal=True` -> 在 seed 前拒绝。
+- 正式 YAML 的 `content_hash` 与冻结记录不一致 -> 测试失败；不得使用旧 hash 的实验 artifact 解释新数据集。
+- holdout 未显式 unlock -> 拒绝；unlock 后结果不得回流本轮调参。
+- final top-8 出现 unknown key -> `UnknownRetrievalJudgmentError`，先 adjudicate 并生成新 dataset version。
+- development judging-pool 可在各 stage 收集；holdout judging-pool 只接受 frozen Stage 5 finalists + `unlock_holdout`。两者都使用冻结 embedding cache，只输出 unknown `(query, memory)`、summary 与 profile ranks，不得输出伪造的 Precision/Recall，也不得自动写回 grade 0。
+- Stage 2～4 未提供连续上一阶段 shortlist、dataset hash/fingerprint/hash 不匹配 -> seed 前拒绝。
+- Holdout proposal/approved overlay 缺少 `split: holdout`、引用 development query 或 source hash 不匹配 -> 在 rebase 前拒绝。
+- Holdout qrels 改 hash 后直接加载旧 finalists -> 拒绝；只能通过验证后的 `rebase-shortlist` 重签，不能重跑 development 选择。
+- Source benchmark 缺失、hash 不等于 shortlist selection hash，或新 benchmark 同时修改 corpus/query/旧 qrels/额外 qrels -> 拒绝为“only add approved qrels”。
+- abstention query 声明 safe relevant/required key -> schema 拒绝；正常 query 没有 safe relevant -> schema 拒绝。
+- dangerous judgment 无 reason、required key 不是 safe grade 2/3、family 跨 split、重复 id/key、空 strata -> schema 拒绝。
+- embedding cache miss/identity/dimension/input hash 漂移 -> formal run 失败，不临时请求 provider。
+- cache 已成功 flush、但 provider 在另一个 event loop 关闭 -> CLI 可能错误返回失败；改为单一 async 生命周期，并保留已落盘 cache 的只读完整性校验。
+- vector/lexical error 或 degraded、跨 user/status/type/time/scoped candidate 泄漏、dangerous hit、重复运行不稳定 -> profile 硬门失败。
+- 实验失败且 cleanup 同时失败 -> 保留原始异常，并用 exception note 记录 cleanup 类型；cleanup 不得掩盖根因。
+
+### 5. Good / Base / Bad Cases
+
+- Good：NULL-embedding 稀有标识符只由 lexical candidate lane 进入 top-8；observer 证明它不在任一 vector group，artifact 以 benchmark key 记录结果。
+- Base：baseline 与候选 profile 对同一 approved development corpus 只读运行，输出 family-first Recall@8/nDCG/MRR/Precision 与 strata，速度不参与选择。
+- Good：三组 finalists 先在 selection hash 上冻结；holdout unknown 经 approved holdout-only overlay 补齐后，只重签 dataset hash，再在 0 unknown 条件下运行一次正式 holdout。
+- Bad：AI 同时生成 query/qrels 后直接标 approved；把未审核 top result 当 0；为每个 profile 重新调用 embedding provider；用 session id 隔离长期记忆；调用 `clean_postgres()`；把完整候选永久写进生产 trace。
+- Bad：看到 holdout unknown 后重新选择参数，或补 qrels 后绕过 rebase 用旧 hash manifest 运行 formal holdout。
+
+### 6. 必需测试
+
+- Parameter unit：默认 profile、Akashic 15-window、范围/finite 校验、fingerprint、RRF k、hotness strength/emotional scale。
+- Schema unit：YAML `embedding_mode: null`、重复 key/id、unknown corpus/key、danger reasons、required、abstention、family split 与 v1 distribution。
+- Shared-universe integration：两个 development corpus 的 active memories 使用同一个实验 user；query 的候选能包含另一个 corpus 的已知干扰项，other-user 仍为零泄漏。
+- Stage inheritance unit：Stage 2 继承 Stage 1 的 candidate windows；shortlist dataset drift 与 fingerprint drift 均拒绝。
+- Finalist/rebase unit：Stage 5 可冻结最多三组；rebase 只接受 approved holdout-only qrels，保持参数不变并同时记录 selection/new dataset hash。
+- Freeze unit：正式 dataset 可通过 `require_approved()`，且重新计算的 `content_hash` 必须存在于 `review/dataset-freeze.md`。
+- Metric unit：grade 0-3、unknown、dangerous、required 合取、abstention、空/不足 8、rank 8/9、duplicate ids、family-first weighting。
+- Cache unit：hashed keys 不保存原文、只读 replay、miss、identity/input drift、维度与 finite vector。
+- Cache lifecycle unit：fake provider 记录 `embed()` 与 `aclose()` 的 running loop，断言二者是同一个对象。
+- Real PostgreSQL integration：public recall、lexical-only provenance、other-user candidate zero leak、两次稳定、JSON/CSV/Markdown、只删除 experiment users 并保留既有 user。
+- 广回归：`tests/evaluation tests/memory tests/db`、Ruff 与 Mypy。
+
+### 7. 错误与正确示例
+
+#### 错误
+
+```python
+for profile in profiles:
+    clean_postgres()
+    embeddings = await provider.embed_all(corpus)
+    results = rank_candidate_lanes(rows, vectors, queries, limit=8, threshold=0.35)
+```
+
+#### 正确
+
+```python
+cache = FileEmbeddingCacheProvider(
+    cache_path,
+    identity=provider_identity,
+    dimensions=1024,
+    input_hash=benchmark_embedding_input_hash(benchmark),
+)
+report = run_memory_retrieval_experiment(
+    benchmark,
+    profiles=profiles,
+    split="development",
+    ranking_time=frozen_now,
+    db=database,
+    embedding_provider=cache,
+    embedding_identity=provider_identity,
+    embedding_cache_fingerprint=cache.fingerprint,
+    artifacts_dir=artifacts_dir,
+    formal=True,
+)
+```
+
+补齐 holdout qrels 后，正确路径是重签而不是重新选点：
+
+```python
+rebase_finalist_shortlist_for_holdout_qrels(
+    frozen_stage_five_path,
+    source_benchmark=selection_benchmark,
+    benchmark=benchmark_with_approved_holdout_qrels,
+    approved_overlay_path=holdout_overlay_path,
+    output_path=rebased_finalists_path,
 )
 ```

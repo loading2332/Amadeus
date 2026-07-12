@@ -77,6 +77,7 @@ Primary examples:
 - 探测连接成功后必须立即关闭；随后调用原始 `PostgresDatabase.open()`，保留真实数据库、pgvector 和 migration 验证。
 - `tests/conftest.py` 必须在所有真实 `PostgresDatabase.open()` 之前执行该探测，不能只保护 `clean_postgres()` 路径。
 - 数据库不可用时使用 `pytest.skip()`，不得把跳过计为通过；未访问 PostgreSQL 的测试不得触发探测。
+- `clean_postgres()` 会清理共享测试数据库，不提供跨 pytest 进程隔离。任何包含该 helper 的测试文件必须放在同一个 pytest 进程中串行运行；不得用两个并行 shell/agent 命令同时执行它们。
 
 ### 4. 验证与错误矩阵
 
@@ -85,18 +86,21 @@ Primary examples:
 - 同一 DSN 再次进入 -> 不再连接；复用成功结果或立即以相同原因 skipped。
 - DSN 改变 -> 视为新的数据库目标，单独探测一次。
 - Docker 已启动但 schema/migration 不完整 -> 快速探测成功后由真实数据库测试失败，不得静默跳过配置缺陷。
+- 两个 pytest 进程同时调用 `clean_postgres()` -> 一个进程可能删除另一个进程刚 seed 的 rows，表现为 lexical target、session 或 replacement 随机消失；这属于测试编排错误，不得据此修改生产 ranking。
 
 ### 5. Good / Base / Bad Cases
 
 - Good：Docker 未启动，全量测试在秒级结束；数据库用例 skipped，其他单元测试正常执行。
 - Base：Docker 与 migration 就绪，探测一次后所有 PostgreSQL 集成测试正常运行。
 - Bad：每个用例都新建 `ConnectionPool`，等待默认 30 秒后才 skip，并留下最长 300 秒的后台重连 worker。
+- Bad：并行运行 `tests/evaluation/test_memory_retrieval_experiment.py` 与 `tests/memory/test_memory_retriever.py`；两边的 `clean_postgres()` 会互相清库。
 
 ### 6. 必需测试
 
 - `test_require_postgres_caches_unavailable_database`：连续调用两次，断言只连接一次、`connect_timeout == 1`、两次均 skipped。
 - `test_require_postgres_caches_success_and_closes_probe`：连续调用两次，断言只连接一次且探测连接已关闭。
 - Docker 关闭时运行 `python -m pytest tests -q`：断言无 `PoolTimeout` 失败，数据库用例统一 skipped，全量在合理时间内结束。
+- 涉及 `clean_postgres()` 的多个文件使用一条 pytest 命令串行运行；若并行 check 曾失败，先单独重跑精确用例，再串行重跑原集合，区分产品回归与共享库竞争。
 
 ### 7. Wrong vs Correct
 
@@ -115,6 +119,21 @@ def clean_postgres() -> PostgresDatabase:
 def open_after_probe(database: PostgresDatabase) -> None:
     require_postgres()  # 按 DSN 复用一次短探测结果
     original_open(database)
+```
+
+#### Wrong：跨进程并行清理同一数据库
+
+```text
+pytest tests/evaluation/test_memory_retrieval_experiment.py  # process A
+pytest tests/memory/test_memory_retriever.py                  # process B, 同时运行
+```
+
+#### Correct：同一 pytest 进程串行执行
+
+```powershell
+uv run pytest -q `
+  tests/evaluation/test_memory_retrieval_experiment.py `
+  tests/memory/test_memory_retriever.py
 ```
 
 ## Common Mistakes
