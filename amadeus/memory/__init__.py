@@ -37,6 +37,7 @@ from amadeus.memory.providers import (
     OpenAIEmbeddingProvider,
 )
 from amadeus.memory.ranking import build_query_plan, extract_terms, rank_rows, rrf_merge
+from amadeus.memory.retrieval_parameters import MemoryRetrievalParameters
 from amadeus.memory.retriever import MemoryRetriever
 from amadeus.memory.runtime import LongTermMemoryEngine
 from amadeus.memory.source_refs import (
@@ -69,6 +70,7 @@ __all__ = [
     "MemoryQueryResult",
     "MemoryRecallRequest",
     "MemoryRecord",
+    "MemoryRetrievalParameters",
     "MemoryScope",
     "MemoryWriteRequest",
     "OpenAIEmbeddingConfig",

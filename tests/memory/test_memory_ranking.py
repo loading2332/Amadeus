@@ -7,6 +7,7 @@ from amadeus.memory.ranking import (
     MemoryCandidateLanes,
     build_query_plan,
     extract_terms,
+    hotness_signal_for_row,
     rank_candidate_lanes,
     rank_multi_query_rows,
     rank_rows,
@@ -62,6 +63,40 @@ def test_rrf_double_lane_outranks_single_only():
     assert result[0][1] > 0.024
     assert result[1][0] == "a"
     assert result[2][0] == "b"
+
+
+def test_rrf_k_is_explicitly_injectable() -> None:
+    result = rrf_merge([("a", 0.9)], [], top_n=1, rrf_k=10)
+
+    assert result[0][1] == pytest.approx(1.0 / 11)
+
+
+def test_hotness_frequency_strength_and_emotional_scale_are_independent() -> None:
+    row = _candidate_row(
+        "hotness",
+        reinforcement=100,
+        updated_at="2026-07-02T00:00:00+00:00",
+    )
+    row["emotional_weight"] = 10
+    no_frequency = hotness_signal_for_row(
+        row,
+        now=datetime(2026, 7, 12, tzinfo=UTC),
+        half_life_days=14.0,
+        reinforcement_strength=0.0,
+        emotional_half_life_scale=1.0,
+    )
+    baseline = hotness_signal_for_row(
+        row,
+        now=datetime(2026, 7, 12, tzinfo=UTC),
+        half_life_days=14.0,
+        reinforcement_strength=1.0,
+        emotional_half_life_scale=0.5,
+    )
+
+    assert no_frequency["frequency"] == 0.5
+    assert no_frequency["effective_half_life_days"] == 28.0
+    assert float(baseline["frequency"]) > float(no_frequency["frequency"])
+    assert baseline["effective_half_life_days"] == 21.0
 
 
 def test_rank_rows_rrf_double_lane_wins():

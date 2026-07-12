@@ -8,13 +8,17 @@ from datetime import UTC, datetime
 from typing import Any
 
 from amadeus.memory.engine import MemoryRecord
+from amadeus.memory.retrieval_parameters import MemoryRetrievalParameters
 from amadeus.memory.source_refs import evidence_from_source_ref
 
-_RRF_K = 60
+_DEFAULT_RETRIEVAL_PARAMETERS = MemoryRetrievalParameters()
+_RRF_K = _DEFAULT_RETRIEVAL_PARAMETERS.rrf_k
 _KEYWORD_RRF_WEIGHT = 0.5
-_LEXICAL_RRF_WEIGHT = 1.0
-_HOTNESS_ALPHA = 0.20
-_HOTNESS_HALF_LIFE_DAYS = 14.0
+_LEXICAL_RRF_WEIGHT = _DEFAULT_RETRIEVAL_PARAMETERS.lexical_rrf_weight
+_HOTNESS_ALPHA = _DEFAULT_RETRIEVAL_PARAMETERS.hotness_alpha
+_HOTNESS_HALF_LIFE_DAYS = (
+    _DEFAULT_RETRIEVAL_PARAMETERS.hotness_half_life_days
+)
 
 _CJK_STOPWORDS = {
     "用户",
@@ -80,6 +84,7 @@ class MemoryCandidateLanes:
 class RetrievalLaneTrace:
     candidate_counts: dict[str, int]
     lane_counts: dict[str, dict[str, int]]
+    vector_candidate_counts: tuple[int, ...] = ()
 
 
 def build_query_plan(
@@ -328,6 +333,12 @@ def rank_candidate_lanes(
     limit: int,
     threshold: float,
     lexical_weight: float = _LEXICAL_RRF_WEIGHT,
+    rrf_k: int = _RRF_K,
+    hotness_alpha: float = _HOTNESS_ALPHA,
+    hotness_half_life_days: float = _HOTNESS_HALF_LIFE_DAYS,
+    reinforcement_strength: float = 1.0,
+    emotional_half_life_scale: float = 0.5,
+    ranking_now: datetime | None = None,
 ) -> tuple[list[MemoryRecord], RetrievalLaneTrace]:
     """Rank independently recalled vector and lexical candidate lanes."""
 
@@ -337,6 +348,20 @@ def rank_candidate_lanes(
         raise ValueError("query_vectors must align with query_texts")
     if not math.isfinite(lexical_weight) or lexical_weight < 0:
         raise ValueError("lexical_weight must be a finite non-negative number")
+    _validate_rrf_k(rrf_k)
+    _validate_unit_interval(hotness_alpha, name="hotness_alpha")
+    _validate_positive_float(
+        hotness_half_life_days,
+        name="hotness_half_life_days",
+    )
+    _validate_non_negative_float(
+        reinforcement_strength,
+        name="reinforcement_strength",
+    )
+    _validate_non_negative_float(
+        emotional_half_life_scale,
+        name="emotional_half_life_scale",
+    )
 
     vector_candidate_ids = {
         row_id
@@ -378,7 +403,7 @@ def rank_candidate_lanes(
     vector_semantic_scores: dict[str, float] = {}
     vector_query_indexes: dict[str, list[str]] = {}
     hotness_signals: dict[str, dict[str, float | int | str]] = {}
-    ranking_now = datetime.now().astimezone()
+    ranking_now = ranking_now or datetime.now().astimezone()
     for query_index, (group, query_vector) in enumerate(
         zip(candidates.vector_groups, query_vectors, strict=True)
     ):
@@ -398,10 +423,17 @@ def rank_candidate_lanes(
             if query_index_text not in matched_indexes:
                 matched_indexes.append(query_index_text)
 
-            row_hotness_signal = hotness_signal_for_row(row, now=ranking_now)
+            row_hotness_signal = hotness_signal_for_row(
+                row,
+                now=ranking_now,
+                half_life_days=hotness_half_life_days,
+                reinforcement_strength=reinforcement_strength,
+                emotional_half_life_scale=emotional_half_life_scale,
+            )
             final_vector_score = hotness_fused_score(
                 semantic_score,
                 float(row_hotness_signal["hotness_score"]),
+                alpha=hotness_alpha,
             )
             current_score = vector_best_scores.get(row_id)
             if current_score is None or final_vector_score > current_score:
@@ -421,6 +453,7 @@ def rank_candidate_lanes(
         row_map=row_map,
         top_n=max(0, int(limit)),
         keyword_weight=lexical_weight,
+        rrf_k=rrf_k,
     )
 
     records: list[MemoryRecord] = []
@@ -428,14 +461,20 @@ def rank_candidate_lanes(
         row = row_map[item_id]
         record_hotness_signal = hotness_signals.get(item_id)
         if record_hotness_signal is None:
-            record_hotness_signal = hotness_signal_for_row(row, now=ranking_now)
+            record_hotness_signal = hotness_signal_for_row(
+                row,
+                now=ranking_now,
+                half_life_days=hotness_half_life_days,
+                reinforcement_strength=reinforcement_strength,
+                emotional_half_life_scale=emotional_half_life_scale,
+            )
         vector_rank = vector_ranks.get(item_id)
         lexical_rank = lexical_ranks.get(item_id)
         vector_contribution = (
-            1.0 / (_RRF_K + vector_rank) if vector_rank is not None else 0.0
+            1.0 / (rrf_k + vector_rank) if vector_rank is not None else 0.0
         )
         lexical_contribution = (
-            lexical_weight / (_RRF_K + lexical_rank)
+            lexical_weight / (rrf_k + lexical_rank)
             if lexical_rank is not None
             else 0.0
         )
@@ -471,13 +510,17 @@ def rank_candidate_lanes(
                         row.get("emotional_weight")
                     ),
                     "hotness_score": record_hotness_signal.get("hotness_score", 0.0),
-                    "hotness_alpha": _HOTNESS_ALPHA,
-                    "hotness_half_life_days": _HOTNESS_HALF_LIFE_DAYS,
+                    "hotness_alpha": hotness_alpha,
+                    "hotness_half_life_days": hotness_half_life_days,
+                    "hotness_reinforcement_strength": reinforcement_strength,
+                    "hotness_emotional_half_life_scale": (
+                        emotional_half_life_scale
+                    ),
                     "hotness_recency": record_hotness_signal.get("recency", 0.0),
                     "hotness_frequency": record_hotness_signal.get("frequency", 0.0),
                     "hotness_effective_half_life_days": record_hotness_signal.get(
                         "effective_half_life_days",
-                        _HOTNESS_HALF_LIFE_DAYS,
+                        hotness_half_life_days,
                     ),
                     "hotness_age_days": record_hotness_signal.get("age_days", 0.0),
                     "hotness_updated_at": record_hotness_signal.get("updated_at", ""),
@@ -491,6 +534,16 @@ def rank_candidate_lanes(
     return records, RetrievalLaneTrace(
         candidate_counts=candidate_counts,
         lane_counts=lane_counts,
+        vector_candidate_counts=tuple(
+            len(
+                {
+                    row_id
+                    for row in group
+                    if (row_id := _candidate_id(row))
+                }
+            )
+            for group in candidates.vector_groups
+        ),
     )
 
 
@@ -600,9 +653,12 @@ def rrf_merge(
     row_map: dict[str, dict[str, Any]] | None = None,
     top_n: int,
     keyword_weight: float = _KEYWORD_RRF_WEIGHT,
+    rrf_k: int = _RRF_K,
 ) -> list[tuple[str, float, float]]:
     if top_n <= 0 or (not vector_scored and not keyword_scored):
         return []
+    _validate_rrf_k(rrf_k)
+    _validate_non_negative_float(keyword_weight, name="keyword_weight")
 
     metadata = row_map or {}
     vec_rank: dict[str, int] = {
@@ -637,9 +693,9 @@ def rrf_merge(
     for item_id in all_ids:
         rrf = 0.0
         if item_id in vec_rank:
-            rrf += 1.0 / (_RRF_K + vec_rank[item_id])
+            rrf += 1.0 / (rrf_k + vec_rank[item_id])
         if item_id in kw_rank:
-            rrf += keyword_weight / (_RRF_K + kw_rank[item_id])
+            rrf += keyword_weight / (rrf_k + kw_rank[item_id])
         if rrf <= 0:
             continue
         scored.append((item_id, rrf, reinforcement_boost(metadata.get(item_id, {}))))
@@ -653,8 +709,14 @@ def reinforcement_boost(row: dict[str, Any]) -> float:
     return math.log1p(reinforcement - 1) * 0.001
 
 
-def hotness_fused_score(semantic_score: float, hotness_score: float) -> float:
-    return (1.0 - _HOTNESS_ALPHA) * semantic_score + _HOTNESS_ALPHA * hotness_score
+def hotness_fused_score(
+    semantic_score: float,
+    hotness_score: float,
+    *,
+    alpha: float = _HOTNESS_ALPHA,
+) -> float:
+    _validate_unit_interval(alpha, name="alpha")
+    return (1.0 - alpha) * semantic_score + alpha * hotness_score
 
 
 def hotness_signal_for_row(
@@ -662,7 +724,18 @@ def hotness_signal_for_row(
     *,
     now: datetime | None = None,
     half_life_days: float = _HOTNESS_HALF_LIFE_DAYS,
+    reinforcement_strength: float = 1.0,
+    emotional_half_life_scale: float = 0.5,
 ) -> dict[str, float | int | str]:
+    _validate_positive_float(half_life_days, name="half_life_days")
+    _validate_non_negative_float(
+        reinforcement_strength,
+        name="reinforcement_strength",
+    )
+    _validate_non_negative_float(
+        emotional_half_life_scale,
+        name="emotional_half_life_scale",
+    )
     if now is None:
         now = datetime.now().astimezone()
     updated_at_text = str(row.get("updated_at") or row.get("created_at") or "").strip()
@@ -670,10 +743,13 @@ def hotness_signal_for_row(
     reinforcement = max(0, coerce_int(row.get("reinforcement"), default=1))
     emotional_weight = coerce_emotional_weight(row.get("emotional_weight"))
     effective_half_life = max(
-        half_life_days * (1.0 + 0.5 * emotional_weight / 10.0),
+        half_life_days
+        * (1.0 + emotional_half_life_scale * emotional_weight / 10.0),
         0.1,
     )
-    freq = 1.0 / (1.0 + math.exp(-math.log1p(reinforcement)))
+    freq = 1.0 / (
+        1.0 + math.exp(-reinforcement_strength * math.log1p(reinforcement))
+    )
     if updated_at is None:
         age_d = 0.0
         recency = 0.0
@@ -694,10 +770,32 @@ def hotness_signal_for_row(
         "updated_at": updated_at_text,
         "age_days": age_d,
         "frequency": freq,
+        "reinforcement_strength": reinforcement_strength,
         "recency": recency,
+        "emotional_half_life_scale": emotional_half_life_scale,
         "effective_half_life_days": effective_half_life,
         "hotness_score": hotness,
     }
+
+
+def _validate_rrf_k(value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError("rrf_k must be a positive integer")
+
+
+def _validate_unit_interval(value: float, *, name: str) -> None:
+    if not math.isfinite(value) or value < 0.0 or value > 1.0:
+        raise ValueError(f"{name} must be a finite number between 0 and 1")
+
+
+def _validate_positive_float(value: float, *, name: str) -> None:
+    if not math.isfinite(value) or value <= 0.0:
+        raise ValueError(f"{name} must be a finite number greater than 0")
+
+
+def _validate_non_negative_float(value: float, *, name: str) -> None:
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError(f"{name} must be a finite non-negative number")
 
 
 def parse_datetime(value: str) -> datetime | None:

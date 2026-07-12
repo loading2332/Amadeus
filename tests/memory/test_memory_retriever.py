@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 
 import pytest
 from amadeus.memory.engine import MemoryRecallRequest, MemoryScope, MemoryWriteRequest
 from amadeus.memory.memorizer import MemoryMemorizer
 from amadeus.memory.postgres import PostgresMemoryStore
+from amadeus.memory.retrieval_parameters import MemoryRetrievalParameters
 from amadeus.memory.retriever import MemoryRetriever
 
 from tests.db.pgvector_helpers import pad_embedding
@@ -207,6 +209,44 @@ class ScopedLexicalFailureThenGlobalStore(LexicalOnlyRetrievalStore):
         return super().search_lexical_candidates(**kwargs)
 
 
+class RecordingDualLaneStore:
+    def __init__(self) -> None:
+        self.vector_calls: list[dict[str, object]] = []
+        self.lexical_calls: list[dict[str, object]] = []
+
+    def search_vector_candidates(self, **kwargs):
+        self.vector_calls.append(dict(kwargs))
+        return [
+            {
+                "id": "both-target",
+                "memory_type": "event",
+                "summary": "部署标识 ZXQ-4917",
+                "vector_distance": 0.0,
+                "source_ref": '["session:1:1:14"]#h:both-target',
+                "extra": {},
+                "reinforcement": 3,
+                "emotional_weight": 2,
+                "updated_at": "2026-07-01T00:00:00+00:00",
+            }
+        ]
+
+    def search_lexical_candidates(self, **kwargs):
+        self.lexical_calls.append(dict(kwargs))
+        return [
+            {
+                "id": "both-target",
+                "memory_type": "event",
+                "summary": "部署标识 ZXQ-4917",
+                "source_ref": '["session:1:1:14"]#h:both-target',
+                "extra": {},
+                "reinforcement": 3,
+                "emotional_weight": 2,
+                "updated_at": "2026-07-01T00:00:00+00:00",
+                "lexical_score": 1.0,
+            }
+        ]
+
+
 @pytest.fixture
 def memory_store():
     db = clean_postgres()
@@ -292,6 +332,63 @@ def test_lexical_recall_survives_vector_embedding_failure() -> None:
     }
     assert result.trace["fallbacks"] == ["vector_retrieval_failed"]
     assert result.trace["errors"] == ["vector_retrieval: RuntimeError"]
+
+
+def test_retrieval_profile_reaches_sql_ranking_and_public_trace() -> None:
+    store = RecordingDualLaneStore()
+    snapshots = []
+    parameters = MemoryRetrievalParameters(
+        vector_candidate_floor=15,
+        vector_candidate_multiplier=1,
+        lexical_candidate_floor=16,
+        lexical_candidate_multiplier=1,
+        lexical_rrf_weight=0.75,
+        rrf_k=10,
+        semantic_threshold=0.4,
+        hotness_alpha=0.1,
+        hotness_half_life_days=30.0,
+        reinforcement_strength=0.5,
+        emotional_half_life_scale=1.0,
+    )
+    ranking_time = datetime(2026, 7, 12, tzinfo=UTC)
+    retriever = MemoryRetriever(
+        store=store,
+        embedding_provider=StableEmbeddingProvider(),
+        parameters=parameters,
+        ranking_time=ranking_time,
+        candidate_observer=snapshots.append,
+    )
+    assert retriever.score_threshold == parameters.semantic_threshold
+    assert retriever.lexical_rrf_weight == parameters.lexical_rrf_weight
+
+    result = asyncio.run(
+        retriever.recall(MemoryRecallRequest(text="ZXQ-4917", limit=8))
+    )
+
+    assert store.vector_calls[0]["limit"] == 15
+    assert store.lexical_calls[0]["limit"] == 16
+    assert result.trace["candidate_limits"] == {
+        "vector_per_query": 15,
+        "lexical": 16,
+    }
+    assert result.trace["vector_candidates"] == [
+        {"query_index": 0, "query": "ZXQ-4917", "count": 1}
+    ]
+    assert result.trace["retrieval_parameters"] == parameters.as_dict()
+    assert result.trace["retrieval_parameter_fingerprint"] == parameters.fingerprint
+    assert result.trace["ranking_time"] == "2026-07-12T00:00:00"
+    signals = result.records[0].signals
+    assert signals["vector_rrf_contribution"] == pytest.approx(1.0 / 11)
+    assert signals["lexical_rrf_contribution"] == pytest.approx(0.75 / 11)
+    assert signals["hotness_alpha"] == 0.1
+    assert signals["hotness_half_life_days"] == 30.0
+    assert signals["hotness_reinforcement_strength"] == 0.5
+    assert signals["hotness_emotional_half_life_scale"] == 1.0
+    assert len(snapshots) == 1
+    assert snapshots[0].scope_mode == "scoped"
+    assert snapshots[0].query_texts == ("ZXQ-4917",)
+    assert snapshots[0].vector_groups == (("both-target",),)
+    assert snapshots[0].lexical == ("both-target",)
 
 
 def test_raw_query_still_drives_lexical_when_context_adds_vector_queries() -> None:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Any
 
 from amadeus.memory.engine import (
@@ -24,6 +26,15 @@ from amadeus.memory.ranking import (
     rank_candidate_lanes,
     trace_record,
 )
+from amadeus.memory.retrieval_parameters import MemoryRetrievalParameters
+
+
+@dataclass(frozen=True)
+class RetrievalCandidateSnapshot:
+    scope_mode: str
+    query_texts: tuple[str, ...]
+    vector_groups: tuple[tuple[str, ...], ...]
+    lexical: tuple[str, ...]
 
 
 @dataclass
@@ -32,12 +43,50 @@ class MemoryRetriever:
     embedding_provider: EmbeddingProvider
     hypothesis_provider: HypothesisProvider | None = None
     lexical_retrieval_enabled: bool = True
-    lexical_rrf_weight: float = 1.0
+    lexical_rrf_weight: float | None = None
     hypothesis_retrieval_enabled: bool = True
     hypothesis_timeout_seconds: float = 2.0
-    score_threshold: float = 0.35
+    score_threshold: float | None = None
     top_k: int = 8
     context_char_budget: int = 4000
+    parameters: MemoryRetrievalParameters | None = None
+    ranking_time: datetime | None = None
+    candidate_observer: Callable[[RetrievalCandidateSnapshot], None] | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.top_k, bool)
+            or not isinstance(self.top_k, int)
+            or self.top_k <= 0
+        ):
+            raise ValueError("top_k must be a positive integer")
+        parameters = self.parameters
+        if parameters is None:
+            defaults = MemoryRetrievalParameters()
+            parameters = replace(
+                defaults,
+                vector_candidate_floor=max(
+                    defaults.vector_candidate_floor,
+                    self.top_k * defaults.vector_candidate_multiplier,
+                ),
+                lexical_candidate_floor=max(
+                    defaults.lexical_candidate_floor,
+                    self.top_k * defaults.lexical_candidate_multiplier,
+                ),
+                lexical_rrf_weight=(
+                    defaults.lexical_rrf_weight
+                    if self.lexical_rrf_weight is None
+                    else self.lexical_rrf_weight
+                ),
+                semantic_threshold=(
+                    defaults.semantic_threshold
+                    if self.score_threshold is None
+                    else self.score_threshold
+                ),
+            )
+        self.parameters = parameters
+        self.lexical_rrf_weight = parameters.lexical_rrf_weight
+        self.score_threshold = parameters.semantic_threshold
 
     async def recall(self, request: MemoryRecallRequest) -> MemoryQueryResult:
         text = request.text.strip()
@@ -71,6 +120,8 @@ class MemoryRetriever:
             }
         queries = dedupe_texts(queries)
         hypothesis_trace["query_texts"] = list(queries)
+
+        parameters = self._parameters()
 
         (
             ranked,
@@ -106,6 +157,24 @@ class MemoryRetriever:
             },
             "candidate_count": lane_trace.candidate_counts["union"],
             "candidate_counts": dict(lane_trace.candidate_counts),
+            "candidate_limits": {
+                "vector_per_query": parameters.vector_candidate_limit(limit),
+                "lexical": parameters.lexical_candidate_limit(limit),
+            },
+            "vector_candidates": [
+                {
+                    "query_index": index,
+                    "query": query_text,
+                    "count": count,
+                }
+                for index, (query_text, count) in enumerate(
+                    zip(
+                        queries,
+                        lane_trace.vector_candidate_counts,
+                        strict=True,
+                    )
+                )
+            ],
             "lane_counts": lane_trace.lane_counts,
             "lane_status": lane_status,
             "lexical_query": {"terms": list(lexical_terms)},
@@ -116,6 +185,11 @@ class MemoryRetriever:
             "fallbacks": dedupe_texts(fallbacks),
             "errors": errors,
             "hypothesis_retrieval": hypothesis_trace,
+            "retrieval_parameters": parameters.as_dict(),
+            "retrieval_parameter_fingerprint": parameters.fingerprint,
+            "ranking_time": (
+                normalize_datetime(self.ranking_time) if self.ranking_time else None
+            ),
         }
         return MemoryQueryResult(records=ranked, trace=trace)
 
@@ -173,6 +247,11 @@ class MemoryRetriever:
             limit=limit,
             inherited_vector_errors=embedding_errors,
         )
+        self._observe_candidates(
+            scoped.candidates,
+            queries=queries,
+            scope_mode="scoped",
+        )
         ranked, lane_trace = self._rank_candidate_set(
             candidates=scoped.candidates,
             queries=queries,
@@ -207,6 +286,11 @@ class MemoryRetriever:
             lexical_terms=lexical_terms,
             limit=limit,
             inherited_vector_errors=embedding_errors,
+        )
+        self._observe_candidates(
+            global_result.candidates,
+            queries=queries,
+            scope_mode="global-fallback",
         )
         global_ranked, global_lane_trace = self._rank_candidate_set(
             candidates=global_result.candidates,
@@ -261,7 +345,8 @@ class MemoryRetriever:
         vector_groups: list[tuple[dict[str, Any], ...]] = []
         vector_errors = list(inherited_vector_errors)
         vector_successes = 0
-        vector_limit = max(self.top_k, limit) * 4
+        parameters = self._parameters()
+        vector_limit = parameters.vector_candidate_limit(limit)
         for query_vector in query_vectors:
             if not query_vector:
                 vector_groups.append(())
@@ -303,7 +388,7 @@ class MemoryRetriever:
                     scope_chat_id=request.scope.chat_id,
                     time_start=request.time_start,
                     time_end=request.time_end,
-                    limit=max(30, limit * 2),
+                    limit=parameters.lexical_candidate_limit(limit),
                 )
             except Exception as exc:
                 lexical_status = "error"
@@ -407,13 +492,45 @@ class MemoryRetriever:
         query_vectors: list[list[float]],
         limit: int,
     ) -> tuple[list[MemoryRecord], RetrievalLaneTrace]:
+        parameters = self._parameters()
         return rank_candidate_lanes(
             candidates,
             query_vectors,
             queries,
             limit=limit,
-            threshold=self.score_threshold,
-            lexical_weight=self.lexical_rrf_weight,
+            threshold=parameters.semantic_threshold,
+            lexical_weight=parameters.lexical_rrf_weight,
+            rrf_k=parameters.rrf_k,
+            hotness_alpha=parameters.hotness_alpha,
+            hotness_half_life_days=parameters.hotness_half_life_days,
+            reinforcement_strength=parameters.reinforcement_strength,
+            emotional_half_life_scale=parameters.emotional_half_life_scale,
+            ranking_now=self.ranking_time,
+        )
+
+    def _parameters(self) -> MemoryRetrievalParameters:
+        if self.parameters is None:  # pragma: no cover - __post_init__ invariant
+            raise RuntimeError("retrieval parameters were not initialized")
+        return self.parameters
+
+    def _observe_candidates(
+        self,
+        candidates: MemoryCandidateLanes,
+        *,
+        queries: list[str],
+        scope_mode: str,
+    ) -> None:
+        if self.candidate_observer is None:
+            return
+        self.candidate_observer(
+            RetrievalCandidateSnapshot(
+                scope_mode=scope_mode,
+                query_texts=tuple(queries),
+                vector_groups=tuple(
+                    _candidate_ids(group) for group in candidates.vector_groups
+                ),
+                lexical=_candidate_ids(candidates.lexical),
+            )
         )
 
 
@@ -468,6 +585,17 @@ def _normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def _candidate_ids(rows: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        item_id = str(row.get("id") or "").strip()
+        if item_id and item_id not in seen:
+            seen.add(item_id)
+            result.append(item_id)
+    return tuple(result)
 
 
 @dataclass(frozen=True)
