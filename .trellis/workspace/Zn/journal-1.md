@@ -311,3 +311,38 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 长期记忆检索参数评估与 holdout 决策
+
+**Date**: 2026-07-12
+**Task**: 长期记忆检索参数评估与 holdout 决策
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+完成可注入 retrieval 参数合同、60-family Gold Set、本地真实 PostgreSQL 分阶段 sweep、holdout-only qrels rebase 与逐 family bootstrap；三组 holdout Recall@8 均为 1.0，因探索组 development lexical-only 退化且保守组无质量收益，决定保留生产 baseline。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `51e1a0d` | (see git log) |
+| `093a342` | (see git log) |
+| `e02774f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
