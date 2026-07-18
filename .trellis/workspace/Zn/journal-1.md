@@ -346,3 +346,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 完成 Web 所有者身份边界
+
+**Date**: 2026-07-18
+**Task**: 完成 Web 所有者身份边界
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+统一 AMADEUS_OWNER_USER_ID，建立 OwnerScope 与 bootstrap 合同，阻止浏览器伪造身份和保留 metadata，并通过真实 PostgreSQL Web 与 store 回归验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `42a894a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
