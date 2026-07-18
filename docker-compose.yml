@@ -36,7 +36,7 @@ services:
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-v4}
       AMADEUS_POSTGRES_DSN: postgresql://amadeus:amadeus@postgres:5432/amadeus
       AMADEUS_LONG_TERM_MEMORY_ENABLED: ${AMADEUS_LONG_TERM_MEMORY_ENABLED:-1}
-      AMADEUS_MEMORY_USER_ID: ${AMADEUS_MEMORY_USER_ID:-1}
+      AMADEUS_OWNER_USER_ID: ${AMADEUS_OWNER_USER_ID:-1}
     ports:
       - "8000:8000"
     volumes:
@@ -59,7 +59,7 @@ services:
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-v4}
       AMADEUS_POSTGRES_DSN: postgresql://amadeus:amadeus@postgres:5432/amadeus
       AMADEUS_LONG_TERM_MEMORY_ENABLED: ${AMADEUS_LONG_TERM_MEMORY_ENABLED:-1}
-      AMADEUS_MEMORY_USER_ID: ${AMADEUS_MEMORY_USER_ID:-1}
+      AMADEUS_OWNER_USER_ID: ${AMADEUS_OWNER_USER_ID:-1}
     volumes:
       - amadeus-workspace:/workspace
     depends_on:

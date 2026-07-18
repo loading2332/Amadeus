@@ -134,7 +134,7 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
                 "OPENAI_API_KEY=file-key",
                 "OPENAI_MODEL=file-model",
                 "OPENAI_MAX_TOKENS=333",
-                "AMADEUS_MEMORY_USER_ID=7",
+                "AMADEUS_OWNER_USER_ID=7",
                 "AMADEUS_MEMORY_KEEP_COUNT=8",
             ]
         ),
@@ -150,7 +150,7 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
     assert config.provider.model == "env-model"
     assert config.provider.max_tokens == 333
     assert config.postgres_dsn == "postgresql://amadeus:amadeus@localhost:5432/amadeus"
-    assert config.default_memory_user_id == 7
+    assert config.owner_user_id == 7
     assert config.memory_keep_count == 8
 
 
@@ -171,6 +171,25 @@ def test_load_runtime_config_defaults_to_home_workspace(tmp_path, monkeypatch):
     config = load_runtime_config(env_path=env_path)
 
     assert config.workspace_root == tmp_path / ".amadeus" / "workspace"
+    assert config.owner_user_id == 1
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "not-an-int"])
+def test_load_runtime_config_requires_positive_owner_user_id(
+    tmp_path,
+    monkeypatch,
+    value,
+):
+    monkeypatch.setenv("AMADEUS_OWNER_USER_ID", value)
+
+    with pytest.raises(
+        ValueError,
+        match="AMADEUS_OWNER_USER_ID must be a positive integer",
+    ):
+        load_runtime_config(
+            env_path=_env_path(tmp_path),
+            workspace_root=tmp_path,
+        )
 
 
 @pytest.mark.parametrize(

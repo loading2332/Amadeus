@@ -75,7 +75,7 @@ class RuntimeConfig:
     postgres_dsn: str
     memory_keep_count: int = 12
     long_term_memory_enabled: bool = False
-    default_memory_user_id: int = 1
+    owner_user_id: int = 1
     embedding_model: str | None = None
     embedding_api_key: str | None = None
     embedding_base_url: str | None = None
@@ -289,8 +289,8 @@ def load_runtime_config(
     long_term_memory_enabled = _bool_config(
         "AMADEUS_LONG_TERM_MEMORY_ENABLED", file_values
     )
-    default_memory_user_id = _int_config(
-        "AMADEUS_MEMORY_USER_ID", file_values, default=1
+    owner_user_id = _positive_int_config(
+        "AMADEUS_OWNER_USER_ID", file_values, default=1
     )
     embedding_model = _config_value("OPENAI_EMBEDDING_MODEL", file_values)
     embedding_api_key = _config_value("OPENAI_EMBEDDING_API_KEY", file_values) or str(
@@ -337,7 +337,7 @@ def load_runtime_config(
         postgres_dsn=str(values["AMADEUS_POSTGRES_DSN"]),
         memory_keep_count=keep_count,
         long_term_memory_enabled=long_term_memory_enabled,
-        default_memory_user_id=default_memory_user_id,
+        owner_user_id=owner_user_id,
         embedding_model=embedding_model,
         embedding_api_key=embedding_api_key,
         embedding_base_url=embedding_base_url,
@@ -402,7 +402,7 @@ def build_passive_app(
             )
         )
         store = PostgresMemoryStore(
-            config.default_memory_user_id,
+            config.owner_user_id,
             db=postgres_db,
         )
         memorizer = MemoryMemorizer(
@@ -447,7 +447,7 @@ def build_passive_app(
         event_bus=event_bus,
         keep_count=config.memory_keep_count,
         long_term_memory=long_term_memory,
-        user_id=config.default_memory_user_id,
+        user_id=config.owner_user_id,
         db=postgres_db,
     )
     tool_registry.register(
@@ -566,6 +566,25 @@ def _int_config(name: str, file_values: Mapping[str, str], *, default: int) -> i
     if value is None:
         return default
     return int(value)
+
+
+def _positive_int_config(
+    name: str,
+    file_values: Mapping[str, str],
+    *,
+    default: int,
+) -> int:
+    try:
+        value = _int_config(name, file_values, default=default)
+    except ValueError as error:
+        raise ValueError(
+            f"Invalid Amadeus runtime config: {name} must be a positive integer"
+        ) from error
+    if value <= 0:
+        raise ValueError(
+            f"Invalid Amadeus runtime config: {name} must be a positive integer"
+        )
+    return value
 
 
 def _float_config(

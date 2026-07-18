@@ -1,0 +1,30 @@
+{
+  "id": "react-frontend",
+  "name": "react-frontend",
+  "title": "规划并增加 React 前端",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "Zn",
+  "assignee": "Zn",
+  "createdAt": "2026-07-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "codex/delivery-runtime",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-17-react-chat-client",
+    "07-17-streaming-runtime-sse",
+    "07-18-owner-scoped-web-identity"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

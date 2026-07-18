@@ -10,64 +10,134 @@ from fastapi.testclient import TestClient
 from tests.db.postgres_helpers import clean_postgres
 
 
-def test_postgres_web_session_and_message_api_is_user_scoped() -> None:
+def _client(
+    session_store: PostgresSessionStore,
+    turn_store: PostgresTurnStore,
+    *,
+    owner_user_id: int = 1,
+) -> TestClient:
+    app = create_app(
+        store=turn_store,
+        session_store=session_store,
+        owner_user_id=owner_user_id,
+    )
+    return TestClient(app)
+
+
+def test_postgres_web_bootstrap_and_chat_api_are_owner_scoped() -> None:
     db = clean_postgres()
     try:
         session_store = PostgresSessionStore(db=db)
         turn_store = PostgresTurnStore(db=db)
-        app = create_app(store=turn_store, session_store=session_store)
-        client = TestClient(app)
+        client = _client(session_store, turn_store)
 
-        first = client.post("/api/sessions", json={"user_id": 1, "title": "one"})
-        second = client.post("/api/sessions", json={"user_id": 2, "title": "two"})
+        bootstrap = client.get("/api/bootstrap")
+        created = client.post("/api/sessions", json={"title": "one"})
 
-        assert first.status_code == 200
-        assert second.status_code == 200
-        first_session_id = first.json()["session_id"]
-        assert [row["session_id"] for row in client.get("/api/sessions?user_id=1").json()] == [
-            first_session_id
+        assert bootstrap.status_code == 200
+        assert bootstrap.json() == {"owner_user_id": 1}
+        assert created.status_code == 200
+        session_id = created.json()["session_id"]
+        assert created.json()["user_id"] == 1
+        assert [row["session_id"] for row in client.get("/api/sessions").json()] == [
+            session_id
         ]
-        assert client.get(
-            f"/api/sessions/{first_session_id}/messages?user_id=2"
-        ).json() == []
+        assert [
+            row["session_id"]
+            for row in client.get("/api/sessions?user_id=999").json()
+        ] == [session_id]
+        assert client.get(f"/api/sessions/{session_id}/messages").json() == []
 
         response = client.post(
             "/api/messages",
-            json={"user_id": 1, "session_id": first_session_id, "message": "hello"},
+            json={
+                "session_id": session_id,
+                "message": "hello",
+                "metadata": {
+                    "channel": "telegram",
+                    "user_id": 999,
+                    "session_id": 999,
+                    "turn_id": "spoofed",
+                    "custom": "kept",
+                },
+            },
         )
 
         assert response.status_code == 200
         payload = response.json()
         assert payload["status"] == TURN_PENDING
         assert payload["user_id"] == 1
-        assert payload["session_id"] == first_session_id
+        assert payload["session_id"] == session_id
+        assert payload["metadata"] == {"custom": "kept", "channel": "web"}
     finally:
         db.close()
 
 
-def test_postgres_web_get_turn_returns_404_for_missing_turn() -> None:
+def test_postgres_web_rejects_browser_supplied_user_id() -> None:
     db = clean_postgres()
     try:
         session_store = PostgresSessionStore(db=db)
         turn_store = PostgresTurnStore(db=db)
-        app = create_app(store=turn_store, session_store=session_store)
-        client = TestClient(app)
+        client = _client(session_store, turn_store)
+        session = session_store.create_session(user_id=1, title="one")
 
-        response = client.get("/api/turns/missing")
+        create_session = client.post(
+            "/api/sessions",
+            json={"user_id": 2, "title": "spoofed"},
+        )
+        create_message = client.post(
+            "/api/messages",
+            json={
+                "user_id": 2,
+                "session_id": session["session_id"],
+                "message": "spoofed",
+            },
+        )
 
-        assert response.status_code == 404
-        assert response.json() == {"detail": "Turn not found"}
+        assert create_session.status_code == 422
+        assert create_message.status_code == 422
     finally:
         db.close()
 
 
-def test_postgres_web_sse_endpoint_emits_terminal_turn_and_closes() -> None:
+def test_postgres_web_hides_missing_and_non_owner_resources_with_same_404() -> None:
     db = clean_postgres()
     try:
         session_store = PostgresSessionStore(db=db)
         turn_store = PostgresTurnStore(db=db)
-        app = create_app(store=turn_store, session_store=session_store)
-        client = TestClient(app)
+        client = _client(session_store, turn_store)
+        other_session = session_store.create_session(user_id=2, title="private")
+        other_session_id = int(other_session["session_id"])
+        other_turn = turn_store.create_turn(
+            user_id=2,
+            session_id=other_session_id,
+            content="private",
+        )
+
+        responses = [
+            client.get("/api/turns/missing"),
+            client.get(f"/api/turns/{other_turn.id}"),
+            client.get(f"/api/turns/{other_turn.id}/events"),
+            client.get(f"/api/sessions/{other_session_id}/messages"),
+            client.post(
+                "/api/messages",
+                json={"session_id": other_session_id, "message": "intrude"},
+            ),
+        ]
+
+        for response in responses:
+            assert response.status_code == 404
+            assert response.json() == {"detail": "Resource not found"}
+    finally:
+        db.close()
+
+
+def test_postgres_web_sse_endpoint_emits_terminal_owner_turn_and_closes() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = _client(session_store, turn_store)
         session = session_store.create_session(user_id=1, title="one")
 
         turn = turn_store.create_turn(
@@ -91,13 +161,35 @@ def test_postgres_web_sse_endpoint_emits_terminal_turn_and_closes() -> None:
         db.close()
 
 
-def test_web_static_uses_structured_server_session_ids() -> None:
+def test_create_app_requires_explicit_owner_for_injected_stores() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+
+        try:
+            create_app(store=turn_store, session_store=session_store)
+        except ValueError as error:
+            assert str(error) == (
+                "owner_user_id must be a positive integer when injecting Web stores"
+            )
+        else:
+            raise AssertionError("create_app accepted injected stores without an owner")
+    finally:
+        db.close()
+
+
+def test_web_static_bootstraps_owner_and_omits_user_id_from_requests() -> None:
     script = Path("amadeus/web/static/app.js").read_text(encoding="utf-8")
 
     assert "web:${" not in script
     assert "LEGACY" not in script
     assert "session" + "Key" not in script
     assert "session" + "_key" not in script
+    assert 'fetch("/api/bootstrap")' in script
     assert 'fetch("/api/sessions"' in script
-    assert "user_id: state.userId" in script
+    assert "DEFAULT_USER_ID" not in script
+    assert "user_id: state.userId" not in script
     assert "session_id: state.sessionId" in script
+    assert "userId === ownerUserId" in script
+    assert "window.localStorage.removeItem(SESSION_STORAGE)" in script

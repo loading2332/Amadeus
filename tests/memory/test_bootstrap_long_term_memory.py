@@ -112,13 +112,13 @@ def test_long_term_memory_config_supports_dedicated_embedding_provider(
     assert config.embedding_api_key == "embed-secret"
 
 
-def test_memory_runtime_config_targets_postgres_memory_user(tmp_path, monkeypatch):
+def test_memory_runtime_config_targets_owner_user(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
     monkeypatch.setenv("OPENAI_MODEL", "chat-model")
     monkeypatch.setenv("AMADEUS_LONG_TERM_MEMORY_ENABLED", "1")
     monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-v4")
-    monkeypatch.setenv("AMADEUS_MEMORY_USER_ID", "42")
+    monkeypatch.setenv("AMADEUS_OWNER_USER_ID", "42")
 
     config = load_runtime_config(
         env_path=tmp_path / ".env",
@@ -126,7 +126,7 @@ def test_memory_runtime_config_targets_postgres_memory_user(tmp_path, monkeypatc
     )
 
     assert config.long_term_memory_enabled is True
-    assert config.default_memory_user_id == 42
+    assert config.owner_user_id == 42
 
 
 def test_memory_protocol_dataclasses_match_task1_plan_shape():

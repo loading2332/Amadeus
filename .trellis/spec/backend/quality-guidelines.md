@@ -221,7 +221,7 @@ if semantic_score >= threshold:
 - `amadeus.events.ToolCallStarted`, `ToolCallCompleted`, `TurnCommitted` carry `session: SessionRef`.
 - `Turn(user_id, session_id, ...)` in `amadeus/turns/store.py` — no `session_key` field; worker rebuilds `SessionRef(turn.user_id, turn.session_id)`.
 - `build_message_id(user_id: int, session_id: int, seq: int) -> str` in `amadeus/session/identity.py` — evidence locator only.
-- Web schemas expose `user_id` and `session_id`; response models have no `session_key` field.
+- Web response schemas expose `user_id` and `session_id`；面向浏览器的 request schema 不接受 `user_id`，由服务器 owner scope 注入；response models 没有 `session_key` 字段。
 
 ### 3. Contracts
 
@@ -242,7 +242,7 @@ if semantic_score >= threshold:
 
 ### 5. Good/Base/Bad Cases
 
-- Good: web posts `{user_id, session_id, message}` -> `PostgresTurnStore.create_turn(user_id, session_id)` -> worker claims `Turn` -> `SessionRef(user_id, session_id)` -> `runtime.run_turn(session=SessionRef(...))` -> `SessionManager.get_or_create(SessionRef)` -> Postgres filters on `user_id/session_id` columns.
+- Good: web posts `{session_id, message}` -> `OwnerScope.require_session(session_id)` validates `SessionRef(owner_user_id, session_id)` -> `PostgresTurnStore.create_turn(owner_user_id, session_id)` -> worker claims `Turn` -> `SessionRef(user_id, session_id)` -> runtime and PostgreSQL continue carrying structured identity.
 - Base: eval runner builds a generated `SessionRef` per case and drives runtime/tools directly, no CLI chat flag.
 - Bad: a store method accepts a `web:*` string and parses it. Bad: events carry `session_key: str` instead of `session: SessionRef`. Bad: frontend stores `sessionKey` and posts it back. Bad: source ref `chat:<seq>` without user/session scope leaks into fingerprint or cache key.
 
@@ -251,7 +251,7 @@ if semantic_score >= threshold:
 - Session store unit/integration tests prove messages persist, reload, search, and fetch through `SessionRef` / structured ids.
 - Runtime tests prove `PassiveTurnResult`, lifecycle events, worker turn handling, and memory write/read paths carry `SessionRef` or structured ids (see `tests/runtime/test_before_turn.py` asserting `MemoryScope.session == SessionRef(...)` and `chat_id is None`).
 - Tool tests prove session filtering uses structured `user_id`/`session_id` fields.
-- Web tests prove responses have no `session_key`; frontend stores/sends only `user_id`/`session_id`.
+- Web tests prove responses have no `session_key`；frontend 可保存 `user_id`/`session_id` 作为恢复证据，但普通业务 request 只发送 `session_id`，不能选择 owner。
 - CLI tests cover eval only and prove `amadeus chat` / `--session-key` are gone.
 - Search gate: `rg -n "session_key|sessionKey|AMADEUS_SESSION_KEY|--session-key|parse_session_key|require_session_key|build_session_key|SessionRefLike|session_key_for" amadeus tests .env.example docs` returns no hits.
 - Source-ref gate: `rg -n "seed:|\[\"chat:" tests amadeus` returns no legacy fixture hits.
@@ -287,6 +287,79 @@ localStorage.setItem("amadeus_session_id", String(session_id))
 
 - This task intentionally diverges from Akashic's `session_key` mechanism. Akashic uses string session keys across bus/lifecycle/passive/turn/tests; Amadeus expresses the same "explicit identity at lifecycle/memory boundary" idea through `SessionRef` / `user_id + session_id`. Akashic is treated as a cautionary map of where identity leaks, not a model to copy.
 - Closer structural reference: `redrumY/telegram-bot@codex/web-agent-architecture` for structured web/turn contracts around `user_id`/`session_id`. Note its `MemoryScope.session_key` field is NOT copied — Amadeus keeps memory scope structured.
+
+## 场景：单用户 Web Owner 身份边界
+
+### 1. 范围 / 触发
+
+- 触发：修改 Web bootstrap、session/message/turn/SSE API、owner 配置、浏览器 session 恢复或 Web metadata。
+- 该合同跨越环境配置、FastAPI dependency、Pydantic schema、PostgreSQL session/turn store 与浏览器，因此必须维护代码级规格。
+
+### 2. 签名
+
+- `RuntimeConfig.owner_user_id: int = 1`
+- `GET /api/bootstrap -> BootstrapResponse(owner_user_id: int)`
+- `OwnerScope.require_session(session_id: int) -> SessionRef`
+- `OwnerScope.require_turn(turn_id: str) -> Turn`
+- `POST /api/sessions {title?, metadata?} -> SessionResponse`
+- `POST /api/messages {session_id, message, metadata?} -> TurnResponse`
+
+### 3. 契约
+
+- `AMADEUS_OWNER_USER_ID` 是 Web、被动 runtime 与长期记忆共享的唯一 owner 配置，默认 `1`；旧 owner/memory 用户变量不得兼容或回退。
+- 浏览器不是身份权威：Web request body/query 不用 `user_id` 选择 owner；response 继续返回 `user_id/session_id` 作为完整身份和可观察证据。
+- session 访问必须先以 `SessionRef(owner_user_id, session_id)` 调用 store 验证复合所有权；turn status/SSE 必须验证 `turn.user_id == owner_user_id`。
+- missing 与 non-owner 对外统一为 `404 {"detail": "Resource not found"}`，不得泄露资源存在性。
+- `BootstrapResponse` 使用明确 allowlist，禁止序列化整个 `RuntimeConfig`。
+- Web turn metadata 删除 `channel/user_id/session_id/turn_id` 等保留键，再由服务器固定写入 `channel="web"`。
+- localStorage 中的 owner 只用于恢复校验；与 bootstrap owner 不一致时清除旧 session，不能把 stored owner 回传为身份选择。
+
+### 4. 验证与错误矩阵
+
+- owner 缺省 -> `1`；非整数、`0` 或负数 -> 启动失败并指明 `AMADEUS_OWNER_USER_ID` 必须是正整数。
+- request body 额外包含 `user_id` -> Pydantic `422`。
+- query 伪造 `user_id` -> 不影响 owner 选择，结果仍限定到服务器 owner。
+- session/turn missing 或 non-owner -> 相同 404 body。
+- metadata 覆盖保留键 -> 丢弃客户端值，服务器字段优先。
+- bootstrap 返回非正整数或请求失败 -> 浏览器初始化失败，不创建未知 owner 的 session。
+
+### 5. Good / Base / Bad Cases
+
+- Good：客户端只提交 `{session_id, message}`，route 先验证 owner session，再写入 owner turn 和 `channel="web"`。
+- Base：部署未设置 owner 时使用 `1`，bootstrap 返回 `{"owner_user_id": 1}`，旧 localStorage 同 owner 时恢复 session。
+- Bad：浏览器提交 `user_id` 后 route 直接传给 store；Bad：只用裸 `session_id` 创建 turn；Bad：`{"channel": "web", **payload.metadata}` 允许客户端覆盖 channel。
+
+### 6. 必需测试
+
+- 配置测试覆盖默认值、dotenv/environment、非数字与非正数。
+- 真实 PostgreSQL Web 测试覆盖无 client user ID 的 session/message flow、bootstrap 精确 allowlist、body/query 伪造、metadata 保留键清洗。
+- non-owner session 的 history/message create 与 non-owner turn 的 status/SSE 均断言相同 404。
+- store 回归继续证明多用户隔离；单用户假设不得下沉到 PostgreSQL store。
+- 静态/React 客户端测试断言启动读取 bootstrap、业务 request 不携带 `user_id`、owner mismatch 清除旧 session。
+- 搜索门禁：`rg -n "AMADEUS_MEMORY_USER_ID|default_memory_user_id" amadeus tests .env.example docker-compose.yml docs` 无匹配。
+
+### 7. Wrong vs Correct
+
+#### 错误
+
+```python
+turn = store.create_turn(
+    user_id=payload.user_id,
+    session_id=payload.session_id,
+    metadata={"channel": "web", **payload.metadata},
+)
+```
+
+#### 正确
+
+```python
+session = scope.require_session(payload.session_id)
+turn = scope.turn_store.create_turn(
+    user_id=session.user_id,
+    session_id=session.session_id,
+    metadata=web_turn_metadata(payload.metadata),
+)
+```
 
 ## 场景：独立双 lane 长期记忆检索
 

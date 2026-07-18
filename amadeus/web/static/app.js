@@ -1,8 +1,7 @@
-const DEFAULT_USER_ID = 1;
 const SESSION_STORAGE = "amadeus_session";
 
 const state = {
-  userId: DEFAULT_USER_ID,
+  userId: null,
   sessionId: null,
   busy: true,
 };
@@ -16,7 +15,7 @@ const nodes = {
   statusBadge: document.querySelector("#statusBadge"),
 };
 
-function readStoredSession() {
+function readStoredSession(ownerUserId) {
   const raw = window.localStorage.getItem(SESSION_STORAGE);
   if (!raw) {
     return null;
@@ -25,7 +24,11 @@ function readStoredSession() {
     const value = JSON.parse(raw);
     const userId = Number.parseInt(value.user_id, 10);
     const sessionId = Number.parseInt(value.session_id, 10);
-    if (Number.isInteger(userId) && userId > 0 && Number.isInteger(sessionId) && sessionId > 0) {
+    if (
+      userId === ownerUserId
+      && Number.isInteger(sessionId)
+      && sessionId > 0
+    ) {
       return {
         user_id: userId,
         session_id: sessionId,
@@ -38,8 +41,21 @@ function readStoredSession() {
   return null;
 }
 
+async function getBootstrap() {
+  const response = await fetch("/api/bootstrap");
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const payload = await response.json();
+  const ownerUserId = Number.parseInt(payload.owner_user_id, 10);
+  if (!Number.isInteger(ownerUserId) || ownerUserId <= 0) {
+    throw new Error("Invalid owner bootstrap");
+  }
+  return ownerUserId;
+}
+
 async function getOrCreateSession() {
-  const existing = readStoredSession();
+  const existing = readStoredSession(state.userId);
   if (existing) {
     return existing;
   }
@@ -47,7 +63,6 @@ async function getOrCreateSession() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      user_id: DEFAULT_USER_ID,
       title: "Web chat",
       metadata: { channel: "web" },
     }),
@@ -121,7 +136,6 @@ async function createTurn(message) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       message,
-      user_id: state.userId,
       session_id: state.sessionId,
     }),
   });
@@ -227,7 +241,11 @@ nodes.input.addEventListener("keydown", (event) => {
 
 nodes.messages.innerHTML = '<div class="empty">开始对话</div>';
 setBusy(true, "initializing");
-getOrCreateSession()
+getBootstrap()
+  .then((ownerUserId) => {
+    state.userId = ownerUserId;
+    return getOrCreateSession();
+  })
   .then((session) => {
     applySession(session);
     setBusy(false);

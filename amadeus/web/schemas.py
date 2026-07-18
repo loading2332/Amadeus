@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from amadeus.turns import Turn
 
@@ -11,15 +11,21 @@ class HealthResponse(BaseModel):
     status: str = "ok"
 
 
-class MessageRequest(BaseModel):
+class BootstrapResponse(BaseModel):
+    owner_user_id: int
+
+
+class StrictRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class MessageRequest(StrictRequest):
     message: str = Field(min_length=1)
-    user_id: int
     session_id: int
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class SessionCreateRequest(BaseModel):
-    user_id: int
+class SessionCreateRequest(StrictRequest):
     title: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 

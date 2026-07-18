@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from amadeus.session import PostgresSessionStore
-from amadeus.turns import PostgresTurnStore
-from amadeus.web.dependencies import get_session_store, get_turn_store
+from amadeus.web.dependencies import get_owner_scope
+from amadeus.web.owner import OwnerScope, web_turn_metadata
 from amadeus.web.schemas import (
+    BootstrapResponse,
     HealthResponse,
     MessageRequest,
     MessageResponse,
@@ -27,13 +27,20 @@ async def health() -> HealthResponse:
     return HealthResponse()
 
 
+@api_router.get("/bootstrap", response_model=BootstrapResponse)
+async def bootstrap(
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
+) -> BootstrapResponse:
+    return BootstrapResponse(owner_user_id=scope.user_id)
+
+
 @api_router.post("/sessions", response_model=SessionResponse)
 async def create_session(
     payload: SessionCreateRequest,
-    session_store: Annotated[PostgresSessionStore, Depends(get_session_store)],
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> SessionResponse:
-    row = session_store.create_session(
-        user_id=payload.user_id,
+    row = scope.session_store.create_session(
+        user_id=scope.user_id,
         title=payload.title,
         metadata=payload.metadata,
     )
@@ -42,10 +49,12 @@ async def create_session(
 
 @api_router.get("/sessions", response_model=list[SessionResponse])
 async def list_sessions(
-    user_id: int,
-    session_store: Annotated[PostgresSessionStore, Depends(get_session_store)],
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> list[SessionResponse]:
-    return [SessionResponse(**row) for row in session_store.list_sessions(user_id=user_id)]
+    return [
+        SessionResponse(**row)
+        for row in scope.session_store.list_sessions(user_id=scope.user_id)
+    ]
 
 
 @api_router.get(
@@ -54,25 +63,26 @@ async def list_sessions(
 )
 async def list_messages(
     session_id: int,
-    user_id: int,
-    session_store: Annotated[PostgresSessionStore, Depends(get_session_store)],
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> list[MessageResponse]:
+    session = scope.require_session(session_id)
     return [
         MessageResponse(**row)
-        for row in session_store.list_messages(user_id=user_id, session_id=session_id)
+        for row in scope.session_store.fetch_session_messages(session)
     ]
 
 
 @api_router.post("/messages", response_model=TurnResponse)
 async def create_message(
     payload: MessageRequest,
-    store: Annotated[PostgresTurnStore, Depends(get_turn_store)],
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> TurnResponse:
-    turn = store.create_turn(
-        user_id=payload.user_id,
+    session = scope.require_session(payload.session_id)
+    turn = scope.turn_store.create_turn(
+        user_id=session.user_id,
         session_id=payload.session_id,
         content=payload.message,
-        metadata={"channel": "web", **payload.metadata},
+        metadata=web_turn_metadata(payload.metadata),
     )
     return turn_response(turn)
 
@@ -80,23 +90,19 @@ async def create_message(
 @api_router.get("/turns/{turn_id}", response_model=TurnResponse)
 async def get_turn(
     turn_id: str,
-    store: Annotated[PostgresTurnStore, Depends(get_turn_store)],
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> TurnResponse:
-    turn = store.get_turn(turn_id)
-    if turn is None:
-        raise HTTPException(status_code=404, detail="Turn not found")
-    return turn_response(turn)
+    return turn_response(scope.require_turn(turn_id))
 
 
 @api_router.get("/turns/{turn_id}/events")
 async def turn_events(
     turn_id: str,
-    store: Annotated[PostgresTurnStore, Depends(get_turn_store)],
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> StreamingResponse:
-    if store.get_turn(turn_id) is None:
-        raise HTTPException(status_code=404, detail="Turn not found")
+    scope.require_turn(turn_id)
     return StreamingResponse(
-        turn_event_stream(store, turn_id),
+        turn_event_stream(scope.turn_store, turn_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
