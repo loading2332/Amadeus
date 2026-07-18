@@ -412,3 +412,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 交付 React 单用户聊天客户端
+
+**Date**: 2026-07-19
+**Task**: 交付 React 单用户聊天客户端
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+完成 React/MUI 多会话聊天客户端、Axios/Query/Zustand/SSE 状态边界、工具过程展示、Markdown、主题、响应式布局、确定性 Playwright E2E、后端标题生成与 WSL Docker 多阶段生产构建；删除旧原生前端并完成质量验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4cc7ea4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
