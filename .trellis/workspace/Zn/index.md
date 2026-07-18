@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~381 | Active |
+| `journal-1.md` | ~414 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-07-18 | 完成可恢复 SSE 流式运行时 | `b50242a` | `codex/delivery-runtime` |
 | 11 | 2026-07-18 | 完成 Web 所有者身份边界 | `42a894a` | `codex/delivery-runtime` |
 | 10 | 2026-07-12 | 长期记忆检索参数评估与 holdout 决策 | `51e1a0d`, `093a342`, `e02774f` | `codex/delivery-runtime` |
 | 9 | 2026-07-11 | 完成记忆检索独立双 lane 召回 | `f05f43b`, `4ab3e52`, `0afca18` | `codex/delivery-runtime` |

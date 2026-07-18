@@ -379,3 +379,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 完成可恢复 SSE 流式运行时
+
+**Date**: 2026-07-18
+**Task**: 完成可恢复 SSE 流式运行时
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+实现普通文本与工具活动的有序持久化流、可重连 SSE、取消重试和 lease 恢复；补齐迁移、跨进程测试、流式规范与验收记录。React 渲染留给下一阶段。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b50242a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
