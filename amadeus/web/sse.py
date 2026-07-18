@@ -2,48 +2,46 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
-from typing import Any
 
-from amadeus.turns import TERMINAL_TURN_STATUSES, PostgresTurnStore
-from amadeus.web.schemas import turn_response
+from amadeus.turns import TERMINAL_TURN_STATUSES, PostgresTurnStore, TurnEvent
 
 
 async def turn_event_stream(
     store: PostgresTurnStore,
     turn_id: str,
     *,
-    poll_interval: float = 0.75,
+    after_seq: int = 0,
+    poll_interval: float = 0.25,
+    keepalive_interval: float = 15.0,
 ) -> AsyncIterator[str]:
-    last_payload = ""
+    cursor = max(0, int(after_seq))
+    last_keepalive = time.monotonic()
     while True:
         turn = store.get_turn(turn_id)
         if turn is None:
-            payload: dict[str, Any] = {
-                "turn_id": turn_id,
-                "user_id": None,
-                "session_id": None,
-                "status": "failed",
-                "answer": None,
-                "error": "Turn not found",
-                "metadata": {},
-                "created_at": None,
-                "updated_at": None,
-                "started_at": None,
-                "finished_at": None,
-            }
-            yield _sse("failed", payload)
             return
-        response = turn_response(turn).model_dump()
-        encoded = json.dumps(response, ensure_ascii=False, sort_keys=True)
-        if encoded != last_payload:
-            yield _sse(turn.status, response)
-            last_payload = encoded
+        events = store.list_events(turn_id, after_seq=cursor)
+        for event in events:
+            yield _sse(event)
+            cursor = event.seq
         if turn.status in TERMINAL_TURN_STATUSES:
             return
+        now = time.monotonic()
+        if now - last_keepalive >= keepalive_interval:
+            yield ": keepalive\n\n"
+            last_keepalive = now
         await asyncio.sleep(poll_interval)
 
 
-def _sse(event: str, payload: dict[str, Any]) -> str:
+def _sse(event: TurnEvent) -> str:
+    payload = {
+        "seq": event.seq,
+        "type": event.type,
+        "turn_id": event.turn_id,
+        "occurred_at": event.occurred_at,
+        "data": event.data,
+    }
     data = json.dumps(payload, ensure_ascii=False)
-    return f"event: {event}\ndata: {data}\n\n"
+    return f"id: {event.seq}\nevent: turn_event\ndata: {data}\n\n"

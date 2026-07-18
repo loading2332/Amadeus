@@ -19,9 +19,10 @@
 
 ## 3. Provider 流式能力
 
-- [ ] 为 provider 定义可选、框架无关的正文 stream sink。
+- [ ] 为 provider 定义可选、框架无关的普通文本 stream sink。
 - [ ] 实现供应商 streaming chunk 累计：正文增量、工具调用分片、最终 usage/raw 兼容。
-- [ ] 丢弃产品边界之外的 thinking/reasoning 增量，不持久化、不上送 Web。
+- [ ] 普通 text/content delta 到达即发布；删除“带 tools 时整轮缓冲，发现 tool call 后丢弃文本”的旧策略。
+- [ ] 独立 thinking/reasoning channel 不伪装成普通文本；若未来展示，另立 typed part 能力。
 - [ ] 保留无 sink 的非流式路径或提供等价兼容适配。
 - [ ] 用确定性 fake chunks 覆盖正常流、工具调用、多 choice/空 delta、异常和最终一致性。
 
@@ -41,7 +42,7 @@
 ## 5. Worker、批量持久化与恢复
 
 - [ ] claim 时生成 `lease_id`，启动心跳/取消观察器。
-- [ ] 实现 `PersistedTurnStream` 累计正文和阈值 flush；工具事件与终态前强制 flush。
+- [ ] `PersistedTurnStream` 继续写 turn 级累计正文快照；工具事件前强制 flush，使单调 `seq` 足以让消费端从快照新增后缀切分 text part。
 - [ ] 实现 `pending` 与 `processing` 取消路径，保证已完成工具副作用不被描述为回滚。
 - [ ] 实现过期 lease 扫描：先对账已提交 assistant message；存在则 `done`，否则 `failed/interrupted`；禁止自动执行。
 - [ ] 将原始异常留在结构化日志，把数据库/API 错误映射为安全 typed error。
@@ -53,6 +54,7 @@
 - [ ] 新增 turns 时间线、取消和重试端点；所有端点复用 `OwnerScope`，未知/越权统一 404。
 - [ ] 重试事务复用原始输入与 session，写 `retry_of_turn_id`；只允许 `failed/cancelled`，活跃冲突返回 409。
 - [ ] SSE 按 `after_seq`/`Last-Event-ID` 读取 PostgreSQL，发送单调 typed envelopes 与 keepalive；连接断开不取消 turn。
+- [ ] SSE 保持累计 `content_snapshot`；共享 reducer 以快照新增后缀和工具事件 `seq` 恢复 `text -> tool -> text` 的原始顺序，并以对应工具 `activity_id` 驱动卡片完成后立即折叠。
 - [ ] 终态后发送最后事件并关闭；累计快照由客户端替换而非拼接。
 - [ ] 保留现有 messages/status 调用的兼容行为，更新旧静态前端测试中受契约变化影响的断言。
 

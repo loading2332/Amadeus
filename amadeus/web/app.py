@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from amadeus.app.bootstrap import default_workspace_root, load_runtime_config
 from amadeus.session import PostgresSessionStore
 from amadeus.turns import PostgresTurnStore
+from amadeus.turns.store import ActiveTurnExists, InvalidTurnTransition
 from amadeus.web.owner import OwnerResourceNotFound
 from amadeus.web.routes import api_router
 from amadeus.web.static_routes import static_router
@@ -66,6 +67,34 @@ def create_app(
     ) -> JSONResponse:
         del request, error
         return JSONResponse(status_code=404, content={"detail": "Resource not found"})
+
+    @app.exception_handler(ActiveTurnExists)
+    async def active_turn_exists(
+        request: Request,
+        error: ActiveTurnExists,
+    ) -> JSONResponse:
+        del request, error
+        return JSONResponse(
+            status_code=409,
+            content={
+                "code": "active_turn_exists",
+                "detail": "该会话已有正在处理的请求",
+            },
+        )
+
+    @app.exception_handler(InvalidTurnTransition)
+    async def invalid_turn_transition(
+        request: Request,
+        error: InvalidTurnTransition,
+    ) -> JSONResponse:
+        del request, error
+        return JSONResponse(
+            status_code=409,
+            content={
+                "code": "invalid_turn_transition",
+                "detail": "当前请求状态不允许此操作",
+            },
+        )
 
     if resolved_static_dir.exists():
         app.mount(

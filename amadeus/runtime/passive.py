@@ -62,6 +62,7 @@ from amadeus.runtime.step_phases import (
     default_after_step_modules,
     default_before_step_modules,
 )
+from amadeus.runtime.streaming import TurnStreamSink
 from amadeus.session.identity import SessionRef
 from amadeus.session.store import Session, SessionManager
 from amadeus.tools.executor import ToolExecutor
@@ -340,6 +341,7 @@ class PassiveRuntime:
         active_skills: list[str] | None = None,
         runtime_metadata: dict[str, str] | None = None,
         extra: dict[str, Any] | None = None,
+        stream_sink: TurnStreamSink | None = None,
     ) -> PassiveTurnResult:
         before_turn_context = await self._before_turn.run(
             BeforeTurnInput(
@@ -351,6 +353,8 @@ class PassiveRuntime:
             )
         )
         if before_turn_context.abort_reply is not None:
+            if stream_sink is not None:
+                await stream_sink.publish_content(before_turn_context.abort_reply)
             abort_rendered = self.context_builder.render(
                 RuntimeContext(
                     workspace_root=self.workspace_root,
@@ -378,12 +382,15 @@ class PassiveRuntime:
                 },
                 memory_trace=dict(before_turn_context.memory_trace),
                 extra=extra,
+                stream_sink=stream_sink,
             )
 
         before_reasoning_context = await self._before_reasoning.run(
             BeforeReasoningInput(before_turn=before_turn_context)
         )
         if before_reasoning_context.abort_reply is not None:
+            if stream_sink is not None:
+                await stream_sink.publish_content(before_reasoning_context.abort_reply)
             abort_rendered = self.context_builder.render(
                 RuntimeContext(
                     workspace_root=self.workspace_root,
@@ -411,6 +418,7 @@ class PassiveRuntime:
                 },
                 memory_trace=dict(before_reasoning_context.memory_trace),
                 extra=extra,
+                stream_sink=stream_sink,
             )
         runtime_session = self.session_manager.get_or_create(session)
         history = before_reasoning_context.history
@@ -464,6 +472,7 @@ class PassiveRuntime:
                 reasoner_result = await self.reasoner.reason(
                     messages=messages,
                     session=session,
+                    stream_sink=stream_sink,
                 )
                 assistant_content = reasoner_result.reply
                 tool_chain = reasoner_result.tool_chain
@@ -477,6 +486,8 @@ class PassiveRuntime:
                 continue
         else:
             assistant_content = "上下文过长无法处理，请尝试新建对话。"
+            if stream_sink is not None:
+                await stream_sink.publish_content(assistant_content)
             if rendered is None:
                 context = RuntimeContext(
                     workspace_root=self.workspace_root,
@@ -500,6 +511,7 @@ class PassiveRuntime:
             context_retry=context_retry,
             memory_trace=dict(resolved_memory_trace),
             extra=extra,
+            stream_sink=stream_sink,
         )
 
     async def _complete_turn(
@@ -514,7 +526,11 @@ class PassiveRuntime:
         context_retry: dict[str, Any],
         memory_trace: dict[str, Any],
         extra: dict[str, Any] | None,
+        stream_sink: TurnStreamSink | None,
     ) -> PassiveTurnResult:
+        if stream_sink is not None:
+            await stream_sink.begin_finalization()
+
         after_reasoning = await self._after_reasoning.run(
             AfterReasoningInput(
                 session=session,

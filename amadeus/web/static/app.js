@@ -157,30 +157,42 @@ async function waitForTurn(turnId) {
 function waitForSse(turnId) {
   return new Promise((resolve, reject) => {
     const source = new EventSource(`/api/turns/${turnId}/events`);
+    let partialAnswer = "";
     const timeout = window.setTimeout(() => {
       source.close();
       reject(new Error("SSE timeout"));
     }, 120000);
 
     const onEvent = (event) => {
-      const data = JSON.parse(event.data);
+      const envelope = JSON.parse(event.data);
+      const data = envelope.data;
+      if (envelope.type === "content_snapshot") {
+        partialAnswer = data.content || "";
+        setStatus("streaming");
+        return;
+      }
+      if (envelope.type === "turn_status") {
+        setStatus(data.status);
+        return;
+      }
+      if (envelope.type !== "turn_terminal") {
+        return;
+      }
       setStatus(data.status);
       if (data.status === "done") {
         window.clearTimeout(timeout);
         source.close();
-        appendMessage("assistant", data.answer || "");
+        appendMessage("assistant", partialAnswer);
         resolve();
       }
-      if (data.status === "failed") {
+      if (data.status === "failed" || data.status === "cancelled") {
         window.clearTimeout(timeout);
         source.close();
-        reject(new Error(data.error || "turn failed"));
+        reject(new Error(data.error?.message || data.status));
       }
     };
 
-    for (const status of ["pending", "processing", "done", "failed"]) {
-      source.addEventListener(status, onEvent);
-    }
+    source.addEventListener("turn_event", onEvent);
     source.onerror = () => {
       window.clearTimeout(timeout);
       source.close();

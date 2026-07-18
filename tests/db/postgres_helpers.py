@@ -54,6 +54,7 @@ def clean_postgres() -> PostgresDatabase:
                     memory_markdown_writes,
                     memory_replacements,
                     memory_items,
+                    conversation_turn_events,
                     conversation_turns,
                     conversation_messages,
                     conversation_sessions,

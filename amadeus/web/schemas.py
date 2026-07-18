@@ -56,6 +56,12 @@ class TurnResponse(BaseModel):
     status: str
     answer: str | None = None
     error: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    error_retryable: bool | None = None
+    partial_answer: str = ""
+    stream_version: int = 0
+    retry_of_turn_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str | None = None
     updated_at: str | None = None
@@ -71,6 +77,12 @@ def turn_response(turn: Turn) -> TurnResponse:
         status=turn.status,
         answer=turn.answer,
         error=turn.error,
+        error_code=turn.error_code,
+        error_message=turn.error_message,
+        error_retryable=turn.error_retryable,
+        partial_answer=turn.partial_answer,
+        stream_version=turn.stream_version,
+        retry_of_turn_id=turn.retry_of_turn_id,
         metadata=turn.metadata,
         created_at=turn.created_at,
         updated_at=turn.updated_at,

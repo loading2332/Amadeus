@@ -6,6 +6,7 @@ from __future__ import annotations
 # session.store 会与 memory 包形成预存在循环 import。
 
 import asyncio
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -83,6 +84,10 @@ class RuntimeConfig:
     memory_lexical_retrieval_enabled: bool = True
     memory_hypothesis_retrieval_enabled: bool = True
     memory_hypothesis_timeout_seconds: float = 2.0
+    turn_stream_flush_characters: int = 128
+    turn_stream_flush_interval_seconds: float = 0.1
+    turn_heartbeat_interval_seconds: float = 10.0
+    turn_stale_after_seconds: float = 120.0
     light_model: str | None = None
     mcp_mode: Literal["disabled", "local_trusted"] = "disabled"
 
@@ -317,6 +322,31 @@ def load_runtime_config(
         file_values,
         default=2.0,
     )
+    turn_stream_flush_characters = _positive_int_config(
+        "AMADEUS_TURN_STREAM_FLUSH_CHARACTERS",
+        file_values,
+        default=128,
+    )
+    turn_stream_flush_interval_seconds = _positive_float_config(
+        "AMADEUS_TURN_STREAM_FLUSH_INTERVAL_SECONDS",
+        file_values,
+        default=0.1,
+    )
+    turn_heartbeat_interval_seconds = _positive_float_config(
+        "AMADEUS_TURN_HEARTBEAT_INTERVAL_SECONDS",
+        file_values,
+        default=10.0,
+    )
+    turn_stale_after_seconds = _positive_float_config(
+        "AMADEUS_TURN_STALE_AFTER_SECONDS",
+        file_values,
+        default=120.0,
+    )
+    if turn_stale_after_seconds <= turn_heartbeat_interval_seconds:
+        raise ValueError(
+            "Invalid Amadeus runtime config: AMADEUS_TURN_STALE_AFTER_SECONDS "
+            "must be greater than AMADEUS_TURN_HEARTBEAT_INTERVAL_SECONDS"
+        )
     light_model = _config_value("OPENAI_LIGHT_MODEL", file_values)
     mcp_mode: Literal["disabled", "local_trusted"] = (
         "local_trusted"
@@ -345,6 +375,10 @@ def load_runtime_config(
         memory_lexical_retrieval_enabled=memory_lexical_retrieval_enabled,
         memory_hypothesis_retrieval_enabled=memory_hypothesis_retrieval_enabled,
         memory_hypothesis_timeout_seconds=memory_hypothesis_timeout_seconds,
+        turn_stream_flush_characters=turn_stream_flush_characters,
+        turn_stream_flush_interval_seconds=turn_stream_flush_interval_seconds,
+        turn_heartbeat_interval_seconds=turn_heartbeat_interval_seconds,
+        turn_stale_after_seconds=turn_stale_after_seconds,
         light_model=light_model,
         mcp_mode=mcp_mode,
     )
@@ -594,6 +628,25 @@ def _float_config(
     if value is None:
         return default
     return float(value)
+
+
+def _positive_float_config(
+    name: str,
+    file_values: Mapping[str, str],
+    *,
+    default: float,
+) -> float:
+    try:
+        value = _float_config(name, file_values, default=default)
+    except ValueError as error:
+        raise ValueError(
+            f"Invalid Amadeus runtime config: {name} must be a positive number"
+        ) from error
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(
+            f"Invalid Amadeus runtime config: {name} must be a positive number"
+        )
+    return value
 
 
 def _bool_config(

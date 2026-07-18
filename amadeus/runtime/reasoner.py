@@ -15,6 +15,7 @@ from amadeus.runtime.step_phases import (
     BeforeStepFrame,
     BeforeStepInput,
 )
+from amadeus.runtime.streaming import TurnStreamSink
 from amadeus.runtime.tool_runtime import (
     append_assistant_tool_calls,
     append_tool_result,
@@ -33,6 +34,25 @@ _UNLOCK_GUIDE_TEMPLATE = (
     "工具 '{name}' 当前未加载（schema 不可见）。请先调用 "
     "tool_search(query=\"select:{name}\") 加载，然后再调用该工具。"
 )
+
+
+async def _check_cancelled(stream_sink: TurnStreamSink | None) -> None:
+    if stream_sink is not None:
+        await stream_sink.check_cancelled()
+
+
+async def _publish_tool(
+    stream_sink: TurnStreamSink | None,
+    activity_id: str,
+    tool_name: str,
+    state: str,
+) -> None:
+    if stream_sink is not None:
+        await stream_sink.publish_tool_activity(
+            activity_id=activity_id,
+            tool_name=tool_name,
+            state=state,
+        )
 
 
 @dataclass
@@ -93,13 +113,16 @@ class Reasoner:
         self,
         messages: Sequence[dict[str, Any]],
         session: SessionRef | None = None,
+        stream_sink: TurnStreamSink | None = None,
     ) -> ReasonerResult:
         """Run a reasoning turn: provider call → optional tool loop → result."""
         visible_set = self._create_visible_set(session)
         tool_schemas = self._schemas_for_visible_set(visible_set)
-        response = await self.provider.chat(
+        await _check_cancelled(stream_sink)
+        response = await self._chat_with_stream(
             list(messages),
             tools=list(tool_schemas) if tool_schemas is not None else None,
+            stream_sink=stream_sink,
         )
 
         if not response.tool_calls:
@@ -122,6 +145,7 @@ class Reasoner:
             response=response,
             session=session,
             visible_set=visible_set,
+            stream_sink=stream_sink,
         )
 
     async def _run_tool_loop(
@@ -131,6 +155,7 @@ class Reasoner:
         response: LLMResponse,
         session: SessionRef | None = None,
         visible_set: TurnVisibleSet | None = None,
+        stream_sink: TurnStreamSink | None = None,
     ) -> ReasonerResult:
         if self.tool_executor is None:
             raise ValueError("LLM requested tools but no tool executor is configured")
@@ -148,6 +173,7 @@ class Reasoner:
             return self._schemas_for_visible_set(visible_set)
 
         while current_response.tool_calls:
+            await _check_cancelled(stream_sink)
             if iterations >= self.max_tool_iterations:
                 break
 
@@ -203,6 +229,16 @@ class Reasoner:
                 "calls": [],
             }
             for batch_index, tool_call in enumerate(current_response.tool_calls):
+                activity_id = tool_call.id or (
+                    f"tool-{iterations}-{batch_index}-{tool_call.name}"
+                )
+                await _check_cancelled(stream_sink)
+                await _publish_tool(
+                    stream_sink,
+                    activity_id,
+                    tool_call.name,
+                    "started",
+                )
                 # ── 按需解锁：未解锁工具走 preflight + 引导回填（TD4 / R3.8）──
                 # preflight 让 pre hook 链先看一眼（不调 invoker），给未来 loop guard
                 # 留插座位；未被 deny 则回填"请先 tool_search(select:...) 解锁"引导。
@@ -278,6 +314,12 @@ class Reasoner:
                             ],
                         }
                     )
+                    await _publish_tool(
+                        stream_sink,
+                        activity_id,
+                        tool_call.name,
+                        "failed",
+                    )
                     continue
 
                 if session is not None:
@@ -291,17 +333,33 @@ class Reasoner:
                         )
                     )
 
-                execution = await self.tool_executor.execute(
-                    ToolExecutionRequest(
-                        tool_name=tool_call.name,
-                        arguments=dict(tool_call.arguments),
-                        call_id=tool_call.id,
-                        source="passive",
-                        tool_batch=tool_batch,
-                        tool_batch_index=batch_index,
+                try:
+                    execution = await self.tool_executor.execute(
+                        ToolExecutionRequest(
+                            tool_name=tool_call.name,
+                            arguments=dict(tool_call.arguments),
+                            call_id=tool_call.id,
+                            source="passive",
+                            tool_batch=tool_batch,
+                            tool_batch_index=batch_index,
+                        )
                     )
-                )
+                except Exception:
+                    await _publish_tool(
+                        stream_sink,
+                        activity_id,
+                        tool_call.name,
+                        "failed",
+                    )
+                    raise
                 result = _as_tool_result(tool_call.name, execution)
+                await _publish_tool(
+                    stream_sink,
+                    activity_id,
+                    tool_call.name,
+                    "completed" if execution.status == "success" else "failed",
+                )
+                await _check_cancelled(stream_sink)
 
                 result_preview = self._preview_tool_result(result)
                 if session is not None:
@@ -412,8 +470,10 @@ class Reasoner:
                 break
 
             # ── Next LLM round ─────────────────────────────────────────
-            current_response = await self.provider.chat(
-                loop_messages, tools=_current_schemas()
+            current_response = await self._chat_with_stream(
+                loop_messages,
+                tools=_current_schemas(),
+                stream_sink=stream_sink,
             )
 
         # ── Incomplete: model still wants tools ─────────────────────────
@@ -451,6 +511,21 @@ class Reasoner:
                     "tools_used_count": len(tools_used),
                 },
             },
+        )
+
+    async def _chat_with_stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None,
+        stream_sink: TurnStreamSink | None,
+    ) -> LLMResponse:
+        if stream_sink is None:
+            return await self.provider.chat(messages, tools=tools)
+        return await self.provider.chat(
+            messages,
+            tools=tools,
+            content_sink=stream_sink.publish_content,
         )
 
     # ── internal helpers ────────────────────────────────────────────────────

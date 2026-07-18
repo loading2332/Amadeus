@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import inspect
 import json
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol, TypeGuard
+from typing import Any, NoReturn, Protocol, TypeGuard
 
 from openai import AsyncOpenAI
 
@@ -43,6 +43,9 @@ class LLMResponse:
     model: str | None = None
     response_id: str | None = None
     usage: Mapping[str, Any] | None = None
+
+
+ContentDeltaSink = Callable[[str], Awaitable[None]]
 
 
 class ChatCompletionsClient(Protocol):
@@ -91,6 +94,7 @@ class LLMProvider:
         max_tokens: int | None = None,
         tools: list[dict[str, Any]] | None = None,
         disable_thinking: bool = False,
+        content_sink: ContentDeltaSink | None = None,
         **request_options: Any,
     ) -> LLMResponse:
         payload: dict[str, Any] = {
@@ -106,16 +110,14 @@ class LLMProvider:
             extra_body.setdefault("enable_thinking", False)
             payload["extra_body"] = extra_body
 
+        if content_sink is not None:
+            payload["stream"] = True
         try:
             raw = await self._client.chat.completions.create(**payload)
+            if content_sink is not None:
+                return await _consume_stream(raw, content_sink)
         except Exception as error:
-            message = str(error)
-            lowered = message.lower()
-            if "context_length" in lowered or "maximum context" in lowered:
-                raise ContextLengthError(message) from error
-            if "content_filter" in lowered or "content policy" in lowered:
-                raise ContentSafetyError(message) from error
-            raise
+            _raise_provider_error(error)
 
         choice = raw.choices[0] if getattr(raw, "choices", None) else None
         assistant_message = getattr(choice, "message", None)
@@ -154,6 +156,77 @@ def _extract_tool_calls(message: Any) -> list[LLMToolCall]:
             )
         )
     return parsed
+
+
+async def _consume_stream(raw_stream: Any, sink: ContentDeltaSink) -> LLMResponse:
+    chunks: list[Any] = []
+    content_parts: list[str] = []
+    tool_parts: dict[int, dict[str, str]] = {}
+    model: str | None = None
+    response_id: str | None = None
+    usage: Mapping[str, Any] | None = None
+    async for chunk in raw_stream:
+        chunks.append(chunk)
+        model = str(getattr(chunk, "model", None) or model or "") or None
+        response_id = str(getattr(chunk, "id", None) or response_id or "") or None
+        chunk_usage = _usage_payload(getattr(chunk, "usage", None))
+        if chunk_usage is not None:
+            usage = chunk_usage
+        choice = chunk.choices[0] if getattr(chunk, "choices", None) else None
+        delta = getattr(choice, "delta", None)
+        if delta is None:
+            continue
+        content = getattr(delta, "content", None)
+        if isinstance(content, str) and content:
+            content_parts.append(content)
+            await sink(content)
+        for item in getattr(delta, "tool_calls", None) or []:
+            index = int(getattr(item, "index", 0) or 0)
+            part = tool_parts.setdefault(
+                index,
+                {"id": "", "name": "", "arguments": ""},
+            )
+            item_id = getattr(item, "id", None)
+            if item_id:
+                part["id"] += str(item_id)
+            function = getattr(item, "function", None)
+            if function is None:
+                continue
+            name = getattr(function, "name", None)
+            arguments = getattr(function, "arguments", None)
+            if name:
+                part["name"] += str(name)
+            if arguments:
+                part["arguments"] += str(arguments)
+    tool_calls = [
+        LLMToolCall(
+            id=part["id"],
+            name=part["name"],
+            arguments=_parse_tool_call_arguments(part["arguments"]),
+        )
+        for _, part in sorted(tool_parts.items())
+    ]
+    content = "".join(content_parts) or None
+    if content is None and not tool_calls:
+        raise ValueError("LLM response did not include assistant content")
+    return LLMResponse(
+        content=content,
+        tool_calls=tool_calls,
+        raw=chunks,
+        model=model,
+        response_id=response_id,
+        usage=usage,
+    )
+
+
+def _raise_provider_error(error: Exception) -> NoReturn:
+    message = str(error)
+    lowered = message.lower()
+    if "context_length" in lowered or "maximum context" in lowered:
+        raise ContextLengthError(message) from error
+    if "content_filter" in lowered or "content policy" in lowered:
+        raise ContentSafetyError(message) from error
+    raise error
 
 
 def _parse_tool_call_arguments(arguments: Any) -> dict[str, Any]:

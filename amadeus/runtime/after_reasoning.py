@@ -120,6 +120,8 @@ class _PersistAfterReasoningModule:
             **context.extra,
         )
         assistant_extra: dict[str, Any] = dict(context.assistant_metadata)
+        if "turn_id" in context.extra:
+            assistant_extra["turn_id"] = context.extra["turn_id"]
         if context.tool_chain:
             assistant_extra["tool_chain"] = context.tool_chain
         if context.context_retry.get("attempts"):

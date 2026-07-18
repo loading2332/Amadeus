@@ -173,6 +173,7 @@ class PostgresSessionStore:
         user_id, session_id = session.identity
         message_id = build_message_id(user_id, session_id, seq)
         payload = dict(extra or {})
+        turn_id = payload.get("turn_id")
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -182,9 +183,10 @@ class PostgresSessionStore:
                 cursor.execute(
                     """
                     INSERT INTO conversation_messages (
-                        id, user_id, session_id, seq, role, content, extra_json, ts
+                        id, user_id, session_id, seq, role, content,
+                        extra_json, ts, turn_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         message_id,
@@ -195,6 +197,7 @@ class PostgresSessionStore:
                         content,
                         Jsonb(payload),
                         ts,
+                        turn_id,
                     ),
                 )
                 cursor.execute(
@@ -223,7 +226,8 @@ class PostgresSessionStore:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT id, user_id, session_id, seq, role, content, extra_json, ts
+                    SELECT id, user_id, session_id, seq, role, content,
+                           extra_json, ts, turn_id
                     FROM conversation_messages
                     WHERE user_id = %s AND session_id = %s
                     ORDER BY seq ASC
@@ -235,6 +239,26 @@ class PostgresSessionStore:
 
     def list_messages(self, *, user_id: int, session_id: int) -> list[dict[str, Any]]:
         return self.fetch_session_messages(SessionRef(user_id, session_id))
+
+    def find_message_by_turn(
+        self,
+        turn_id: str,
+        *,
+        role: str,
+    ) -> dict[str, Any] | None:
+        with self.db.connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, user_id, session_id, seq, role, content,
+                           extra_json, ts, turn_id
+                    FROM conversation_messages
+                    WHERE turn_id = %s AND role = %s
+                    """,
+                    (turn_id, role),
+                )
+                row = cursor.fetchone()
+        return _message_row(row) if row is not None else None
 
     def update_last_consolidated(self, session: SessionRef, value: int) -> None:
         user_id, session_id = session.identity
@@ -257,7 +281,8 @@ class PostgresSessionStore:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT id, user_id, session_id, seq, role, content, extra_json, ts
+                    SELECT id, user_id, session_id, seq, role, content,
+                           extra_json, ts, turn_id
                     FROM conversation_messages
                     WHERE id = ANY(%s)
                     ORDER BY user_id ASC, session_id ASC, seq ASC
@@ -286,7 +311,8 @@ class PostgresSessionStore:
                     seq = int(item["seq"])
                     cursor.execute(
                         """
-                        SELECT id, user_id, session_id, seq, role, content, extra_json, ts
+                        SELECT id, user_id, session_id, seq, role, content,
+                               extra_json, ts, turn_id
                         FROM conversation_messages
                         WHERE user_id = %s AND session_id = %s AND seq BETWEEN %s AND %s
                         ORDER BY seq ASC
@@ -333,7 +359,8 @@ class PostgresSessionStore:
                 total_row = cursor.fetchone()
                 cursor.execute(
                     f"""
-                    SELECT id, user_id, session_id, seq, role, content, extra_json, ts
+                    SELECT id, user_id, session_id, seq, role, content,
+                           extra_json, ts, turn_id
                     FROM conversation_messages
                     WHERE {where}
                     ORDER BY ts DESC, id DESC
@@ -377,6 +404,7 @@ def _message_row(row: Mapping[str, Any]) -> dict[str, Any]:
     user_id = int(row["user_id"])
     session_id = int(row["session_id"])
     extra = dict(row["extra_json"] or {})
+    turn_id = row.get("turn_id")
     return {
         "id": str(row["id"]),
         "user_id": user_id,
@@ -385,6 +413,7 @@ def _message_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "role": str(row["role"]),
         "content": str(row["content"]),
         "timestamp": _ts(row["ts"]) or _now_iso(),
+        **({"turn_id": str(turn_id)} if turn_id is not None else {}),
         **extra,
     }
 

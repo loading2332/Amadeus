@@ -59,6 +59,15 @@ Long-term memory:
 - `AMADEUS_LONG_TERM_MEMORY_ENABLED=1`
 - `OPENAI_EMBEDDING_MODEL=text-embedding-v4`
 
+Turn 流式运行时：
+
+- `AMADEUS_TURN_STREAM_FLUSH_CHARACTERS=128`：累计新增正文达到该字符数时写入快照。
+- `AMADEUS_TURN_STREAM_FLUSH_INTERVAL_SECONDS=0.1`：有新正文时允许按时间阈值批量刷新；不会逐 token 写库。
+- `AMADEUS_TURN_HEARTBEAT_INTERVAL_SECONDS=10`：worker 续租和检查取消请求的周期。
+- `AMADEUS_TURN_STALE_AFTER_SECONDS=120`：processing turn 超过此时间无心跳后进入中断对账；必须大于心跳周期。
+
+浏览器通过 `GET /api/turns/{turn_id}/events` 读取 PostgreSQL 中的持久化事件。SSE 使用单调 `id` 与统一的 `turn_event` envelope；重连时可传 `Last-Event-ID` 或 `after_seq`。SSE 断开不会取消执行，只有 `POST /api/turns/{turn_id}/cancel` 会发出持久化取消请求。
+
 Docker services use `postgres` as the database host:
 
 ```text

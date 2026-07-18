@@ -8,6 +8,7 @@ from typing import Any
 
 from amadeus.events import EventBus, ToolCallCompleted, ToolCallStarted
 from amadeus.provider import LLMProvider, LLMProviderConfig
+from amadeus.runtime.streaming import TurnStreamSink
 from amadeus.session.identity import SessionRef
 from amadeus.tools.base import ToolResult
 from amadeus.tools.executor import ToolExecutor
@@ -21,16 +22,51 @@ class _ControlledCompletions:
         self.calls: list[dict[str, Any]] = []
         self.responses: list[SimpleNamespace] = []
 
-    async def create(self, **kwargs: Any) -> SimpleNamespace:
+    async def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
         if self.responses:
-            return self.responses.pop(0)
-        return SimpleNamespace(
+            response = self.responses.pop(0)
+        else:
+            response = SimpleNamespace(
             id="resp_final",
             model=kwargs["model"],
             choices=[SimpleNamespace(message=SimpleNamespace(content="final reply"))],
             usage={},
         )
+        if not kwargs.get("stream"):
+            return response
+        message = response.choices[0].message
+        tool_calls = []
+        for index, item in enumerate(getattr(message, "tool_calls", None) or []):
+            tool_calls.append(
+                SimpleNamespace(
+                    index=index,
+                    id=item.id,
+                    function=item.function,
+                )
+            )
+        chunk = SimpleNamespace(
+            id=response.id,
+            model=response.model,
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=message.content,
+                        tool_calls=tool_calls,
+                    )
+                )
+            ],
+            usage=response.usage,
+        )
+
+        class Stream:
+            def __aiter__(self):
+                async def iterate():
+                    yield chunk
+
+                return iterate()
+
+        return Stream()
 
 
 def _tool_response(
@@ -38,6 +74,7 @@ def _tool_response(
     tool_name: str = "echo_tool",
     args: dict[str, Any] | None = None,
     call_id: str = "call_1",
+    content: str | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id="resp_tool",
@@ -45,7 +82,7 @@ def _tool_response(
         choices=[
             SimpleNamespace(
                 message=SimpleNamespace(
-                    content=None,
+                    content=content,
                     tool_calls=[
                         SimpleNamespace(
                             id=call_id,
@@ -86,6 +123,32 @@ class _FakeClient:
         self.chat = _FakeChatNamespace(completions=self.completions)
 
 
+class _RecordingSink(TurnStreamSink):
+    def __init__(self) -> None:
+        self.content: list[str] = []
+        self.tools: list[dict[str, str]] = []
+
+    async def publish_content(self, delta: str) -> None:
+        self.content.append(delta)
+
+    async def publish_tool_activity(
+        self,
+        *,
+        activity_id: str,
+        tool_name: str,
+        state: str,
+    ) -> None:
+        self.tools.append(
+            {"activity_id": activity_id, "tool_name": tool_name, "state": state}
+        )
+
+    async def check_cancelled(self) -> None:
+        return None
+
+    async def begin_finalization(self) -> None:
+        return None
+
+
 def _make_reasoner(
     client: _FakeClient,
     *,
@@ -124,6 +187,43 @@ class TestReasonerToolLoop:
         assert result.tool_chain[0]["calls"][0]["name"] == "echo_tool"
         assert result.tool_chain[0]["calls"][0]["status"] == "success"
         assert len(client.completions.calls) == 2  # initial + follow-up
+
+    def test_stream_sink_preserves_text_before_tool_and_tool_lifecycle(
+        self,
+    ) -> None:
+        client = _FakeClient()
+        client.completions.responses = [
+            _tool_response(
+                tool_name="echo_tool",
+                args={"text": "private argument"},
+                content="I will check. ",
+            ),
+        ]
+        reasoner = _make_reasoner(client)
+        sink = _RecordingSink()
+
+        result = asyncio.run(
+            reasoner.reason(
+                messages=[{"role": "user", "content": "do it"}],
+                stream_sink=sink,
+            )
+        )
+
+        assert result.reply == "final reply"
+        assert sink.content == ["I will check. ", "final reply"]
+        assert sink.tools == [
+            {
+                "activity_id": "call_1",
+                "tool_name": "echo_tool",
+                "state": "started",
+            },
+            {
+                "activity_id": "call_1",
+                "tool_name": "echo_tool",
+                "state": "completed",
+            },
+        ]
+        assert "private argument" not in str(sink.tools)
 
     def test_multi_step_tool_loop(self) -> None:
         """Multiple tool call rounds before final reply."""

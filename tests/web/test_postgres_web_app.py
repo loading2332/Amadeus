@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from amadeus.session import PostgresSessionStore
-from amadeus.turns import TURN_DONE, TURN_PENDING, PostgresTurnStore
+from amadeus.turns import TURN_DONE, TURN_PENDING, PostgresTurnStore, TurnError
 from amadeus.web.app import create_app
 from fastapi.testclient import TestClient
 
@@ -118,6 +118,8 @@ def test_postgres_web_hides_missing_and_non_owner_resources_with_same_404() -> N
             client.get("/api/turns/missing"),
             client.get(f"/api/turns/{other_turn.id}"),
             client.get(f"/api/turns/{other_turn.id}/events"),
+            client.post(f"/api/turns/{other_turn.id}/cancel"),
+            client.post(f"/api/turns/{other_turn.id}/retry"),
             client.get(f"/api/sessions/{other_session_id}/messages"),
             client.post(
                 "/api/messages",
@@ -146,17 +148,26 @@ def test_postgres_web_sse_endpoint_emits_terminal_owner_turn_and_closes() -> Non
             content="hello",
             metadata={"channel": "web"},
         )
-        assert turn_store.claim_next_pending() is not None
-        turn_store.mark_done(turn.id, "assistant reply")
+        claimed = turn_store.claim_next_pending()
+        assert claimed is not None and claimed.lease_id is not None
+        turn_store.append_content_snapshot(
+            turn.id,
+            claimed.lease_id,
+            "assistant reply",
+        )
+        turn_store.mark_done(turn.id, claimed.lease_id, "assistant reply")
 
         with client.stream("GET", f"/api/turns/{turn.id}/events") as response:
             body = "".join(response.iter_text())
 
         assert response.status_code == 200
-        assert "event: done" in body
+        assert "event: turn_event" in body
+        assert "id: 1" in body
         assert f'"turn_id": "{turn.id}"' in body
+        assert '"type": "content_snapshot"' in body
+        assert '"content": "assistant reply"' in body
+        assert '"type": "turn_terminal"' in body
         assert f'"status": "{TURN_DONE}"' in body
-        assert '"answer": "assistant reply"' in body
     finally:
         db.close()
 
@@ -175,6 +186,154 @@ def test_create_app_requires_explicit_owner_for_injected_stores() -> None:
             )
         else:
             raise AssertionError("create_app accepted injected stores without an owner")
+    finally:
+        db.close()
+
+
+def test_postgres_web_cancel_retry_timeline_and_active_conflict() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = _client(session_store, turn_store)
+        session = client.post("/api/sessions", json={"title": "flow"}).json()
+        first = client.post(
+            "/api/messages",
+            json={"session_id": session["session_id"], "message": "hello"},
+        )
+
+        conflict = client.post(
+            "/api/messages",
+            json={"session_id": session["session_id"], "message": "blocked"},
+        )
+        cancelled = client.post(f"/api/turns/{first.json()['turn_id']}/cancel")
+        retried = client.post(f"/api/turns/{first.json()['turn_id']}/retry")
+        timeline = client.get(
+            f"/api/sessions/{session['session_id']}/turns"
+        ).json()
+
+        assert conflict.status_code == 409
+        assert conflict.json()["code"] == "active_turn_exists"
+        assert cancelled.status_code == 200
+        assert cancelled.json()["status"] == "cancelled"
+        assert retried.status_code == 200
+        assert retried.json()["retry_of_turn_id"] == first.json()["turn_id"]
+        assert [turn["status"] for turn in timeline] == ["cancelled", "pending"]
+        assert timeline[0]["turn_id"] == first.json()["turn_id"]
+    finally:
+        db.close()
+
+
+def test_postgres_web_sse_reconnect_resumes_after_event_sequence() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = _client(session_store, turn_store)
+        session = session_store.create_session(user_id=1, title="reconnect")
+        turn_store.create_turn(
+            user_id=1,
+            session_id=int(session["session_id"]),
+            content="hello",
+        )
+        claimed = turn_store.claim_next_pending()
+        assert claimed is not None and claimed.lease_id is not None
+        turn_store.append_content_snapshot(claimed.id, claimed.lease_id, "A")
+        turn_store.append_content_snapshot(claimed.id, claimed.lease_id, "AB")
+        turn_store.mark_done(claimed.id, claimed.lease_id, "AB")
+
+        with client.stream(
+            "GET",
+            f"/api/turns/{claimed.id}/events?after_seq=3",
+        ) as response:
+            body = "".join(response.iter_text())
+
+        assert response.status_code == 200
+        assert "id: 1\n" not in body
+        assert "id: 2\n" not in body
+        assert "id: 3\n" not in body
+        assert "id: 4\n" in body
+        assert '"content": "AB"' in body
+        assert '"type": "turn_terminal"' in body
+
+        with client.stream(
+            "GET",
+            f"/api/turns/{claimed.id}/events",
+            headers={"Last-Event-ID": "4"},
+        ) as response:
+            header_body = "".join(response.iter_text())
+
+        assert "id: 4\n" not in header_body
+        assert '"type": "turn_terminal"' in header_body
+    finally:
+        db.close()
+
+
+def test_postgres_web_rejects_cancel_and_retry_for_done_turn() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = _client(session_store, turn_store)
+        session = session_store.create_session(user_id=1, title="done")
+        turn_store.create_turn(
+            user_id=1,
+            session_id=int(session["session_id"]),
+            content="hello",
+        )
+        claimed = turn_store.claim_next_pending()
+        assert claimed is not None and claimed.lease_id is not None
+        turn_store.mark_done(claimed.id, claimed.lease_id, "answer")
+
+        cancel = client.post(f"/api/turns/{claimed.id}/cancel")
+        retry = client.post(f"/api/turns/{claimed.id}/retry")
+
+        assert cancel.status_code == 409
+        assert retry.status_code == 409
+        assert cancel.json()["code"] == "invalid_turn_transition"
+        assert retry.json()["code"] == "invalid_turn_transition"
+        persisted = turn_store.get_turn(claimed.id)
+        assert persisted is not None
+        assert persisted.status == TURN_DONE
+    finally:
+        db.close()
+
+
+def test_postgres_web_failed_timeline_and_sse_expose_only_safe_error() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = _client(session_store, turn_store)
+        session = session_store.create_session(user_id=1, title="failed")
+        turn_store.create_turn(
+            user_id=1,
+            session_id=int(session["session_id"]),
+            content="hello",
+        )
+        claimed = turn_store.claim_next_pending()
+        assert claimed is not None and claimed.lease_id is not None
+        turn_store.append_content_snapshot(claimed.id, claimed.lease_id, "partial")
+        turn_store.mark_failed(
+            claimed.id,
+            claimed.lease_id,
+            TurnError("runtime_error", "处理请求时发生错误，请重试", True),
+        )
+
+        timeline = client.get(
+            f"/api/sessions/{session['session_id']}/turns"
+        ).json()
+        with client.stream("GET", f"/api/turns/{claimed.id}/events") as response:
+            body = "".join(response.iter_text())
+
+        assert timeline[0]["status"] == "failed"
+        assert timeline[0]["partial_answer"] == "partial"
+        assert timeline[0]["error_code"] == "runtime_error"
+        assert timeline[0]["error_message"] == "处理请求时发生错误，请重试"
+        assert timeline[0]["error_retryable"] is True
+        assert "Traceback" not in body
+        assert "api_key" not in body
+        assert '"error_code": "runtime_error"' in body
     finally:
         db.close()
 

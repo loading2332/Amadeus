@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
 
 from amadeus.web.dependencies import get_owner_scope
@@ -72,6 +72,24 @@ async def list_messages(
     ]
 
 
+@api_router.get(
+    "/sessions/{session_id}/turns",
+    response_model=list[TurnResponse],
+)
+async def list_turns(
+    session_id: int,
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
+) -> list[TurnResponse]:
+    session = scope.require_session(session_id)
+    return [
+        turn_response(turn)
+        for turn in scope.turn_store.list_turns(
+            user_id=session.user_id,
+            session_id=session.session_id,
+        )
+    ]
+
+
 @api_router.post("/messages", response_model=TurnResponse)
 async def create_message(
     payload: MessageRequest,
@@ -99,10 +117,38 @@ async def get_turn(
 async def turn_events(
     turn_id: str,
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
+    after_seq: Annotated[int, Query(ge=0)] = 0,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
     scope.require_turn(turn_id)
+    cursor = after_seq
+    if after_seq == 0 and last_event_id is not None:
+        try:
+            cursor = max(0, int(last_event_id))
+        except ValueError:
+            cursor = 0
     return StreamingResponse(
-        turn_event_stream(scope.turn_store, turn_id),
+        turn_event_stream(scope.turn_store, turn_id, after_seq=cursor),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
+    )
+
+
+@api_router.post("/turns/{turn_id}/cancel", response_model=TurnResponse)
+async def cancel_turn(
+    turn_id: str,
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
+) -> TurnResponse:
+    turn = scope.require_turn(turn_id)
+    return turn_response(scope.turn_store.request_cancel(turn.id))
+
+
+@api_router.post("/turns/{turn_id}/retry", response_model=TurnResponse)
+async def retry_turn(
+    turn_id: str,
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
+) -> TurnResponse:
+    turn = scope.require_turn(turn_id)
+    return turn_response(
+        scope.turn_store.retry_turn(turn_id=turn.id, user_id=scope.user_id)
     )

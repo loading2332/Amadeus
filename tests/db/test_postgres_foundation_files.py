@@ -53,6 +53,19 @@ def test_initial_migration_creates_vector_extension_and_foundation_tables() -> N
     assert "memory_markdown_writes" in migration
 
 
+def test_turn_streaming_migration_adds_durable_state_and_constraints() -> None:
+    migration = Path(
+        "migrations/versions/20260718_0005_turn_streaming_runtime.py"
+    ).read_text(encoding="utf-8")
+
+    assert "conversation_turn_events" in migration
+    assert "uq_conversation_turns_active_session" in migration
+    assert "partial_answer" in migration
+    assert "heartbeat_at" in migration
+    assert "retry_of_turn_id" in migration
+    assert "uq_conversation_messages_turn_role" in migration
+
+
 def test_content_hash_migration_uses_memory_store_hash_contract() -> None:
     content_hash_migration = importlib.import_module(
         "migrations.versions.20260704_0002_memory_items_content_hash"

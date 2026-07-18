@@ -3,7 +3,7 @@
   "name": "streaming-runtime-sse",
   "title": "实现回答增量流式链路",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

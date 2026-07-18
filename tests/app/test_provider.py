@@ -38,6 +38,18 @@ class FakeClient:
         self.chat: ChatNamespace = FakeChatNamespace(completions=self.completions)
 
 
+class FakeStream:
+    def __init__(self, chunks: list[Any]) -> None:
+        self._chunks = chunks
+
+    def __aiter__(self):
+        async def iterate():
+            for chunk in self._chunks:
+                yield chunk
+
+        return iterate()
+
+
 def test_llm_provider_sends_chat_completion_payload_and_parses_response():
     raw = SimpleNamespace(
         id="resp_1",
@@ -166,3 +178,50 @@ def test_llm_provider_rejects_response_without_content_or_tool_calls():
 
     with pytest.raises(ValueError, match="assistant content"):
         asyncio.run(provider.chat([{"role": "user", "content": "hi"}]))
+
+
+def test_llm_provider_streams_ordered_content_and_ignores_thinking_fields():
+    chunks = [
+        SimpleNamespace(
+            id="resp_stream",
+            model="fake-model",
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content="你",
+                        reasoning_content="private thought",
+                    )
+                )
+            ],
+            usage=None,
+        ),
+        SimpleNamespace(
+            id="resp_stream",
+            model="fake-model",
+            choices=[SimpleNamespace(delta=SimpleNamespace(content="好"))],
+            usage={"completion_tokens": 2},
+        ),
+    ]
+    client = FakeClient(FakeStream(chunks))
+    provider = LLMProvider(
+        LLMProviderConfig(api_key="secret", model="fake-model"),
+        client=client,
+    )
+    deltas: list[str] = []
+
+    async def scenario():
+        async def collect(delta: str) -> None:
+            deltas.append(delta)
+
+        return await provider.chat(
+            [{"role": "user", "content": "hi"}],
+            content_sink=collect,
+        )
+
+    result = asyncio.run(scenario())
+
+    assert deltas == ["你", "好"]
+    assert result.content == "你好"
+    assert result.usage == {"completion_tokens": 2}
+    assert client.completions.calls[0]["stream"] is True
+    assert "private thought" not in result.content

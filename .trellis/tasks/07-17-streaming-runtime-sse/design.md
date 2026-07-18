@@ -12,13 +12,13 @@
 - `../akashic-agent/agent/looping/core.py`：runtime 通过 stream sink/event 边界接收增量。
 - `../akashic-agent/bus/events_lifecycle.py`：生命周期事件与具体 channel 解耦。
 
-迁移上述契约思想，不迁移 Akashic 的字符串 session key、Telegram 更新方式或 thinking 输出。
+迁移上述契约思想，不迁移 Akashic 的字符串 session key或 Telegram 消息替换方式。普通文本与工具活动按到达顺序公开；独立 thinking/reasoning channel 是否展示不在本任务扩展。
 
 ## 2. 核心边界
 
 ```text
 LLMProvider
-  -> TurnStreamSink（仅正文增量）
+  -> TurnStreamSink（普通文本增量）
 Reasoner
   -> TurnStreamSink（安全工具生命周期）
 PassiveRuntime
@@ -38,25 +38,26 @@ React EventSource manager
 ### 3.1 状态机
 
 ```text
-pending -> processing -> done
-                    \-> failed
+pending -> processing -> finalizing -> done
+                    \-> failed       \-> failed
                     \-> cancelled
 pending ----------------> cancelled
 ```
 
 - `done/failed/cancelled` 都是不可变终态。
 - 终态之后拒绝快照、事件、心跳、取消或再次终结。
-- 同一 owner/session 仅允许一个 `pending` 或 `processing` turn；用 PostgreSQL partial unique index 在创建时强制，而不只依赖 worker 调度。
+- `finalizing` 是成功提交的持久化线性化点：worker 先强制 flush 并在事务内确认没有取消请求，再进入该状态；进入后才允许写成功消息和 after-turn 副作用。
+- 同一 owner/session 仅允许一个 `pending`、`processing` 或 `finalizing` turn；用 PostgreSQL partial unique index 在创建时强制，而不只依赖 worker 调度。
 - 不同 session 可并行。
 
 ### 3.2 内部流事件
 
-核心层只定义两类安全事件：
+核心层只定义两类立即可判别的事件：
 
-- `ContentDelta(text)`：面向用户的回答正文片段。
-- `ToolActivity(tool_name, state)`：`state` 仅为 `started/completed/failed`。
+- `ContentDelta(text)`：provider 普通 text/content channel 产生的文本片段，包括随后可能出现工具调用的 LLM 步骤文本。
+- `ToolActivity(activity_id, tool_name, state)`：同一次调用的开始和结束共享稳定 `activity_id`；`state` 仅为 `started/completed/failed`。
 
-provider 的 thinking、reasoning、tool arguments 和 tool result 不进入该接口。工具参数仍可由 Reasoner 内部执行，但不允许经过 Web stream sink。
+不定义“过程文本”“最终文本”或 `answer_started`。provider 的独立 thinking/reasoning channel 不冒充 `ContentDelta`；工具调用分片由 provider 累积为结构化调用，不能拼入普通文本。工具参数与结果的详细展示不在本任务扩展，MVP 工具卡片仍使用名称和生命周期。
 
 ### 3.3 Web typed envelope
 
@@ -68,18 +69,18 @@ provider 的 thinking、reasoning、tool arguments 和 tool result 不进入该�
   "type": "content_snapshot",
   "turn_id": "uuid",
   "occurred_at": "2026-07-18T12:00:00Z",
-  "data": {"content": "累计正文", "version": 7}
+  "data": {"content": "turn 累计普通文本", "version": 7}
 }
 ```
 
 允许的 `type`：
 
-- `turn_status`：`pending/processing` 状态变化；
-- `content_snapshot`：累计正文而非 token delta；
-- `tool_activity`：工具名与安全生命周期；
+- `turn_status`：`pending/processing/finalizing` 状态变化；
+- `content_snapshot`：turn 累计普通文本而非 token delta；
+- `tool_activity`：稳定 `activity_id`、工具名与生命周期；
 - `turn_terminal`：`done/failed/cancelled` 以及安全错误对象。
 
-SSE 使用 `id: <seq>`、固定 `event: turn_event` 和 JSON `data`。客户端按 `seq` 去重；累计快照直接替换当前正文，不能重复拼接。
+SSE 使用 `id: <seq>`、固定 `event: turn_event` 和 JSON `data`。客户端按 `seq` 去重。共享 reducer 保存上一份累计正文：新快照必须以旧正文为前缀，只把新增后缀追加到当前 text part；工具事件到达后关闭当前 text part，下一份快照的新增后缀创建新 part。该 part 的稳定本地 ID 使用首个贡献快照的 `seq`，不再重复持久化 `part_id`。
 
 ## 4. PostgreSQL 模型
 
@@ -104,7 +105,7 @@ SSE 使用 `id: <seq>`、固定 `event: turn_event` 和 JSON `data`。客户端�
 
 - `retry_of_turn_id` 不能等于自身；
 - owner/session 与被重试 turn 必须由 store 事务校验；
-- `(user_id, session_id)` 对 `pending/processing` 建 partial unique index；
+- `(user_id, session_id)` 对 `pending/processing/finalizing` 建 partial unique index；
 - `status/heartbeat_at` 索引用于中断回收。
 
 ### 4.2 `conversation_turn_events`
@@ -117,7 +118,7 @@ SSE 使用 `id: <seq>`、固定 `event: turn_event` 和 JSON `data`。客户端�
 - typed 安全 payload；
 - `created_at TIMESTAMPTZ`。
 
-事件只能通过 `TurnEventStore` 的 typed 方法创建，不能让调用方提交任意 JSON。`content_snapshot` 保存累计正文，`tool_activity` 只保存白名单字段。事件与 turn 同生命周期，不设置 MVP 独立清理周期。
+事件只能通过 `TurnEventStore` 的 typed 方法创建，不能让调用方提交任意 JSON。`content_snapshot` 保存 turn 累计普通文本，`tool_activity` 保存稳定 `activity_id`、工具名和生命周期；两者共享 turn 内单调 `seq`。事件与 turn 同生命周期，不设置 MVP 独立清理周期。
 
 每次快照/事件写入在一个事务内锁定 turn、校验 `processing + lease_id`、分配递增 `seq`、更新当前快照并插入事件。
 
@@ -135,14 +136,14 @@ SSE 使用 `id: <seq>`、固定 `event: turn_event` 和 JSON `data`。客户端�
 
 ### 5.1 Provider
 
-`LLMProvider.chat()` 增加可选正文回调或 sink 参数，默认 `None`。流式路径使用供应商 stream API：
+`LLMProvider.chat()` 增加可选普通文本回调或 sink 参数，默认 `None`。流式路径使用供应商 stream API：
 
 1. 累计正文；
 2. 累计工具调用分片供最终 `LLMResponse` 使用；
-3. 只把用户可见正文交给 sink；
+3. 普通 text/content delta 到达即交给 sink，不等待当前响应结束，也不因稍后出现 tool call 而丢弃；
 4. 返回与非流式路径等价的最终 `LLMResponse`。
 
-非流式调用者不传 sink，公共结果保持兼容。provider 不发布原始 thinking。
+非流式调用者不传 sink，公共结果保持兼容。独立 thinking/reasoning channel 不伪装成普通文本；后续若展示必须新增明确事件类型。
 
 ### 5.2 Reasoner 与工具活动
 
@@ -158,7 +159,7 @@ Reasoner 在实际工具调用前后发布安全生命周期事件：
 
 worker 为已 claim 的 turn 创建 `PersistedTurnStream`：
 
-- 内存累计正文；
+- 维护完整累计普通文本并按阈值写 `content_snapshot`；工具事件前强制 flush，确保 `seq` 顺序足以让消费端 reducer 切分 text part；
 - 达到字符阈值或时间阈值时写累计快照；
 - 工具事件、取消、失败和终态前强制 flush；
 - 独立心跳协程定期续租并检查 `cancel_requested_at`；
@@ -171,8 +172,9 @@ worker 为已 claim 的 turn 创建 `PersistedTurnStream`：
 ### 6.1 显式取消
 
 - `pending`：API 可在事务内直接转为 `cancelled`。
-- `processing`：API 只写 `cancel_requested_at`；worker 协作式停止并写终态。
-- 终态：取消为幂等读取，不改变结果。
+- `processing`：API 只写 `cancel_requested_at`；worker 在每个语义边界强制重读取消状态，协作式停止并写终态。
+- `finalizing`：取消返回 `409 invalid_turn_transition`；成功提交已经取得执行权，继续收口为 `done` 或 `failed`。
+- 终态：取消返回 `409 invalid_turn_transition`，不改变结果。
 
 SSE 断开、页面刷新和浏览器关闭不触发取消。
 
@@ -207,6 +209,7 @@ SSE 从数据库读取 `seq > cursor` 的事件，空闲时发送注释 keepaliv
 ## 8. 兼容、迁移与回滚
 
 - 数据库迁移先增列/增表/回填安全默认值，再建立约束；不破坏既有 turn 与 message 读取。
+- 建立活跃唯一索引前必须收敛旧数据：遗留 `processing` 一律标记为可重试的 `failed/interrupted`；同一 owner/session 的多个 `pending` 只保留最早一个，其余标记为 `failed/interrupted`；每个被收敛的 turn 都追加安全 `turn_terminal` 事件。
 - 非流式 provider/runtime 调用方继续可用。
 - 旧静态 Web 在 React 子任务完成前仍可通过最终 turn 状态工作；新字段均为增量兼容。
 - 回滚应用版本时，新表和可空列可留存；数据库 downgrade 只有在确认没有新状态写入后执行。
@@ -214,9 +217,9 @@ SSE 从数据库读取 `seq > cursor` 的事件，空闲时发送注释 keepaliv
 
 ## 9. 关键验证
 
-- provider：delta 顺序、工具分片累计、thinking 隔离、最终响应一致；
-- runtime：正文与工具事件边界、取消不提交成功消息、after-turn 只在成功后执行；
+- provider：普通文本立即发布、同一步 text 后出现工具调用时不丢文本、工具分片累计、独立 thinking channel 不误标、最终响应一致；
+- runtime：`text -> tool -> text` 边界、取消不提交成功消息、after-turn 只在成功后执行；
 - store：状态机、lease、防双写、单调 seq、同 session 唯一活跃 turn；
 - worker：批量 flush、显式取消、崩溃对账、原始异常不落库；
 - Web：owner 404、SSE reconnect、时间线、重试、409 冲突、安全错误；
-- 集成：API 与 worker 分进程，共享 PostgreSQL 后可在刷新页面时恢复。
+- 集成：API 与 worker 分进程，共享 PostgreSQL 后可在刷新页面时恢复；SSE 观察到终态时必须先排空同一事实源中已经持久化的尾部事件，再关闭连接。

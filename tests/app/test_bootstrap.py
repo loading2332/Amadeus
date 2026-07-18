@@ -152,6 +152,10 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
     assert config.postgres_dsn == "postgresql://amadeus:amadeus@localhost:5432/amadeus"
     assert config.owner_user_id == 7
     assert config.memory_keep_count == 8
+    assert config.turn_stream_flush_characters == 128
+    assert config.turn_stream_flush_interval_seconds == 0.1
+    assert config.turn_heartbeat_interval_seconds == 10.0
+    assert config.turn_stale_after_seconds == 120.0
 
 
 def test_load_runtime_config_defaults_to_home_workspace(tmp_path, monkeypatch):
@@ -185,6 +189,23 @@ def test_load_runtime_config_requires_positive_owner_user_id(
     with pytest.raises(
         ValueError,
         match="AMADEUS_OWNER_USER_ID must be a positive integer",
+    ):
+        load_runtime_config(
+            env_path=_env_path(tmp_path),
+            workspace_root=tmp_path,
+        )
+
+
+def test_load_runtime_config_requires_stale_timeout_after_heartbeat(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("AMADEUS_TURN_HEARTBEAT_INTERVAL_SECONDS", "10")
+    monkeypatch.setenv("AMADEUS_TURN_STALE_AFTER_SECONDS", "10")
+
+    with pytest.raises(
+        ValueError,
+        match="AMADEUS_TURN_STALE_AFTER_SECONDS must be greater",
     ):
         load_runtime_config(
             env_path=_env_path(tmp_path),
