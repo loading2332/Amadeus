@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from amadeus.session import PostgresSessionStore
 from amadeus.turns import TURN_DONE, TURN_PENDING, PostgresTurnStore, TurnError
 from amadeus.web.app import create_app
@@ -68,6 +66,7 @@ def test_postgres_web_bootstrap_and_chat_api_are_owner_scoped() -> None:
         assert payload["status"] == TURN_PENDING
         assert payload["user_id"] == 1
         assert payload["session_id"] == session_id
+        assert payload["content"] == "hello"
         assert payload["metadata"] == {"custom": "kept", "channel": "web"}
     finally:
         db.close()
@@ -96,6 +95,27 @@ def test_postgres_web_rejects_browser_supplied_user_id() -> None:
 
         assert create_session.status_code == 422
         assert create_message.status_code == 422
+    finally:
+        db.close()
+
+
+def test_first_turn_sets_a_deterministic_session_title_once() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = _client(session_store, turn_store)
+        session = client.post("/api/sessions", json={}).json()
+        content = f"  {'甲' * 18}\n{'乙' * 18}  "
+
+        created = client.post(
+            "/api/messages",
+            json={"session_id": session["session_id"], "message": content},
+        )
+        rows = client.get("/api/sessions").json()
+
+        assert created.status_code == 200
+        assert rows[0]["title"] == f"{'甲' * 18} {'乙' * 11}…"
     finally:
         db.close()
 
@@ -338,17 +358,57 @@ def test_postgres_web_failed_timeline_and_sse_expose_only_safe_error() -> None:
         db.close()
 
 
-def test_web_static_bootstraps_owner_and_omits_user_id_from_requests() -> None:
-    script = Path("amadeus/web/static/app.js").read_text(encoding="utf-8")
+def test_web_serves_only_the_injected_react_build(tmp_path) -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        assets = tmp_path / "assets"
+        assets.mkdir()
+        (tmp_path / "index.html").write_text(
+            '<div id="root"></div><script src="/static/assets/app.js"></script>',
+            encoding="utf-8",
+        )
+        (assets / "app.js").write_text(
+            "window.__REACT_BUILD__ = true",
+            encoding="utf-8",
+        )
+        app = create_app(
+            store=turn_store,
+            session_store=session_store,
+            owner_user_id=1,
+            static_dir=tmp_path,
+        )
+        client = TestClient(app)
 
-    assert "web:${" not in script
-    assert "LEGACY" not in script
-    assert "session" + "Key" not in script
-    assert "session" + "_key" not in script
-    assert 'fetch("/api/bootstrap")' in script
-    assert 'fetch("/api/sessions"' in script
-    assert "DEFAULT_USER_ID" not in script
-    assert "user_id: state.userId" not in script
-    assert "session_id: state.sessionId" in script
-    assert "userId === ownerUserId" in script
-    assert "window.localStorage.removeItem(SESSION_STORAGE)" in script
+        index = client.get("/")
+        asset = client.get("/static/assets/app.js")
+
+        assert index.status_code == 200
+        assert '<div id="root"></div>' in index.text
+        assert asset.status_code == 200
+        assert "__REACT_BUILD__" in asset.text
+    finally:
+        db.close()
+
+
+def test_web_has_no_legacy_fallback_when_react_build_is_missing(tmp_path) -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = TestClient(
+            create_app(
+                store=turn_store,
+                session_store=session_store,
+                owner_user_id=1,
+                static_dir=tmp_path,
+            )
+        )
+
+        response = client.get("/")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Web page is not available"}
+    finally:
+        db.close()

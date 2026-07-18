@@ -8,6 +8,7 @@ from psycopg import errors
 from psycopg.types.json import Jsonb
 
 from amadeus.db import PostgresConfig, PostgresDatabase, normalize_psycopg_dsn
+from amadeus.session.titles import title_from_first_message
 from amadeus.turns.store import (
     TURN_CANCELLED,
     TURN_DONE,
@@ -91,6 +92,31 @@ class PostgresTurnStore:
                         "turn_status",
                         {"status": TURN_PENDING},
                     )
+                    if retry_of_turn_id is None:
+                        cursor.execute(
+                            """
+                            UPDATE conversation_sessions AS session
+                            SET title = %s, updated_at = now()
+                            WHERE session.id = %s
+                              AND session.user_id = %s
+                              AND (session.title IS NULL OR btrim(session.title) = '')
+                              AND NOT EXISTS (
+                                  SELECT 1
+                                  FROM conversation_turns AS earlier
+                                  WHERE earlier.user_id = %s
+                                    AND earlier.session_id = %s
+                                    AND earlier.id <> %s
+                              )
+                            """,
+                            (
+                                title_from_first_message(content),
+                                int(session_id),
+                                int(user_id),
+                                int(user_id),
+                                int(session_id),
+                                turn_id,
+                            ),
+                        )
                 conn.commit()
         except errors.UniqueViolation as error:
             raise ActiveTurnExists(

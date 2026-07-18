@@ -53,6 +53,7 @@ class TurnResponse(BaseModel):
     turn_id: str
     user_id: int
     session_id: int
+    content: str
     status: str
     answer: str | None = None
     error: str | None = None
@@ -74,6 +75,7 @@ def turn_response(turn: Turn) -> TurnResponse:
         turn_id=turn.id,
         user_id=turn.user_id,
         session_id=turn.session_id,
+        content=turn.content,
         status=turn.status,
         answer=turn.answer,
         error=turn.error,

@@ -10,7 +10,7 @@ the PostgreSQL `vector` extension is unavailable.
 Start the default local stack:
 
 ```powershell
-docker compose up --build postgres migrate api worker
+wsl docker compose up --build postgres migrate api worker
 ```
 
 Services:
@@ -23,6 +23,35 @@ Services:
 - `amadeus-workspace`: shared Markdown memory and runtime workspace volume.
 
 The API is exposed on `http://localhost:8000`.
+
+React 前端源码位于仓库根目录 `frontend/`。本地开发使用 pnpm/Vite，并把
+`/api` 代理到 `http://127.0.0.1:8000`：
+
+```powershell
+Set-Location frontend
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+前端质量检查与确定性浏览器 E2E：
+
+```powershell
+pnpm run typecheck
+pnpm test -- --run
+pnpm run lint
+pnpm run build
+pnpm run test:e2e
+```
+
+`test:e2e` 会在同一 PostgreSQL 实例中创建独立的 `amadeus_e2e` 数据库，运行
+真实 FastAPI store 与 `TurnWorker`；只有回答 runner 是确定性 fixture，不调用
+付费 LLM，也不会清理开发数据库 `amadeus`。首次运行前需要安装浏览器：
+`pnpm exec playwright install chromium`。
+
+生产镜像使用 Docker 多阶段构建：Node 阶段按 `pnpm-lock.yaml` 生成 Vite
+产物，Python 阶段把 `dist/` 复制到 `amadeus/web/static`，由 FastAPI 同源
+提供 `/` 与 `/static/assets/*`。仓库不提交 `dist/`，也不保留旧原生前端；
+缺少构建产物时 `/` 明确返回 404。
 
 ## Local Commands
 
@@ -38,7 +67,7 @@ uv run python -m amadeus.worker.turn_worker
 Useful checks:
 
 ```powershell
-docker compose ps
+wsl docker compose ps
 uv run alembic current
 uv run pytest -q tests/db tests/session tests/turns tests/web/test_postgres_web_app.py tests/worker/test_turn_worker.py
 uv run pytest -q tests/memory/test_postgres_memory_store.py tests/memory/test_session_memory_runtime.py
