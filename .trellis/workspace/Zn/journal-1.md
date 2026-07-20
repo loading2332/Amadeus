@@ -445,3 +445,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 完成桌面聊天体验改造
+
+**Date**: 2026-07-20
+**Task**: 完成桌面聊天体验改造
+**Branch**: `codex/delivery-runtime`
+
+### Summary
+
+完成完全收起侧栏、主题切换、滚动与字体优化、失败恢复、首条消息标题和桌面对话分组；前端与真实 PostgreSQL E2E 验证通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0d4b88f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
