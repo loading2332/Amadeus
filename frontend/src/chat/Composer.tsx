@@ -1,10 +1,14 @@
 import { useRef } from "react";
+import RefreshRounded from "@mui/icons-material/RefreshRounded";
 import SendRounded from "@mui/icons-material/SendRounded";
 import StopRounded from "@mui/icons-material/StopRounded";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
+import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
 
 import type { Turn } from "../api/contracts";
 
@@ -13,12 +17,13 @@ interface Props {
   busy: boolean;
   activeTurn: Turn | null;
   cancelling: boolean;
+  sendFailed: boolean;
   onChange: (value: string) => void;
   onSend: (message: string) => void;
   onStop: () => void;
 }
 
-export function Composer({ value, busy, activeTurn, cancelling, onChange, onSend, onStop }: Props) {
+export function Composer({ value, busy, activeTurn, cancelling, sendFailed, onChange, onSend, onStop }: Props) {
   const composing = useRef(false);
   const canSend = value.trim().length > 0 && !busy && activeTurn === null;
   const submit = () => {
@@ -27,8 +32,29 @@ export function Composer({ value, busy, activeTurn, cancelling, onChange, onSend
   };
 
   return (
-    <Box sx={{ borderTop: "1px solid", borderColor: "divider", bgcolor: "background.paper", px: { xs: 1.5, sm: 3 }, pt: 1.5, pb: "max(12px, env(safe-area-inset-bottom))" }}>
-      <Box sx={{ display: "flex", width: "100%", maxWidth: 900, mx: "auto", alignItems: "flex-end", gap: 1, border: "1px solid", borderColor: "divider", borderRadius: 1.5, p: 1 }}>
+    <Box data-testid="composer-bar" sx={{ px: { xs: 1.5, sm: 3 }, pt: 1, pb: "max(24px, calc(env(safe-area-inset-bottom) + 8px))" }}>
+      <Box
+        data-testid="composer-shell"
+        sx={{
+          display: "flex",
+          width: "100%",
+          maxWidth: 900,
+          mx: "auto",
+          alignItems: "flex-end",
+          gap: 1,
+          border: "1px solid",
+          borderColor: "divider",
+          borderRadius: 999,
+          bgcolor: "background.paper",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.10), 0 10px 18px rgba(0,0,0,0.10)",
+          p: 1,
+          transition: (theme) => theme.transitions.create(["border-color", "box-shadow"], { duration: theme.transitions.duration.shortest }),
+          "&:focus-within": {
+            borderColor: "primary.main",
+            boxShadow: "inset 0 0 0 1px var(--mui-palette-primary-main), 0 2px 6px rgba(0,0,0,0.12), 0 10px 18px rgba(0,0,0,0.12)",
+          },
+        }}
+      >
         <TextField
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -47,14 +73,35 @@ export function Composer({ value, busy, activeTurn, cancelling, onChange, onSend
           maxRows={8}
           fullWidth
           disabled={busy}
-          slotProps={{ input: { sx: { p: 0.5, "& fieldset": { border: 0 } } } }}
+          slotProps={{ input: { sx: { minHeight: 40, py: 0.5, pr: 0.5, pl: 1.5, "&& .MuiOutlinedInput-notchedOutline": { border: 0 } } } }}
         />
         {activeTurn !== null ? (
-          <Tooltip title="停止生成"><span><IconButton aria-label="停止生成" color="error" disabled={cancelling || activeTurn.status === "finalizing"} onClick={onStop}><StopRounded /></IconButton></span></Tooltip>
+          <Tooltip title="停止生成"><span><IconButton aria-label="停止生成" disabled={cancelling || activeTurn.status === "finalizing"} onClick={onStop} sx={{ width: 40, height: 40, bgcolor: "text.primary", color: "background.paper", "&:hover": { bgcolor: "text.primary", opacity: 0.86 }, "&.Mui-disabled": { bgcolor: "action.disabledBackground" } }}><StopRounded fontSize="small" /></IconButton></span></Tooltip>
         ) : (
           <Tooltip title="发送"><span><IconButton aria-label="发送消息" color="primary" disabled={!canSend} onClick={submit}><SendRounded /></IconButton></span></Tooltip>
         )}
       </Box>
+      {sendFailed ? (
+        <Stack
+          role="alert"
+          direction="row"
+          sx={{ width: "100%", maxWidth: 900, minHeight: 32, mx: "auto", mt: 0.5, px: 1.5, alignItems: "center" }}
+        >
+          <Typography variant="caption" color="error.main" sx={{ flex: 1 }}>
+            消息未发送，请检查连接后重试。
+          </Typography>
+          <Button
+            aria-label="重试发送"
+            size="small"
+            startIcon={<RefreshRounded fontSize="small" />}
+            disabled={!canSend}
+            onClick={submit}
+            sx={{ minWidth: 0 }}
+          >
+            重试
+          </Button>
+        </Stack>
+      ) : null}
     </Box>
   );
 }

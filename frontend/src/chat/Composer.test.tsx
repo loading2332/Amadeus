@@ -8,6 +8,7 @@ const base = {
   busy: false,
   activeTurn: null,
   cancelling: false,
+  sendFailed: false,
   onChange: vi.fn(),
   onSend: vi.fn(),
   onStop: vi.fn(),
@@ -85,5 +86,15 @@ describe("Composer", () => {
   it("blocks duplicate submit while the request is pending", () => {
     render(<Composer {...base} value="你好" busy />);
     expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+  });
+
+  it("keeps the draft visible and retries a failed send", async () => {
+    const user = userEvent.setup();
+    render(<Composer {...base} value="保留这条草稿" sendFailed />);
+
+    expect(screen.getByPlaceholderText("给 Amadeus 发消息")).toHaveValue("保留这条草稿");
+    expect(screen.getByRole("alert")).toHaveTextContent("消息未发送");
+    await user.click(screen.getByRole("button", { name: "重试发送" }));
+    expect(base.onSend).toHaveBeenCalledWith("保留这条草稿");
   });
 });

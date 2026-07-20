@@ -13,7 +13,9 @@ import { useLiveTurnStore } from "../streaming/store";
 import { ToolActivity } from "./ToolActivity";
 
 const MarkdownMessage = lazy(() =>
-  import("./MarkdownMessage").then((module) => ({ default: module.MarkdownMessage })),
+  import("./MarkdownMessage").then((module) => ({
+    default: module.MarkdownMessage,
+  })),
 );
 
 export function TurnItem({ turn }: { turn: Turn }) {
@@ -25,32 +27,94 @@ export function TurnItem({ turn }: { turn: Turn }) {
   const error = live?.error ?? turn.error;
 
   return (
-    <Box component="article" sx={{ contentVisibility: "auto", containIntrinsicSize: "auto 320px" }}>
-      <Box sx={{ ml: { xs: 2, sm: 8 }, mb: 3, pl: 2, borderLeft: "2px solid", borderColor: "primary.main" }}>
-        <Typography variant="caption" color="text.secondary">你</Typography>
-        <Typography sx={{ whiteSpace: "pre-wrap" }}>{turn.content}</Typography>
+    <Box
+      component="article"
+      aria-label="一轮对话"
+      sx={{ contentVisibility: "auto", containIntrinsicSize: "auto 320px" }}
+    >
+      <Box
+        aria-label="你的消息"
+        sx={{
+          width: "fit-content",
+          maxWidth: { xs: "88%", sm: "75%" },
+          ml: "auto",
+          mb: { xs: 3, sm: 4, md: 2 },
+          px: 2,
+          py: 1.25,
+          borderRadius: "20px 20px 6px 20px",
+          bgcolor: "action.hover",
+        }}
+      >
+        <Typography sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          {turn.content}
+        </Typography>
       </Box>
-      <Box>
-        <Typography variant="caption" sx={{ display: "block", mb: 1.5, color: "primary.main", fontWeight: 700 }}>Amadeus</Typography>
-        {parts.length > 0 ? parts.map((part) =>
-          part.kind === "text" ? <Suspense key={part.id} fallback={<Typography sx={{ whiteSpace: "pre-wrap" }}>{part.content}</Typography>}><MarkdownMessage content={part.content} /></Suspense> : <ToolActivity key={part.id} part={part} />,
-        ) : fallback ? <Suspense fallback={<Typography sx={{ whiteSpace: "pre-wrap" }}>{fallback}</Typography>}><MarkdownMessage content={fallback} /></Suspense> : <PendingState status={status} />}
+      <Box aria-label="Amadeus 的回答" sx={{ maxWidth: 760 }}>
+        {parts.length > 0 ? (
+          parts.map((part) =>
+            part.kind === "text" ? (
+              <Suspense
+                key={part.id}
+                fallback={
+                  <Typography sx={{ whiteSpace: "pre-wrap" }}>
+                    {part.content}
+                  </Typography>
+                }
+              >
+                <MarkdownMessage content={part.content} />
+              </Suspense>
+            ) : (
+              <ToolActivity key={part.id} part={part} />
+            ),
+          )
+        ) : fallback ? (
+          <Suspense
+            fallback={
+              <Typography sx={{ whiteSpace: "pre-wrap" }}>
+                {fallback}
+              </Typography>
+            }
+          >
+            <MarkdownMessage content={fallback} />
+          </Suspense>
+        ) : isActive(status) ? (
+          <PendingState status={status} />
+        ) : status === "done" ? (
+          <Typography color="text.secondary" variant="body2">
+            回答已完成，但没有返回内容。
+          </Typography>
+        ) : null}
         {live?.streamError ? (
-          <Typography role="alert" color="error.main" variant="body2" sx={{ mt: 2 }}>
+          <Typography
+            role="alert"
+            color="error.main"
+            variant="body2"
+            sx={{ mt: 2 }}
+          >
             {live.streamError}
           </Typography>
         ) : null}
         {status === "failed" || status === "cancelled" ? (
           <Stack spacing={1} sx={{ mt: 2, alignItems: "flex-start" }}>
-            <Typography color={status === "failed" ? "error.main" : "text.secondary"} variant="body2">
-              {status === "failed" ? (error?.message ?? "回答失败，已保留部分内容。") : "已停止生成；停止前完成的工具操作不会撤销。"}
+            <Typography
+              color={status === "failed" ? "error.main" : "text.secondary"}
+              variant="body2"
+            >
+              {status === "failed"
+                ? (error?.message ?? "回答失败，已保留部分内容。")
+                : "已停止生成"}
             </Typography>
-            {(status === "cancelled" || error?.retryable) ? (
+            {status === "cancelled" || error?.retryable ? (
               <Button
                 size="small"
                 startIcon={<AutorenewRounded />}
                 disabled={retry.isPending}
-                onClick={() => retry.mutate(turn.turnId, { onSuccess: (next) => turnStreamManager.connect(next.turnId, next.sessionId) })}
+                onClick={() =>
+                  retry.mutate(turn.turnId, {
+                    onSuccess: (next) =>
+                      turnStreamManager.connect(next.turnId, next.sessionId),
+                  })
+                }
               >
                 重试
               </Button>
@@ -64,8 +128,21 @@ export function TurnItem({ turn }: { turn: Turn }) {
 
 function PendingState({ status }: { status: Turn["status"] }) {
   return (
-    <Stack direction="row" spacing={1} sx={{ alignItems: "center", color: "text.secondary" }}>
-      <CircularProgress size={16} /><Typography variant="body2">{status === "pending" ? "等待处理" : "正在回答"}</Typography>
+    <Stack
+      direction="row"
+      spacing={1}
+      sx={{ alignItems: "center", color: "text.secondary" }}
+    >
+      <CircularProgress size={16} />
+      <Typography variant="body2">
+        {status === "pending" ? "等待处理" : "正在回答"}
+      </Typography>
     </Stack>
+  );
+}
+
+function isActive(status: Turn["status"]): boolean {
+  return (
+    status === "pending" || status === "processing" || status === "finalizing"
   );
 }

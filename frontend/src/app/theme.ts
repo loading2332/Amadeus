@@ -21,7 +21,8 @@ export const amadeusTheme = createTheme({
   shape: { borderRadius: 10 },
   typography: {
     fontFamily:
-      'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", sans-serif',
+      '"Inter Variable", "Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", sans-serif',
+    allVariants: { letterSpacing: 0 },
     button: { textTransform: "none", fontWeight: 600 },
     body1: { lineHeight: 1.75 },
     body2: { lineHeight: 1.6 },
