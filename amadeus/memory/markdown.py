@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
 import threading
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +37,7 @@ _ALLOWED_PENDING_TAGS = {
     "correction",
     "agent_context",
 }
+logger = logging.getLogger(__name__)
 
 
 class MemoryChatProvider(Protocol):
@@ -48,6 +51,10 @@ class MemoryChatProvider(Protocol):
         disable_thinking: bool = False,
         **kwargs: Any,
     ) -> Any: ...
+
+
+class MemoryOptimizerRunner(Protocol):
+    async def optimize(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -610,6 +617,47 @@ class MemoryOptimizer:
             disable_thinking=True,
         )
         return str(getattr(response, "content", "") or "").strip()
+
+
+class MemoryOptimizerLoop:
+    """Run the memory optimizer on Unix-epoch-aligned interval boundaries."""
+
+    def __init__(
+        self,
+        optimizer: MemoryOptimizerRunner,
+        *,
+        interval_seconds: int = 64_800,
+        now_fn: Callable[[], datetime] | None = None,
+        sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+    ) -> None:
+        self.optimizer = optimizer
+        self.interval_seconds = int(interval_seconds)
+        self._now_fn = now_fn or datetime.now
+        self._sleep = sleep
+
+    def seconds_until_next_tick(self) -> float:
+        now_timestamp = self._now_fn().timestamp()
+        next_timestamp = (
+            (int(now_timestamp) // self.interval_seconds + 1)
+            * self.interval_seconds
+        )
+        return max(0.0, next_timestamp - now_timestamp)
+
+    async def run(self) -> None:
+        logger.info(
+            "Memory optimizer loop started: interval_seconds=%s",
+            self.interval_seconds,
+        )
+        while True:
+            await self._sleep(self.seconds_until_next_tick())
+            try:
+                await self.optimizer.optimize()
+            except MemoryOptimizerBusy:
+                logger.info("Memory optimizer loop skipped: optimizer is busy")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Memory optimizer loop failed")
 
 
 @dataclass

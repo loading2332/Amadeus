@@ -592,3 +592,63 @@ rebase_finalist_shortlist_for_holdout_qrels(
     output_path=rebased_finalists_path,
 )
 ```
+
+## 场景：Markdown 记忆优化器定时循环
+
+### 1. 范围 / 触发
+
+- 触发：修改 `MemoryOptimizer` 的自动调度、`RuntimeConfig` 的 optimizer 环境变量，或 `PassiveApp` 的启动/关闭生命周期。
+- 此能力跨越配置、后台 asyncio task、LLM provider 与 Markdown 记忆事务；调度器不得直接读取或改写 `PENDING.md` / `MEMORY.md`。
+
+### 2. 签名
+
+- `MemoryOptimizerLoop(optimizer, *, interval_seconds=64_800).run() -> None`
+- `MemoryOptimizerLoop.seconds_until_next_tick() -> float`
+- `RuntimeConfig.memory_optimizer_enabled: bool = True`
+- `RuntimeConfig.memory_optimizer_interval_seconds: int = 64_800`
+- `PassiveApp.start()` 创建循环 task；`PassiveApp.aclose()` 在关闭 provider 前取消并等待它。
+
+### 3. 契约
+
+- `AMADEUS_MEMORY_OPTIMIZER_ENABLED` 默认 `true`；`AMADEUS_MEMORY_OPTIMIZER_INTERVAL_SECONDS` 默认 `64800`，且必须是正整数。
+- 下次触发时间使用 Unix 时间戳公式 `((int(now.timestamp()) // interval) + 1) * interval`；它锚定客观时间，而非 Docker/worker 启动时刻，也不持久化或补跑停机期间的周期。
+- 循环只调用 `MemoryOptimizer.optimize()`，因此复用其快照、提交和回滚事务。`MemoryOptimizerBusy` 只记录跳过，其他普通异常记录后进入下一周期，`CancelledError` 必须继续向上传播。
+- FastAPI Web 进程只负责 turn 入队；optimizer loop 由实际运行 `PassiveApp` 的 worker 进程持有。
+
+### 4. 验证与错误矩阵
+
+- interval 缺失 -> 使用 `64800`；`0`、负数或非整数 -> 启动配置报 `ValueError`。
+- enabled 为假 -> 不创建后台 task，也不调用模型。
+- optimizer 返回空内容或抛出异常 -> 由 `MemoryOptimizer` 回滚 pending snapshot；循环不退出。
+- `PassiveApp.aclose()` -> 先取消并 await loop，再关闭 provider / PostgreSQL，避免已关闭客户端被后台 task 使用。
+
+### 5. Good / Base / Bad Cases
+
+- Good：worker 在下一 Unix 18 小时边界调用 `optimize()`；容器在边界前重启后只重新计算下一个边界。
+- Base：本轮 optimizer 正在执行时，定时触发记录 busy 并跳过。
+- Bad：Web route 自行启动优化器；循环直接把 `PENDING.md` 拼接写到 `MEMORY.md`；关闭 app 后仍留下未 await 的 task。
+
+### 6. 必需测试
+
+- Loop unit：固定时钟断言下一边界等待时长；首次 optimize 异常后第二次仍会调用；取消 task 可结束循环。
+- Config unit：默认值、禁用开关、零/负数/非数字 interval。
+- App lifecycle integration：start 创建 loop、disable 不创建、aclose 取消并等待；需要 PostgreSQL 时可因本地服务不可用跳过，但不得报告为通过。
+
+### 7. 错误与正确示例
+
+#### 错误
+
+```python
+async def run() -> None:
+    while True:
+        await asyncio.sleep(64_800)  # 每次 Docker 重启都会额外延后完整 18 小时
+        store.write_long_term(store.read_pending())
+```
+
+#### 正确
+
+```python
+while True:
+    await asyncio.sleep(loop.seconds_until_next_tick())
+    await optimizer.optimize()  # 唯一拥有 PENDING snapshot/rollback 事务的边界
+```

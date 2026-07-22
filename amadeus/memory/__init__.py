@@ -20,6 +20,7 @@ from amadeus.memory.markdown import (
     MarkdownMemoryStore,
     MemoryOptimizer,
     MemoryOptimizerBusy,
+    MemoryOptimizerLoop,
     RefreshRecentTurnsRequest,
     build_markdown_memory_runtime,
 )
@@ -66,6 +67,7 @@ __all__ = [
     "MemoryMutationResult",
     "MemoryOptimizer",
     "MemoryOptimizerBusy",
+    "MemoryOptimizerLoop",
     "PostResponseMemoryWorker",
     "MemoryQueryResult",
     "MemoryRecallRequest",

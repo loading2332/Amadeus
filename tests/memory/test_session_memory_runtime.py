@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -13,6 +14,7 @@ from amadeus.memory import (
     MarkdownMemoryStore,
     MemoryMemorizer,
     MemoryOptimizer,
+    MemoryOptimizerLoop,
     MemoryRetriever,
     PostResponseMemoryWorker,
     RefreshRecentTurnsRequest,
@@ -325,6 +327,44 @@ def test_optimizer_rolls_back_pending_when_model_returns_empty(tmp_path, markdow
 
     assert "must survive" in store.read_pending()
     assert not store.snapshot_path.exists()
+
+
+def test_optimizer_loop_waits_until_next_unix_interval_and_continues_after_failure():
+    class FlakyOptimizer:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.called_twice = asyncio.Event()
+
+        async def optimize(self) -> None:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("temporary provider failure")
+            self.called_twice.set()
+
+    async def scenario() -> None:
+        optimizer = FlakyOptimizer()
+        delays: list[float] = []
+        block = asyncio.Event()
+
+        async def sleep(delay: float) -> None:
+            delays.append(delay)
+            if len(delays) > 2:
+                await block.wait()
+
+        loop = MemoryOptimizerLoop(
+            optimizer,
+            interval_seconds=100,
+            now_fn=lambda: datetime.fromtimestamp(250, tz=UTC),
+            sleep=sleep,
+        )
+        task = asyncio.create_task(loop.run())
+        await optimizer.called_twice.wait()
+        assert delays[:2] == [50.0, 50.0]
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
 
 
 def test_refresh_recent_turns_ignores_context_frame_and_tool_messages(

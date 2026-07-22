@@ -24,6 +24,7 @@ from amadeus.memory import (
     LongTermMemoryEngine,
     MarkdownMemoryRuntime,
     MemoryMemorizer,
+    MemoryOptimizerLoop,
     MemoryRetriever,
     OpenAIEmbeddingConfig,
     OpenAIEmbeddingProvider,
@@ -75,6 +76,8 @@ class RuntimeConfig:
     provider: LLMProviderConfig
     postgres_dsn: str
     memory_keep_count: int = 12
+    memory_optimizer_enabled: bool = True
+    memory_optimizer_interval_seconds: int = 64_800
     long_term_memory_enabled: bool = False
     owner_user_id: int = 1
     embedding_model: str | None = None
@@ -120,6 +123,9 @@ class PassiveApp:
         repr=False,
     )
     _plugin_report: PluginLoadReport | None = field(
+        default=None, init=False, repr=False
+    )
+    _memory_optimizer_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False
     )
 
@@ -191,6 +197,15 @@ class PassiveApp:
                 except BaseException:
                     pass
                 raise
+            if self.config.memory_optimizer_enabled:
+                optimizer_loop = MemoryOptimizerLoop(
+                    self.memory.optimizer,
+                    interval_seconds=self.config.memory_optimizer_interval_seconds,
+                )
+                self._memory_optimizer_task = asyncio.create_task(
+                    optimizer_loop.run(),
+                    name="memory_optimizer",
+                )
             self._plugin_report = report
             self._state = AppState.STARTED
             return report
@@ -202,6 +217,16 @@ class PassiveApp:
                 return
 
             first_error: BaseException | None = None
+            optimizer_task = self._memory_optimizer_task
+            self._memory_optimizer_task = None
+            if optimizer_task is not None and not optimizer_task.done():
+                optimizer_task.cancel()
+                try:
+                    await optimizer_task
+                except asyncio.CancelledError:
+                    pass
+                except BaseException as error:
+                    first_error = error
             try:
                 await self.plugin_manager.terminate_all()
             except BaseException as error:
@@ -291,6 +316,16 @@ def load_runtime_config(
     timeout = _float_config("OPENAI_TIMEOUT_SECONDS", file_values, default=90.0)
     max_tokens = _int_config("OPENAI_MAX_TOKENS", file_values, default=2048)
     keep_count = _int_config("AMADEUS_MEMORY_KEEP_COUNT", file_values, default=12)
+    memory_optimizer_enabled = _bool_config(
+        "AMADEUS_MEMORY_OPTIMIZER_ENABLED",
+        file_values,
+        default=True,
+    )
+    memory_optimizer_interval_seconds = _positive_int_config(
+        "AMADEUS_MEMORY_OPTIMIZER_INTERVAL_SECONDS",
+        file_values,
+        default=64_800,
+    )
     long_term_memory_enabled = _bool_config(
         "AMADEUS_LONG_TERM_MEMORY_ENABLED", file_values
     )
@@ -366,6 +401,8 @@ def load_runtime_config(
         ),
         postgres_dsn=str(values["AMADEUS_POSTGRES_DSN"]),
         memory_keep_count=keep_count,
+        memory_optimizer_enabled=memory_optimizer_enabled,
+        memory_optimizer_interval_seconds=memory_optimizer_interval_seconds,
         long_term_memory_enabled=long_term_memory_enabled,
         owner_user_id=owner_user_id,
         embedding_model=embedding_model,

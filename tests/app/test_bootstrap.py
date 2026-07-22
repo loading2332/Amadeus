@@ -152,6 +152,8 @@ def test_load_runtime_config_reads_dotenv_and_environment_overrides(tmp_path, mo
     assert config.postgres_dsn == "postgresql://amadeus:amadeus@localhost:5432/amadeus"
     assert config.owner_user_id == 7
     assert config.memory_keep_count == 8
+    assert config.memory_optimizer_enabled is True
+    assert config.memory_optimizer_interval_seconds == 64_800
     assert config.turn_stream_flush_characters == 128
     assert config.turn_stream_flush_interval_seconds == 0.1
     assert config.turn_heartbeat_interval_seconds == 10.0
@@ -206,6 +208,24 @@ def test_load_runtime_config_requires_stale_timeout_after_heartbeat(
     with pytest.raises(
         ValueError,
         match="AMADEUS_TURN_STALE_AFTER_SECONDS must be greater",
+    ):
+        load_runtime_config(
+            env_path=_env_path(tmp_path),
+            workspace_root=tmp_path,
+        )
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "not-an-int"])
+def test_load_runtime_config_requires_positive_memory_optimizer_interval(
+    tmp_path,
+    monkeypatch,
+    value,
+):
+    monkeypatch.setenv("AMADEUS_MEMORY_OPTIMIZER_INTERVAL_SECONDS", value)
+
+    with pytest.raises(
+        ValueError,
+        match="AMADEUS_MEMORY_OPTIMIZER_INTERVAL_SECONDS must be a positive integer",
     ):
         load_runtime_config(
             env_path=_env_path(tmp_path),
@@ -764,6 +784,54 @@ def test_aclose_is_idempotent_for_started_app(tmp_path, monkeypatch):
     assert manager.terminate_calls == 1
     assert close_calls == 1
     assert app._state is AppState.CLOSED
+
+
+def test_start_runs_memory_optimizer_loop_and_aclose_cancels_it(tmp_path, monkeypatch):
+    app, _manager = _app_with_controlled_manager(tmp_path)
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    class BlockingOptimizerLoop:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+        async def run(self) -> None:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+    monkeypatch.setattr("amadeus.app.bootstrap.MemoryOptimizerLoop", BlockingOptimizerLoop)
+
+    async def scenario() -> None:
+        await app.start()
+        await started.wait()
+        await app.aclose()
+
+    asyncio.run(scenario())
+    assert cancelled.is_set()
+    assert app._memory_optimizer_task is None
+
+
+def test_start_does_not_create_memory_optimizer_loop_when_disabled(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("AMADEUS_MEMORY_OPTIMIZER_ENABLED", "0")
+    app, _manager = _app_with_controlled_manager(tmp_path)
+
+    class UnexpectedOptimizerLoop:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError("optimizer loop must be disabled")
+
+    monkeypatch.setattr("amadeus.app.bootstrap.MemoryOptimizerLoop", UnexpectedOptimizerLoop)
+
+    async def scenario() -> None:
+        await app.start()
+        assert app._memory_optimizer_task is None
+        await app.aclose()
+
+    asyncio.run(scenario())
 
 
 def test_new_app_can_close_and_closed_app_cannot_restart(tmp_path):
