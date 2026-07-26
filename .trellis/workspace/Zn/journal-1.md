@@ -511,3 +511,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 全项目 review 并修复 4 个严重问题
+
+**Date**: 2026-07-26
+**Task**: 全项目 review 并修复 4 个严重问题
+**Branch**: `main`
+
+### Summary
+
+对项目做整体 review（后端/前端/未提交改动三路），产出分档问题清单；随后建任务修复全部 4 个严重问题：worker 主循环容错+退避、provider tool-call arguments 解析降级（含 check 阶段追加的非对象 JSON 防护）、web/worker 同步 store 调用下沉 asyncio.to_thread、前端仅对活跃 turn 建 SSE 连接。后端 660 tests + mypy/ruff、前端 53 tests 全绿；沉淀 spec：async-boundaries.md 新建、error-handling.md 补 arguments 降级协议。中等问题（heartbeat 孤儿任务、SessionManager 缓存无界、SSE 断连无感知等）未修，留待后续任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `51db2ec` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

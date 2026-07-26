@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-07-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~513 | Active |
+| `journal-1.md` | ~546 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-07-26 | 全项目 review 并修复 4 个严重问题 | `51db2ec` | `main` |
 | 15 | 2026-07-26 | 量化 Prompt Cache 优化（B0/B1 实机实验） | `f66e52f` | `main` |
 | 14 | 2026-07-20 | 完成桌面聊天体验改造 | `0d4b88f` | `codex/delivery-runtime` |
 | 13 | 2026-07-19 | 交付 React 单用户聊天客户端 | `4cc7ea4` | `codex/delivery-runtime` |
