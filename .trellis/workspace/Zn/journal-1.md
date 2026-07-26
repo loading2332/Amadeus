@@ -478,3 +478,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 量化 Prompt Cache 优化（B0/B1 实机实验）
+
+**Date**: 2026-07-26
+**Task**: 量化 Prompt Cache 优化（B0/B1 实机实验）
+**Branch**: `main`
+
+### Summary
+
+完成 prompt cache 基准第二轮：为 B0/B1 加入记忆变更负载与 15 轮历史 fixture，DeepSeek 实机测得记忆 section 移出 system prompt 后缓存读取率 91.33%→94.73%、记忆更新稳态 miss −67%、平均每请求输入成本 −31.7%；顺带实证 DeepSeek 缓存按字节前缀匹配、对 system/user 角色边界不敏感（无历史时两组读取率精确相同）。assembler section 路由改动随任务提交，结论沉淀至 spec/backend/prompt-cache.md 与 docs/prompt-cache-benchmark.md。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f66e52f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
