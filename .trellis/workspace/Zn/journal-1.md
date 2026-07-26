@@ -544,3 +544,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 会话删除功能
+
+**Date**: 2026-07-26
+**Task**: 会话删除功能
+**Branch**: `main`
+
+### Summary
+
+新增 DELETE /sessions/{id}(owner 条件删除 + 204/404,messages/turns 靠 DB 级联);前端侧栏 hover 删除按钮 + 确认对话框 + 缓存清理,选中会话被删后自动回落;spec 补充 Web owner 资源删除契约。后端 15 / 前端 60 测试全绿。注意:App.tsx/queries.ts 混入了并行任务 roleplay-pivot 的 onCreated 小重构,已随 757c532 入库。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `757c532` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
