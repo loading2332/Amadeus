@@ -7,11 +7,6 @@ import RefreshRounded from "@mui/icons-material/RefreshRounded";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
-import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
@@ -43,6 +38,9 @@ const navigationRowSx = {
   minHeight: 40,
   borderRadius: "8px",
   px: 1.25,
+  // 关闭 ListItemButton 内置的 background-color 150ms 过渡:
+  // 新建会话时旧选中行被挤到第二行,残留的淡出色块会被看成高亮闪跳。
+  transition: "none",
   "&:hover": { bgcolor: "action.hover" },
   "&.Mui-focusVisible": {
     outline: "2px solid",
@@ -68,7 +66,7 @@ export function SessionSidebar({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const closeDeleteDialog = () => {
+  const cancelPendingDelete = () => {
     if (deleting) return;
     setPendingDelete(null);
     setDeleteError(null);
@@ -179,9 +177,11 @@ export function SessionSidebar({
               >
                 {group.label}
               </Typography>
-              {group.sessions.map((session) => (
+              {group.sessions.map((session) => {
+                const armed = pendingDelete?.sessionId === session.sessionId;
+                return (
+                <Box key={session.sessionId}>
                 <ListItem
-                  key={session.sessionId}
                   disablePadding
                   sx={{
                     mb: 0.25,
@@ -189,40 +189,85 @@ export function SessionSidebar({
                     "& .session-delete-button": { opacity: 0, transition: "opacity 120ms ease" },
                     "&:hover .session-delete-button": { opacity: 1 },
                     "& .session-delete-button:focus-visible": { opacity: 1 },
+                    ...(armed
+                      ? { "& .session-delete-button": { opacity: 1, color: "error.main" } }
+                      : {}),
                   }}
                   secondaryAction={
                     <IconButton
                       className="session-delete-button"
-                      aria-label={`删除会话 ${session.title?.trim() || "新对话"}`}
+                      aria-label={armed ? "取消删除" : `删除会话 ${session.title?.trim() || "新对话"}`}
                       size="small"
                       edge="end"
                       onClick={(event) => {
                         event.stopPropagation();
+                        if (deleting) return;
                         setDeleteError(null);
-                        setPendingDelete(session);
+                        setPendingDelete((current) =>
+                          current?.sessionId === session.sessionId ? null : session,
+                        );
                       }}
                     >
-                      <DeleteOutlineRounded fontSize="small" />
+                      {armed && deleting ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : (
+                        <DeleteOutlineRounded fontSize="small" />
+                      )}
                     </IconButton>
                   }
                 >
-                  <ListItemButton
-                    selected={session.sessionId === selectedId}
-                    onClick={() => onSelect(session.sessionId)}
-                    sx={{
-                      ...navigationRowSx,
-                      pr: 5.5,
-                      "&.Mui-selected": { bgcolor: "action.selected" },
-                      "&.Mui-selected:hover": { bgcolor: "action.selected" },
-                    }}
-                  >
-                    <ListItemText
-                      primary={session.title?.trim() || "新对话"}
-                      slotProps={{ primary: { noWrap: true, sx: { fontSize: 14 } } }}
-                    />
-                  </ListItemButton>
+                  {armed ? (
+                    <ListItemButton
+                      aria-label="确认删除"
+                      onClick={confirmDelete}
+                      sx={{
+                        ...navigationRowSx,
+                        pr: 5.5,
+                        color: "error.main",
+                        bgcolor: "rgba(var(--mui-palette-error-mainChannel) / 0.08)",
+                        "&:hover": { bgcolor: "rgba(var(--mui-palette-error-mainChannel) / 0.16)" },
+                      }}
+                    >
+                      <ListItemText
+                        primary={deleting ? "正在删除" : "确认删除"}
+                        slotProps={{ primary: { noWrap: true, sx: { fontSize: 14, fontWeight: 600 } } }}
+                      />
+                    </ListItemButton>
+                  ) : (
+                    <ListItemButton
+                      selected={session.sessionId === selectedId}
+                      onClick={() => {
+                        cancelPendingDelete();
+                        onSelect(session.sessionId);
+                      }}
+                      sx={{
+                        ...navigationRowSx,
+                        pr: 5.5,
+                        "&.Mui-selected": { bgcolor: "action.selected" },
+                        "&.Mui-selected:hover": { bgcolor: "action.selected" },
+                      }}
+                    >
+                      <ListItemText
+                        primary={session.title?.trim() || "新对话"}
+                        slotProps={{ primary: { noWrap: true, sx: { fontSize: 14 } } }}
+                      />
+                    </ListItemButton>
+                  )}
                 </ListItem>
-              ))}
+                {armed && deleteError !== null ? (
+                  <Stack
+                    role="alert"
+                    direction="row"
+                    sx={{ minHeight: 28, mb: 0.25, px: 1.25, alignItems: "center" }}
+                  >
+                    <Typography variant="caption" color="error.main" sx={{ flex: 1 }}>
+                      {deleteError}
+                    </Typography>
+                  </Stack>
+                ) : null}
+                </Box>
+                );
+              })}
             </Box>
           );
         })}
@@ -232,33 +277,6 @@ export function SessionSidebar({
       <Box data-testid="sidebar-footer" sx={{ display: "flex", minHeight: 60, alignItems: "center", px: 1.25 }}>
         <ThemeModeControl />
       </Box>
-
-      <Dialog open={pendingDelete !== null} onClose={closeDeleteDialog}>
-        <DialogTitle>删除会话？</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            删除后「{pendingDelete?.title?.trim() || "新对话"}」的全部消息将无法恢复。
-          </DialogContentText>
-          {deleteError !== null ? (
-            <Typography role="alert" variant="body2" color="error.main" sx={{ mt: 1 }}>
-              {deleteError}
-            </Typography>
-          ) : null}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDeleteDialog} disabled={deleting}>
-            取消
-          </Button>
-          <Button
-            color="error"
-            onClick={confirmDelete}
-            disabled={deleting}
-            startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : null}
-          >
-            {deleting ? "正在删除" : "删除"}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }

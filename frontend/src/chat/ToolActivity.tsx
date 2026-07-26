@@ -29,9 +29,26 @@ export function ToolActivity({ part }: { part: ToolPart }) {
     );
   }
   return (
-    <Stack direction="row" spacing={1} data-collapsed="false" sx={{ alignItems: "center", my: 2, py: 0.75, minWidth: 0, color: "text.secondary" }}>
-      <BuildOutlined fontSize="small" />
-      <Typography variant="body2" sx={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", fontFamily: "monospace" }}>{part.toolName}</Typography>
+    <Stack
+      direction="row"
+      spacing={1}
+      data-collapsed="false"
+      sx={{
+        alignItems: "center",
+        my: 2,
+        py: 0.75,
+        px: 1.5,
+        minWidth: 0,
+        width: "fit-content",
+        maxWidth: "100%",
+        color: "text.secondary",
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 999,
+      }}
+    >
+      <BuildOutlined sx={{ fontSize: 16 }} />
+      <Typography variant="body2" sx={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", fontFamily: "ui-monospace, monospace", fontSize: 13 }}>{part.toolName}</Typography>
       {state.icon}<Typography variant="caption">{state.label}</Typography>
     </Stack>
   );

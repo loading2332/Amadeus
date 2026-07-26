@@ -27,6 +27,14 @@ interface Props {
 
 const ACTIVE = new Set(["pending", "processing", "finalizing"]);
 
+const chatSurfaceSx = {
+  position: "relative",
+  display: "grid",
+  height: "100%",
+  minHeight: 0,
+  overflow: "hidden",
+} as const;
+
 export function ChatView({
   session,
   desktopSidebarCollapsed,
@@ -98,12 +106,12 @@ export function ChatView({
   );
 
   if (session === null) {
-    return <Box sx={{ position: "relative", display: "grid", height: "100%", minHeight: 0, gridTemplateRows: "minmax(0, 1fr)", overflow: "hidden" }}>{navigationActions}<EmptyState title="创建一个新对话" detail="从左侧的新对话开始与 Amadeus 交流。" /></Box>;
+    return <Box sx={{ ...chatSurfaceSx, gridTemplateRows: "minmax(0, 1fr)" }}>{navigationActions}<EmptyState title="创建一个新对话" detail="从左侧的新对话开始与 Amadeus 交流。" /></Box>;
   }
 
   const draft = drafts[session.sessionId] ?? "";
   return (
-    <Box sx={{ position: "relative", display: "grid", height: "100%", minHeight: 0, gridTemplateRows: "minmax(0, 1fr) auto", overflow: "hidden" }}>
+    <Box sx={{ ...chatSurfaceSx, gridTemplateRows: "minmax(0, 1fr) auto" }}>
       {navigationActions}
       <TurnTimeline
         key={session.sessionId}

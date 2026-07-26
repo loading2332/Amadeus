@@ -68,7 +68,7 @@ describe("SessionSidebar", () => {
     expect(within(screen.getByRole("navigation", { name: "会话列表" })).getByRole("button", { name: "首条消息摘要" })).toBeInTheDocument();
   });
 
-  it("deletes a session only after the dialog is confirmed", async () => {
+  it("deletes a session only after the armed confirm button is clicked", async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
     const onDelete = vi.fn().mockResolvedValue(undefined);
@@ -87,37 +87,47 @@ describe("SessionSidebar", () => {
     await user.click(screen.getByRole("button", { name: "删除会话 新对话" }));
 
     expect(onSelect).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toHaveTextContent("删除会话？");
-    await user.click(screen.getByRole("button", { name: "删除" }));
+    expect(onDelete).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
 
     expect(onDelete).toHaveBeenCalledOnce();
     expect(onDelete).toHaveBeenCalledWith(7);
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument());
+    // 顶部恢复为"新对话"按钮(另一个同名按钮是标题为空的会话行)。
+    expect(screen.getAllByRole("button", { name: "新对话" })).toHaveLength(2);
   });
 
-  it("cancels the dialog without deleting anything", async () => {
+  it("disarms the confirm state without deleting anything", async () => {
     const user = userEvent.setup();
+    const onSelect = vi.fn();
     const onDelete = vi.fn().mockResolvedValue(undefined);
+    const other: SessionSummary = { ...session, sessionId: 8, title: "另一个会话" };
     render(
       <SessionSidebar
-        sessions={[session]}
+        sessions={[session, other]}
         selectedId={session.sessionId}
         creating={false}
         createFailed={false}
-        onSelect={vi.fn()}
+        onSelect={onSelect}
         onCreate={vi.fn()}
         onDelete={onDelete}
       />,
     );
 
+    // 再点一次垃圾桶(武装后变为"取消删除")取消
     await user.click(screen.getByRole("button", { name: "删除会话 新对话" }));
-    await user.click(screen.getByRole("button", { name: "取消" }));
+    await user.click(screen.getByRole("button", { name: "取消删除" }));
+    expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument();
 
+    // 点其他会话行也会取消,并正常选中
+    await user.click(screen.getByRole("button", { name: "删除会话 新对话" }));
+    await user.click(screen.getByRole("button", { name: "另一个会话" }));
+    expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument();
+    expect(onSelect).toHaveBeenCalledWith(8);
     expect(onDelete).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  it("keeps the dialog open with an error message and allows retrying after a failure", async () => {
+  it("keeps the confirm button armed with an error message and allows retrying after a failure", async () => {
     const user = userEvent.setup();
     const onDelete = vi
       .fn()
@@ -136,14 +146,14 @@ describe("SessionSidebar", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "删除会话 新对话" }));
-    await user.click(screen.getByRole("button", { name: "删除" }));
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("无法连接服务器，请检查网络后重试");
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认删除" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "删除" }));
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
 
     expect(onDelete).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument());
   });
 });

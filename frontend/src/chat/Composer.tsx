@@ -35,7 +35,7 @@ export function Composer({ value, busy, activeTurn, cancelling, sendFailed, onCh
     <Box data-testid="composer-bar" sx={{ px: { xs: 1.5, sm: 3 }, pt: 1, pb: "max(24px, calc(env(safe-area-inset-bottom) + 8px))" }}>
       <Box
         data-testid="composer-shell"
-        sx={{
+        sx={(theme) => ({
           display: "flex",
           width: "100%",
           maxWidth: 900,
@@ -44,16 +44,25 @@ export function Composer({ value, busy, activeTurn, cancelling, sendFailed, onCh
           gap: 1,
           border: "1px solid",
           borderColor: "divider",
-          borderRadius: 999,
+          // 固定圆角:单行时接近药丸,多行时保持圆角矩形。
+          // 不用 999——胶囊圆角在多行高度下两端成大半圆,顶/底行文字会伸出弧线。
+          borderRadius: "28px",
           bgcolor: "background.paper",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.10), 0 10px 18px rgba(0,0,0,0.10)",
+          boxShadow:
+            "0 1px 3px rgba(0,0,0,0.07), 0 10px 28px rgba(0,0,0,0.09)",
           p: 1,
-          transition: (theme) => theme.transitions.create(["border-color", "box-shadow"], { duration: theme.transitions.duration.shortest }),
+          transition: theme.transitions.create(["border-color", "box-shadow"], { duration: theme.transitions.duration.shortest }),
           "&:focus-within": {
             borderColor: "primary.main",
-            boxShadow: "inset 0 0 0 1px var(--mui-palette-primary-main), 0 2px 6px rgba(0,0,0,0.12), 0 10px 18px rgba(0,0,0,0.12)",
+            outline: "2px solid var(--mui-palette-primary-main)",
+            outlineOffset: "-2px",
+            boxShadow:
+              "0 1px 3px rgba(0,0,0,0.08), 0 10px 28px rgba(var(--mui-palette-primary-mainChannel) / 0.18)",
+            ...theme.applyStyles("dark", {
+              boxShadow: "none",
+            }),
           },
-        }}
+        })}
       >
         <TextField
           value={value}
@@ -76,9 +85,9 @@ export function Composer({ value, busy, activeTurn, cancelling, sendFailed, onCh
           slotProps={{ input: { sx: { minHeight: 40, py: 0.5, pr: 0.5, pl: 1.5, "&& .MuiOutlinedInput-notchedOutline": { border: 0 } } } }}
         />
         {activeTurn !== null ? (
-          <Tooltip title="停止生成"><span><IconButton aria-label="停止生成" disabled={cancelling || activeTurn.status === "finalizing"} onClick={onStop} sx={{ width: 40, height: 40, bgcolor: "text.primary", color: "background.paper", "&:hover": { bgcolor: "text.primary", opacity: 0.86 }, "&.Mui-disabled": { bgcolor: "action.disabledBackground" } }}><StopRounded fontSize="small" /></IconButton></span></Tooltip>
+          <Tooltip title="停止生成"><span><IconButton aria-label="停止生成" disabled={cancelling || activeTurn.status === "finalizing"} onClick={onStop} sx={{ width: 40, height: 40, bgcolor: "text.primary", color: "background.paper", transition: "transform 120ms ease, opacity 120ms ease", "&:hover": { bgcolor: "text.primary", opacity: 0.86 }, "&:active": { transform: "scale(0.94)" }, "&.Mui-disabled": { bgcolor: "action.disabledBackground" } }}><StopRounded fontSize="small" /></IconButton></span></Tooltip>
         ) : (
-          <Tooltip title="发送"><span><IconButton aria-label="发送消息" color="primary" disabled={!canSend} onClick={submit}><SendRounded /></IconButton></span></Tooltip>
+          <Tooltip title="发送"><span><IconButton aria-label="发送消息" disabled={!canSend} onClick={submit} sx={{ width: 40, height: 40, bgcolor: "primary.main", color: "primary.contrastText", transition: "transform 120ms ease, background-color 120ms ease, opacity 120ms ease", "&:hover": { bgcolor: "primary.main", opacity: 0.9 }, "&:active": { transform: "scale(0.94)" }, "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" } }}><SendRounded fontSize="small" /></IconButton></span></Tooltip>
         )}
       </Box>
       {sendFailed ? (

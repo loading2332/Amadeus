@@ -10,6 +10,7 @@ import { App } from "./app/App";
 import { queryClient } from "./app/queryClient";
 import { amadeusTheme } from "./app/theme";
 import { readThemeMode, THEME_MODE_STORAGE_KEY } from "./app/themeMode";
+import { MotionProviders } from "./ui/MotionProviders";
 
 const root = document.getElementById("root");
 
@@ -38,7 +39,9 @@ createRoot(root).render(
     >
         <CssBaseline />
         <QueryClientProvider client={queryClient}>
-          <App />
+          <MotionProviders>
+            <App />
+          </MotionProviders>
         </QueryClientProvider>
       </ThemeProvider>
   </StrictMode>,

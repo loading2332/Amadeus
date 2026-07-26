@@ -146,8 +146,6 @@ test("centers the single-line input and highlights the whole composer", async ({
     return color;
   });
   await expect(composerShell).toHaveCSS("border-color", primaryColor);
-  const focusedShadow = await composerShell.evaluate((element) => getComputedStyle(element).boxShadow);
-  expect(focusedShadow).toContain(`${primaryColor} 0px 0px 0px 1px inset`);
   const verticalOffset = await input.evaluate((textarea) => {
     const shell = textarea.closest('[data-testid="composer-shell"]');
     if (shell === null) throw new Error("composer shell missing");
@@ -175,7 +173,7 @@ test("centers the single-line input and highlights the whole composer", async ({
   expect(multilineBottomOffset).toBeLessThanOrEqual(1);
 });
 
-test("renders the composer as a floating pill without a full-width bar", async ({ page }) => {
+test("renders the composer as a floating rounded box without a full-width bar", async ({ page }) => {
   if (!(await page.getByPlaceholder("给 Amadeus 发消息").isVisible())) {
     await visibleButton(page, "新对话").click();
   }
@@ -200,7 +198,8 @@ test("renders the composer as a floating pill without a full-width bar", async (
     const rect = element.getBoundingClientRect();
     return { height: rect.height, radius: Number.parseFloat(getComputedStyle(element).borderRadius) };
   });
-  expect(composerShape.radius).toBeGreaterThanOrEqual(composerShape.height / 2 - 1);
+  expect(composerShape.radius).toBeGreaterThanOrEqual(20);
+  expect(composerShape.radius).toBeLessThanOrEqual(composerShape.height / 2);
   expect(composerShape.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   expect(composerShape.boxShadow).not.toBe("none");
   expect(themeShape.height).toBeLessThan(composerShape.height);
@@ -335,7 +334,7 @@ test("keeps slow streams isolated while switching sessions", async ({ page }) =>
   await visibleButton(page, "新对话").click();
   await send(page, "会话乙");
   await expect(page.getByText("确定性回答")).toBeVisible();
-  await page.getByRole("button", { name: /\[slow\] 会话甲/ }).click();
+  await visibleButton(page, "[slow] 会话甲").click();
   await expect(page.getByText("慢速回答仍在继续")).toBeVisible();
 });
 
