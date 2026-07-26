@@ -53,6 +53,53 @@ Primary examples:
 - post hook 属于观察边界：`matches()` 与 `run()` 都必须遵守 fail-open；成功工具不能因 post hook 失败变成 error，原始工具错误也不能被 post hook 错误覆盖。
 - Registry 未知工具名必须抛窄领域异常（当前为 `ToolNotFoundError`），由 Executor 统一记录为 error；禁止返回普通错误字符串造成 `status="success"`。
 
+## 场景：tool-call arguments 解析失败的降级协议
+
+> 来源：07-26-fix-critical-review-findings。此前 `json.loads` 无防护，弱模型输出截断/畸形 JSON 会以泛化 runtime_error 炸掉整个 turn。
+
+### 1. 范围 / 触发
+
+- 触发：provider 从模型输出中提取 tool call arguments（流式与非流式两条路径）。
+- 原则：模型输出畸形 arguments 属于**可自纠的模型错误**，必须降级为该 tool call 的结构化失败回传模型，不得使 turn 失败。
+
+### 2. 签名
+
+- `_parse_tool_call_arguments(payload: str) -> tuple[dict[str, Any], str | None]` —— 流式与非流式必须走同一解析函数。
+- `LLMToolCall.arguments_error: str | None = None` —— 解析失败时携带错误描述（含截断的 raw 预览）。
+
+### 3. 契约
+
+- 空串 -> `({}, None)`（合法无参调用）。
+- `JSONDecodeError`（截断、非法语法）-> `({}, "<错误描述; raw=...>")`，不抛异常。
+- 合法 JSON 但非对象（如 `'["x"]'`）-> `({}, "tool call arguments must be a JSON object, got list; raw=...")`——不得静默降级为 `{}` 后执行工具（工具会拿到错误输入且模型收不到纠错信号）。
+- Reasoner 消费：`arguments_error is not None` 的 call **不执行工具**，构造 `is_error=True` 的 `ToolResult`（`metadata["arguments_parse_error"]`），tool_chain 记 `status="invalid_arguments"`；仍先 `append_assistant_tool_calls` 再为**每个** tool_call id `append_tool_result`（顺序协议不变），正常发 `ToolCallStarted/Completed` 事件。
+
+### 4. 验证与错误矩阵
+
+- 截断 JSON（流式跨 chunk / 非流式）-> turn 不失败，模型收到错误 tool result 后可重试。
+- 非对象 JSON -> 同上，且错误文案指明实际类型。
+- raw 预览必须截断，不得把超长畸形输出整段回灌。
+
+### 5. 必需测试
+
+- `tests/app/test_provider.py`：非流式畸形 + 空串 + 非对象 JSON；流式跨 chunk 截断。断言不抛、`arguments == {}`、`arguments_error` 语义正确。
+- `tests/runtime/test_reasoner_tool_loop.py`：端到端畸形 call 不炸 turn，错误进 tool message，循环最终产出回复。
+
+### 6. Wrong vs Correct
+
+#### Wrong
+
+```python
+arguments = json.loads(payload or "{}")   # 畸形 JSON 击穿整个 turn
+```
+
+#### Correct
+
+```python
+arguments, error = _parse_tool_call_arguments(payload)
+# error 非 None 时由 Reasoner 转为 is_error ToolResult 回传模型自纠
+```
+
 ## 场景：模型可见的本地子进程工具
 
 ### 1. 范围 / 触发

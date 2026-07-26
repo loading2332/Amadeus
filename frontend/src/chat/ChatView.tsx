@@ -45,7 +45,9 @@ export function ChatView({
 
   useEffect(() => {
     if (session === null) return;
-    for (const turn of rows) turnStreamManager.connect(turn.turnId, session.sessionId);
+    for (const turn of rows) {
+      if (ACTIVE.has(turn.status)) turnStreamManager.connect(turn.turnId, session.sessionId);
+    }
   }, [rows, session]);
 
   const navigationActions = (

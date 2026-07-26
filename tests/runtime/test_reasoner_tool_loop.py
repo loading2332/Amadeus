@@ -311,6 +311,53 @@ class TestReasonerToolLoop:
         assert call["status"] == "error"
         assert "不存在" in call["result"]
 
+    def test_tool_loop_returns_parse_error_for_malformed_arguments(self) -> None:
+        """畸形 tool-call JSON：不执行工具，把解析错误作为 tool result 回传自纠。"""
+        malformed = SimpleNamespace(
+            id="resp_tool",
+            model="fake-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call_1",
+                                function=SimpleNamespace(
+                                    name="echo_tool",
+                                    arguments='{"text": "hel',
+                                ),
+                            )
+                        ],
+                    )
+                )
+            ],
+            usage={},
+        )
+        client = _FakeClient()
+        client.completions.responses = [malformed]
+        reasoner = _make_reasoner(client)
+
+        result = asyncio.run(
+            reasoner.reason(messages=[{"role": "user", "content": "do it"}])
+        )
+
+        # turn 未失败，模型拿到错误后给出最终回复
+        assert result.reply == "final reply"
+        call = result.tool_chain[0]["calls"][0]
+        assert call["name"] == "echo_tool"
+        assert call["status"] == "invalid_arguments"
+        assert "不是合法 JSON" in call["result"]
+        # 错误以 tool result 消息回传给了模型
+        follow_up_messages = client.completions.calls[1]["messages"]
+        tool_message = next(
+            message
+            for message in follow_up_messages
+            if message.get("role") == "tool"
+        )
+        assert tool_message["tool_call_id"] == "call_1"
+        assert "不是合法 JSON" in tool_message["content"]
+
 
 class _BusinessPurposeTool:
     name = "business_purpose"

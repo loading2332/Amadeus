@@ -16,7 +16,8 @@ This directory contains guidelines for backend development. Fill in each file wi
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
 | [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | Active |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
+| [Error Handling](./error-handling.md) | Error types, handling strategies | Active |
+| [Async Boundaries](./async-boundaries.md) | 事件循环上同步 store 调用的 to_thread 契约与 worker 容错 | Active |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | Active |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Turn Streaming](./turn-streaming.md) | 跨进程增量回答、SSE、租约、取消与恢复契约 | Active |

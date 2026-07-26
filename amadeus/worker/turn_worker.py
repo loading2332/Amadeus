@@ -118,6 +118,8 @@ class PersistedTurnStream:
         self.flush_interval = max(0.01, float(flush_interval))
         self._last_flush = time.monotonic()
         self._last_cancel_check = 0.0
+        # 同步 store 下沉线程后，用锁保证同一 turn 的快照写入不会并发乱序。
+        self._flush_lock = asyncio.Lock()
 
     async def publish_content(self, delta: str) -> None:
         if not delta:
@@ -128,7 +130,7 @@ class PersistedTurnStream:
             len(self.content) - len(self._flushed_content) >= self.flush_characters
             or time.monotonic() - self._last_flush >= self.flush_interval
         ):
-            self.flush()
+            await self.flush()
 
     async def publish_tool_activity(
         self,
@@ -139,8 +141,9 @@ class PersistedTurnStream:
     ) -> None:
         if state == "started":
             await self._check_cancelled(force=True)
-        self.flush()
-        self.store.append_tool_activity(
+        await self.flush()
+        await asyncio.to_thread(
+            self.store.append_tool_activity,
             self.turn_id,
             self.lease_id,
             activity_id=activity_id,
@@ -154,8 +157,13 @@ class PersistedTurnStream:
         await self._check_cancelled(force=True)
 
     async def begin_finalization(self) -> None:
-        self.flush()
-        if self.store.begin_finalization(self.turn_id, self.lease_id) is None:
+        await self.flush()
+        finalizing = await asyncio.to_thread(
+            self.store.begin_finalization,
+            self.turn_id,
+            self.lease_id,
+        )
+        if finalizing is None:
             raise TurnCancelled()
 
     async def _check_cancelled(self, *, force: bool) -> None:
@@ -163,19 +171,27 @@ class PersistedTurnStream:
         if not force and now - self._last_cancel_check < self.flush_interval:
             return
         self._last_cancel_check = now
-        if self.store.cancel_requested(self.turn_id, self.lease_id):
-            raise TurnCancelled()
-
-    def flush(self) -> None:
-        if self.content == self._flushed_content:
-            return
-        self.store.append_content_snapshot(
+        cancelled = await asyncio.to_thread(
+            self.store.cancel_requested,
             self.turn_id,
             self.lease_id,
-            self.content,
         )
-        self._flushed_content = self.content
-        self._last_flush = time.monotonic()
+        if cancelled:
+            raise TurnCancelled()
+
+    async def flush(self) -> None:
+        async with self._flush_lock:
+            content = self.content
+            if content == self._flushed_content:
+                return
+            await asyncio.to_thread(
+                self.store.append_content_snapshot,
+                self.turn_id,
+                self.lease_id,
+                content,
+            )
+            self._flushed_content = content
+            self._last_flush = time.monotonic()
 
 
 class TurnWorker:
@@ -190,6 +206,8 @@ class TurnWorker:
         flush_interval: float = 0.1,
         message_store: TurnMessageStore | None = None,
         stale_after_seconds: float = 120.0,
+        error_backoff_seconds: float = 0.5,
+        max_error_backoff_seconds: float = 10.0,
     ) -> None:
         self.store = store
         self.runner = runner
@@ -199,10 +217,14 @@ class TurnWorker:
         self.flush_interval = max(0.01, float(flush_interval))
         self.message_store = message_store
         self.stale_after_seconds = max(1.0, float(stale_after_seconds))
+        self.error_backoff_seconds = max(0.01, float(error_backoff_seconds))
+        self.max_error_backoff_seconds = max(
+            self.error_backoff_seconds, float(max_error_backoff_seconds)
+        )
         self.stats = WorkerStats()
 
     async def run_once(self) -> bool:
-        turn = self.store.claim_next_pending()
+        turn = await asyncio.to_thread(self.store.claim_next_pending)
         if turn is None:
             return False
         self.stats.claimed += 1
@@ -224,18 +246,32 @@ class TurnWorker:
             answer = await self._run_with_heartbeat(turn, stream)
             await stream.begin_finalization()
         except TurnCancelled:
-            stream.flush()
-            self.store.mark_cancelled(turn.id, turn.lease_id)
+            await stream.flush()
+            await asyncio.to_thread(self.store.mark_cancelled, turn.id, turn.lease_id)
             self.stats.cancelled += 1
             return True
         except Exception as exc:
-            stream.flush()
             self.stats.failed += 1
             logger.exception("Turn failed id=%s", turn.id)
-            self.store.mark_failed(turn.id, turn.lease_id, safe_turn_error(exc))
+            # lease 失效或 DB 瞬断时 mark_failed 自身也会抛错；此处不得击穿
+            # worker 循环——僵死的 turn 交由 reconcile（recover_stale_once）回收。
+            try:
+                await stream.flush()
+                await asyncio.to_thread(
+                    self.store.mark_failed,
+                    turn.id,
+                    turn.lease_id,
+                    safe_turn_error(exc),
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to persist failure state for turn id=%s; "
+                    "leaving it for stale-turn reconciliation",
+                    turn.id,
+                )
             return True
-        stream.flush()
-        self.store.mark_done(turn.id, turn.lease_id, answer)
+        await stream.flush()
+        await asyncio.to_thread(self.store.mark_done, turn.id, turn.lease_id, answer)
         self.stats.completed += 1
         return True
 
@@ -252,7 +288,12 @@ class TurnWorker:
             )
             if task in done:
                 return await task
-            if self.store.heartbeat(turn.id, stream.lease_id):
+            cancel_requested = await asyncio.to_thread(
+                self.store.heartbeat,
+                turn.id,
+                stream.lease_id,
+            )
+            if cancel_requested:
                 task.cancel()
                 try:
                     await task
@@ -261,9 +302,21 @@ class TurnWorker:
                 raise TurnCancelled()
 
     async def run_forever(self) -> None:
+        backoff = self.error_backoff_seconds
         while True:
-            self.recover_stale_once()
-            worked = await self.run_once()
+            # 单次迭代的异常（lease 失效、DB 瞬断等）不得杀死 worker 进程：
+            # 记录日志后带指数退避继续；CancelledError 不拦截，保持可停止。
+            try:
+                await asyncio.to_thread(self.recover_stale_once)
+                worked = await self.run_once()
+            except Exception:
+                logger.exception(
+                    "Worker iteration failed; retrying in %.2fs", backoff
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, self.max_error_backoff_seconds)
+                continue
+            backoff = self.error_backoff_seconds
             if not worked:
                 await asyncio.sleep(self.poll_interval)
 

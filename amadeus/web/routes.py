@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query
@@ -18,6 +19,10 @@ from amadeus.web.schemas import (
     turn_response,
 )
 from amadeus.web.sse import turn_event_stream
+
+# 各路由的 store 均为同步 psycopg 实现；async 路由内统一经
+# asyncio.to_thread 下沉线程池，避免阻塞事件循环（连接池为
+# psycopg_pool.ConnectionPool，线程安全）。
 
 api_router = APIRouter()
 
@@ -39,7 +44,8 @@ async def create_session(
     payload: SessionCreateRequest,
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> SessionResponse:
-    row = scope.session_store.create_session(
+    row = await asyncio.to_thread(
+        scope.session_store.create_session,
         user_id=scope.user_id,
         title=payload.title,
         metadata=payload.metadata,
@@ -51,10 +57,11 @@ async def create_session(
 async def list_sessions(
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> list[SessionResponse]:
-    return [
-        SessionResponse(**row)
-        for row in scope.session_store.list_sessions(user_id=scope.user_id)
-    ]
+    rows = await asyncio.to_thread(
+        scope.session_store.list_sessions,
+        user_id=scope.user_id,
+    )
+    return [SessionResponse(**row) for row in rows]
 
 
 @api_router.get(
@@ -65,11 +72,12 @@ async def list_messages(
     session_id: int,
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> list[MessageResponse]:
-    session = scope.require_session(session_id)
-    return [
-        MessageResponse(**row)
-        for row in scope.session_store.fetch_session_messages(session)
-    ]
+    session = await asyncio.to_thread(scope.require_session, session_id)
+    rows = await asyncio.to_thread(
+        scope.session_store.fetch_session_messages,
+        session,
+    )
+    return [MessageResponse(**row) for row in rows]
 
 
 @api_router.get(
@@ -80,14 +88,13 @@ async def list_turns(
     session_id: int,
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> list[TurnResponse]:
-    session = scope.require_session(session_id)
-    return [
-        turn_response(turn)
-        for turn in scope.turn_store.list_turns(
-            user_id=session.user_id,
-            session_id=session.session_id,
-        )
-    ]
+    session = await asyncio.to_thread(scope.require_session, session_id)
+    turns = await asyncio.to_thread(
+        scope.turn_store.list_turns,
+        user_id=session.user_id,
+        session_id=session.session_id,
+    )
+    return [turn_response(turn) for turn in turns]
 
 
 @api_router.post("/messages", response_model=TurnResponse)
@@ -95,8 +102,9 @@ async def create_message(
     payload: MessageRequest,
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> TurnResponse:
-    session = scope.require_session(payload.session_id)
-    turn = scope.turn_store.create_turn(
+    session = await asyncio.to_thread(scope.require_session, payload.session_id)
+    turn = await asyncio.to_thread(
+        scope.turn_store.create_turn,
         user_id=session.user_id,
         session_id=payload.session_id,
         content=payload.message,
@@ -110,7 +118,8 @@ async def get_turn(
     turn_id: str,
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> TurnResponse:
-    return turn_response(scope.require_turn(turn_id))
+    turn = await asyncio.to_thread(scope.require_turn, turn_id)
+    return turn_response(turn)
 
 
 @api_router.get("/turns/{turn_id}/events")
@@ -120,7 +129,7 @@ async def turn_events(
     after_seq: Annotated[int, Query(ge=0)] = 0,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
-    scope.require_turn(turn_id)
+    await asyncio.to_thread(scope.require_turn, turn_id)
     cursor = after_seq
     if after_seq == 0 and last_event_id is not None:
         try:
@@ -139,8 +148,9 @@ async def cancel_turn(
     turn_id: str,
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> TurnResponse:
-    turn = scope.require_turn(turn_id)
-    return turn_response(scope.turn_store.request_cancel(turn.id))
+    turn = await asyncio.to_thread(scope.require_turn, turn_id)
+    cancelled = await asyncio.to_thread(scope.turn_store.request_cancel, turn.id)
+    return turn_response(cancelled)
 
 
 @api_router.post("/turns/{turn_id}/retry", response_model=TurnResponse)
@@ -148,7 +158,10 @@ async def retry_turn(
     turn_id: str,
     scope: Annotated[OwnerScope, Depends(get_owner_scope)],
 ) -> TurnResponse:
-    turn = scope.require_turn(turn_id)
-    return turn_response(
-        scope.turn_store.retry_turn(turn_id=turn.id, user_id=scope.user_id)
+    turn = await asyncio.to_thread(scope.require_turn, turn_id)
+    retried = await asyncio.to_thread(
+        scope.turn_store.retry_turn,
+        turn_id=turn.id,
+        user_id=scope.user_id,
     )
+    return turn_response(retried)

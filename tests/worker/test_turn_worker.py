@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from amadeus.runtime.streaming import TurnStreamSink
 from amadeus.session import PostgresSessionStore
@@ -6,8 +7,11 @@ from amadeus.session.identity import SessionRef
 from amadeus.turns import (
     TURN_DONE,
     TURN_FAILED,
+    TURN_PROCESSING,
+    InvalidTurnTransition,
     PostgresTurnStore,
     Turn,
+    TurnError,
 )
 from amadeus.worker.turn_worker import TurnWorker
 
@@ -93,6 +97,167 @@ class LateReturnRunner:
         self.ready.set()
         await self.release.wait()
         return "complete answer"
+
+
+def _claimed_turn(turn_id: str, content: str = "hello") -> Turn:
+    return Turn(
+        id=turn_id,
+        user_id=1,
+        session_id=1,
+        content=content,
+        status=TURN_PROCESSING,
+        answer=None,
+        error=None,
+        error_code=None,
+        error_message=None,
+        error_retryable=None,
+        metadata={},
+        attempts=1,
+        created_at=None,
+        updated_at=None,
+        started_at=None,
+        finished_at=None,
+        lease_id=f"lease-{turn_id}",
+    )
+
+
+class FlakyQueueStore:
+    """In-memory TurnQueueStore whose failure paths mimic a lost lease / DB blip.
+
+    - ``claim_next_pending`` raises ``claim_errors`` times before serving turns.
+    - ``mark_failed`` always raises ``InvalidTurnTransition`` (lease lost).
+    """
+
+    def __init__(self, turns: list[Turn], *, claim_errors: int = 0) -> None:
+        self.pending = list(turns)
+        self.claim_errors = claim_errors
+        self.done: list[str] = []
+        self.mark_failed_attempts = 0
+
+    def claim_next_pending(self) -> Turn | None:
+        if self.claim_errors > 0:
+            self.claim_errors -= 1
+            raise RuntimeError("database connection lost")
+        if self.pending:
+            return self.pending.pop(0)
+        return None
+
+    def heartbeat(self, turn_id: str, lease_id: str) -> bool:
+        return False
+
+    def cancel_requested(self, turn_id: str, lease_id: str) -> bool:
+        return False
+
+    def begin_finalization(self, turn_id: str, lease_id: str) -> Turn | None:
+        return _claimed_turn(turn_id)
+
+    def append_content_snapshot(
+        self, turn_id: str, lease_id: str, content: str
+    ) -> object:
+        return None
+
+    def append_tool_activity(
+        self,
+        turn_id: str,
+        lease_id: str,
+        *,
+        activity_id: str,
+        tool_name: str,
+        state: str,
+    ) -> object:
+        return None
+
+    def mark_done(self, turn_id: str, lease_id: str, answer: str) -> Turn:
+        self.done.append(turn_id)
+        return _claimed_turn(turn_id)
+
+    def mark_cancelled(self, turn_id: str, lease_id: str) -> Turn:
+        return _claimed_turn(turn_id)
+
+    def mark_failed(self, turn_id: str, lease_id: str, error: TurnError) -> Turn:
+        self.mark_failed_attempts += 1
+        raise InvalidTurnTransition("turn lease no longer active")
+
+    def list_stale_processing(self, *, stale_after_seconds: float) -> list[Turn]:
+        return []
+
+    def reconcile_interrupted(
+        self,
+        turn_id: str,
+        *,
+        lease_id: str,
+        stale_after_seconds: float,
+        assistant_answer: str | None,
+    ) -> Turn:
+        return _claimed_turn(turn_id)
+
+
+class ExplodeOnceRunner:
+    """Raises for the poisoned turn, replies normally for every other turn."""
+
+    def __init__(self, poisoned_turn_id: str) -> None:
+        self.poisoned_turn_id = poisoned_turn_id
+
+    async def run(self, turn: Turn, stream_sink: TurnStreamSink) -> str:
+        if turn.id == self.poisoned_turn_id:
+            raise RuntimeError("runner exploded")
+        return f"reply:{turn.content}"
+
+
+async def _wait_until(predicate, *, timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        await asyncio.sleep(0.01)
+    return predicate()
+
+
+def test_run_once_survives_mark_failed_raising_after_runner_error() -> None:
+    store = FlakyQueueStore([_claimed_turn("turn-1")])
+    worker = TurnWorker(store=store, runner=ExplodeOnceRunner("turn-1"))
+
+    assert asyncio.run(worker.run_once()) is True
+
+    assert store.mark_failed_attempts == 1
+    assert worker.stats.failed == 1
+
+
+def test_run_forever_survives_store_and_mark_failed_errors() -> None:
+    """Worker 循环必须挺过 claim 抛错 + mark_failed 抛错，继续处理后续 turn。"""
+    store = FlakyQueueStore(
+        [_claimed_turn("turn-1"), _claimed_turn("turn-2", content="second")],
+        claim_errors=1,
+    )
+    worker = TurnWorker(
+        store=store,
+        runner=ExplodeOnceRunner("turn-1"),
+        poll_interval=0.01,
+        error_backoff_seconds=0.01,
+        max_error_backoff_seconds=0.05,
+    )
+
+    async def scenario() -> None:
+        loop_task = asyncio.create_task(worker.run_forever())
+        try:
+            # 等 stats.completed 而不是 store.done：mark_done 在 to_thread 里
+            # 先落库，stats 在 await 恢复后才自增，等前者会与取消竞态。
+            survived = await _wait_until(lambda: worker.stats.completed >= 1)
+            assert survived, "worker loop died before processing turn-2"
+            assert not loop_task.done(), "run_forever exited unexpectedly"
+        finally:
+            loop_task.cancel()
+            try:
+                await loop_task
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(scenario())
+
+    assert store.done == ["turn-2"]
+    assert store.mark_failed_attempts == 1
+    assert worker.stats.failed == 1
+    assert worker.stats.completed == 1
 
 
 def test_turn_worker_completes_postgres_turn():

@@ -19,10 +19,13 @@ async def turn_event_stream(
     cursor = max(0, int(after_seq))
     last_keepalive = time.monotonic()
     while True:
-        turn = store.get_turn(turn_id)
+        # store 是同步 psycopg 实现；下沉线程池避免阻塞事件循环。
+        turn = await asyncio.to_thread(store.get_turn, turn_id)
         if turn is None:
             return
-        events = store.list_events(turn_id, after_seq=cursor)
+        events = await asyncio.to_thread(
+            store.list_events, turn_id, after_seq=cursor
+        )
         for event in events:
             yield _sse(event)
             cursor = event.seq

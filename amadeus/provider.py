@@ -33,6 +33,9 @@ class LLMToolCall:
     id: str
     name: str
     arguments: dict[str, Any] = field(default_factory=dict)
+    # 模型给出的 arguments 不是合法 JSON 时置为解析错误描述，arguments 降级为 {}；
+    # 由 Reasoner 把错误作为 tool result 回传给模型自纠，而不是炸掉整个 turn。
+    arguments_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -146,13 +149,15 @@ def _extract_tool_calls(message: Any) -> list[LLMToolCall]:
         function = getattr(item, "function", None)
         if function is None:
             continue
+        arguments, arguments_error = _parse_tool_call_arguments(
+            getattr(function, "arguments", None)
+        )
         parsed.append(
             LLMToolCall(
                 id=str(getattr(item, "id", "") or ""),
                 name=str(getattr(function, "name", "") or ""),
-                arguments=_parse_tool_call_arguments(
-                    getattr(function, "arguments", None)
-                ),
+                arguments=arguments,
+                arguments_error=arguments_error,
             )
         )
     return parsed
@@ -199,11 +204,7 @@ async def _consume_stream(raw_stream: Any, sink: ContentDeltaSink) -> LLMRespons
             if arguments:
                 part["arguments"] += str(arguments)
     tool_calls = [
-        LLMToolCall(
-            id=part["id"],
-            name=part["name"],
-            arguments=_parse_tool_call_arguments(part["arguments"]),
-        )
+        _stream_tool_call(part)
         for _, part in sorted(tool_parts.items())
     ]
     content = "".join(content_parts) or None
@@ -229,17 +230,42 @@ def _raise_provider_error(error: Exception) -> NoReturn:
     raise error
 
 
-def _parse_tool_call_arguments(arguments: Any) -> dict[str, Any]:
+def _stream_tool_call(part: dict[str, str]) -> LLMToolCall:
+    arguments, arguments_error = _parse_tool_call_arguments(part["arguments"])
+    return LLMToolCall(
+        id=part["id"],
+        name=part["name"],
+        arguments=arguments,
+        arguments_error=arguments_error,
+    )
+
+
+def _parse_tool_call_arguments(arguments: Any) -> tuple[dict[str, Any], str | None]:
+    """解析 tool call 的 arguments；畸形 JSON 降级为 ({}, 错误描述) 而不抛异常。
+
+    流式与非流式路径统一走这里，保证两条路径对畸形 arguments 的行为一致。
+    合法 JSON 但不是对象（如数组）同样标记为解析错误——静默降级为 {} 会让
+    模型拿不到自纠信号。
+    """
     if isinstance(arguments, dict):
-        return arguments
+        return arguments, None
     if isinstance(arguments, str):
         payload = arguments.strip()
         if not payload:
-            return {}
-        loaded = json.loads(payload)
+            return {}, None
+        try:
+            loaded = json.loads(payload)
+        except json.JSONDecodeError as error:
+            preview = payload[:200]
+            return {}, f"invalid JSON in tool call arguments: {error}; raw={preview!r}"
         if isinstance(loaded, dict):
-            return loaded
-    return {}
+            return loaded, None
+        preview = payload[:200]
+        return {}, (
+            "tool call arguments must be a JSON object, got "
+            f"{type(loaded).__name__}; raw={preview!r}"
+        )
+    return {}, None
 
 
 def _has_model_dump(value: object) -> TypeGuard[_HasModelDump]:

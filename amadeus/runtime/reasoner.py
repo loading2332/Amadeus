@@ -34,6 +34,10 @@ _UNLOCK_GUIDE_TEMPLATE = (
     "工具 '{name}' 当前未加载（schema 不可见）。请先调用 "
     "tool_search(query=\"select:{name}\") 加载，然后再调用该工具。"
 )
+_INVALID_ARGUMENTS_TEMPLATE = (
+    "工具 '{name}' 的 arguments 不是合法 JSON，本次调用未执行。"
+    "解析错误：{error}。请修正参数为合法 JSON 对象后重新调用。"
+)
 
 
 async def _check_cancelled(stream_sink: TurnStreamSink | None) -> None:
@@ -239,6 +243,65 @@ class Reasoner:
                     tool_call.name,
                     "started",
                 )
+                # ── 参数 JSON 解析失败：不执行工具，把错误作为 tool result
+                # 回传给模型自纠（provider 已把畸形 arguments 降级为 {} + 标记）──
+                if tool_call.arguments_error is not None:
+                    error_text = _INVALID_ARGUMENTS_TEMPLATE.format(
+                        name=tool_call.name,
+                        error=tool_call.arguments_error,
+                    )
+                    if session is not None:
+                        await self.event_bus.emit(
+                            ToolCallStarted(
+                                session=session,
+                                iteration=iterations,
+                                call_id=tool_call.id,
+                                tool_name=tool_call.name,
+                                arguments=tool_call.arguments,
+                            )
+                        )
+                    error_result = ToolResult(
+                        tool_name=tool_call.name,
+                        output=error_text,
+                        is_error=True,
+                        metadata={
+                            "arguments_parse_error": tool_call.arguments_error
+                        },
+                    )
+                    append_tool_result(
+                        loop_messages,
+                        tool_call_id=tool_call.id,
+                        result=error_result,
+                    )
+                    if session is not None:
+                        await self.event_bus.emit(
+                            ToolCallCompleted(
+                                session=session,
+                                iteration=iterations,
+                                call_id=tool_call.id,
+                                tool_name=tool_call.name,
+                                arguments=tool_call.arguments,
+                                final_arguments=tool_call.arguments,
+                                status="invalid_arguments",
+                                result_preview=error_text,
+                            )
+                        )
+                    current_step["calls"].append(
+                        {
+                            "call_id": tool_call.id,
+                            "name": tool_call.name,
+                            "arguments": tool_call.arguments,
+                            "status": "invalid_arguments",
+                            "result": error_text,
+                        }
+                    )
+                    await _publish_tool(
+                        stream_sink,
+                        activity_id,
+                        tool_call.name,
+                        "failed",
+                    )
+                    continue
                 # ── 按需解锁：未解锁工具走 preflight + 引导回填（TD4 / R3.8）──
                 # preflight 让 pre hook 链先看一眼（不调 invoker），给未来 loop guard
                 # 留插座位；未被 deny 则回填"请先 tool_search(select:...) 解锁"引导。
