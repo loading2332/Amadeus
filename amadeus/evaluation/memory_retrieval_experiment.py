@@ -54,6 +54,8 @@ class MemoryRetrievalExperimentProfile:
     name: str
     parameters: MemoryRetrievalParameters
     changed_fields: tuple[str, ...] = ()
+    hypothesis_enabled: bool = True
+    lexical_enabled: bool = True
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -61,6 +63,8 @@ class MemoryRetrievalExperimentProfile:
             "parameters": self.parameters.as_dict(),
             "fingerprint": self.parameters.fingerprint,
             "changed_fields": list(self.changed_fields),
+            "hypothesis_enabled": self.hypothesis_enabled,
+            "lexical_enabled": self.lexical_enabled,
         }
 
 
@@ -341,10 +345,18 @@ def _profile_from_record(record: Any) -> MemoryRetrievalExperimentProfile:
     fingerprint = record.get("fingerprint")
     if fingerprint != parsed_parameters.fingerprint:
         raise ValueError("profile shortlist fingerprint mismatch")
+    hypothesis_enabled = record.get("hypothesis_enabled", True)
+    lexical_enabled = record.get("lexical_enabled", True)
+    if not isinstance(hypothesis_enabled, bool) or not isinstance(
+        lexical_enabled, bool
+    ):
+        raise ValueError("profile shortlist lane flags must be booleans")
     return MemoryRetrievalExperimentProfile(
         name=name.strip(),
         parameters=parsed_parameters,
         changed_fields=tuple(changed_fields),
+        hypothesis_enabled=hypothesis_enabled,
+        lexical_enabled=lexical_enabled,
     )
 
 
@@ -510,6 +522,8 @@ async def _collect_memory_retrieval_judging_pool_async(
                     parameters=profile.parameters,
                     ranking_time=_aware_datetime(ranking_time, field="ranking_time"),
                     embedding_provider=embedding_provider,
+                    hypothesis_enabled=profile.hypothesis_enabled,
+                    lexical_enabled=profile.lexical_enabled,
                 )
                 known_keys = set(query.judgment_by_key)
                 for record in run.ranked_records:
@@ -635,6 +649,8 @@ async def _run_memory_retrieval_experiment_async(
                     parameters=profile.parameters,
                     ranking_time=normalized_ranking_time,
                     embedding_provider=embedding_provider,
+                    hypothesis_enabled=profile.hypothesis_enabled,
+                    lexical_enabled=profile.lexical_enabled,
                 )
                 observation = first.observation
                 stability: dict[str, Any] = {"checked": verify_determinism, "stable": True}
@@ -645,6 +661,8 @@ async def _run_memory_retrieval_experiment_async(
                         parameters=profile.parameters,
                         ranking_time=normalized_ranking_time,
                         embedding_provider=embedding_provider,
+                        hypothesis_enabled=profile.hypothesis_enabled,
+                        lexical_enabled=profile.lexical_enabled,
                     )
                     stability = _stability_record(first, second)
                     if not stability["stable"]:
@@ -943,6 +961,8 @@ async def _run_query(
     parameters: MemoryRetrievalParameters,
     ranking_time: datetime,
     embedding_provider: EmbeddingProvider,
+    hypothesis_enabled: bool = True,
+    lexical_enabled: bool = True,
 ) -> _QueryRun:
     snapshots: list[RetrievalCandidateSnapshot] = []
     retriever = MemoryRetriever(
@@ -952,6 +972,8 @@ async def _run_query(
         parameters=parameters,
         ranking_time=ranking_time,
         candidate_observer=snapshots.append,
+        hypothesis_retrieval_enabled=hypothesis_enabled,
+        lexical_retrieval_enabled=lexical_enabled,
     )
     memorizer = MemoryMemorizer(
         store=seeded.store,
