@@ -1,0 +1,1 @@
+{"variant": "A", "phase": "warmup", "sequence": 0, "request_id": "benchmark-a-warmup-0-94ab49641827", "started_at": "2026-07-24T07:23:46.774319+00:00", "total_latency_ms": 0, "prompt_cache_hit_tokens": null, "prompt_cache_miss_tokens": null, "completion_tokens": null, "estimated_cost_usd": null, "model": null, "error_code": "NotFoundError"}

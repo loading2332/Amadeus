@@ -102,7 +102,7 @@ def test_debug_entry_counts_characters_and_estimated_tokens(tmp_path):
     assert entry.empty_reason is None
 
 
-def test_retrieval_is_structurally_in_context_frame_not_system_prompt(tmp_path):
+def test_dynamic_memory_is_structurally_in_context_frame_not_system_prompt(tmp_path):
     self_path = tmp_path / "memory" / "SELF.md"
     self_path.parent.mkdir()
     self_path.write_text("stable identity boundary", encoding="utf-8")
@@ -112,16 +112,18 @@ def test_retrieval_is_structurally_in_context_frame_not_system_prompt(tmp_path):
     )
 
     system_prompt = result.system_prompt.prompt
-    assert system_prompt.index("## identity") < system_prompt.index("## self_model")
+    assert "## self_model" not in system_prompt
+    assert "stable identity boundary" not in system_prompt
+    assert "stable identity boundary" in result.context_frame.prompt
     assert "dynamic retrieved material" not in system_prompt
     assert "dynamic retrieved material" in result.context_frame.prompt
     assert [entry.label for entry in result.system_prompt.breakdown] == [
         "identity",
         "behavior_rules",
-        "self_model",
-        "long_term_memory",
     ]
     assert [entry.label for entry in result.context_frame.breakdown] == [
+        "self_model",
+        "long_term_memory",
         "recent_context",
         "retrieved_memory",
         "active_skills",
@@ -174,7 +176,7 @@ def test_message_envelope_rejects_system_messages_in_history():
         )
 
 
-def test_context_builder_default_blocks_include_self_model_in_system_prompt(tmp_path):
+def test_context_builder_default_blocks_route_self_model_to_context_frame(tmp_path):
     self_path = tmp_path / "memory" / "SELF.md"
     self_path.parent.mkdir()
     self_path.write_text("Amadeus stays grounded.", encoding="utf-8")
@@ -182,15 +184,12 @@ def test_context_builder_default_blocks_include_self_model_in_system_prompt(tmp_
     result = ContextBuilder().render(make_context(tmp_path))
 
     assert result.messages[0]["role"] == "system"
-    assert "## self_model\n\nAmadeus stays grounded." in result.messages[0][
-        "content"
-    ]
+    assert "Amadeus stays grounded." not in result.messages[0]["content"]
+    assert "## self_model\n\nAmadeus stays grounded." in result.context_frame.prompt
     assert result.messages[-1] == {"role": "user", "content": "hello"}
     assert [entry.label for entry in result.system_prompt.breakdown] == [
         "identity",
         "behavior_rules",
-        "self_model",
-        "long_term_memory",
     ]
 
 

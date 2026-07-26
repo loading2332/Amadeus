@@ -2,6 +2,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 CONTEXT_FRAME_SECTIONS = {
+    "self_model",
+    "long_term_memory",
     "recent_context",
     "retrieved_memory",
     "active_skills",

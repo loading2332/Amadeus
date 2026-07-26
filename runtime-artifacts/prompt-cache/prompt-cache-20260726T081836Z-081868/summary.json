@@ -1,0 +1,42 @@
+{
+  "run_id": "prompt-cache-20260726T081836Z-081868",
+  "model": "deepseek-v4-flash",
+  "scenario": "b0b1",
+  "budget_usd": 5.0,
+  "budget_truncated": false,
+  "stopped_on_provider_error": false,
+  "groups": {
+    "B0": {
+      "measurement_requests": 30,
+      "directly_observable_requests": 30,
+      "token_cache_read_ratio": 0.9367670859479258,
+      "request_hit_rate": 1.0,
+      "prompt_cache_hit_tokens": 131968,
+      "prompt_cache_miss_tokens": 8908,
+      "estimated_cost_usd": 0.002154230400000001,
+      "avg_input_cost_usd_per_observable_request": 5.388768000000001e-05,
+      "median_total_latency_ms": 2204.201999993529,
+      "p95_total_latency_ms": 3111.4858950255443
+    },
+    "B1": {
+      "measurement_requests": 30,
+      "directly_observable_requests": 30,
+      "token_cache_read_ratio": 0.936773735581189,
+      "request_hit_rate": 1.0,
+      "prompt_cache_hit_tokens": 131968,
+      "prompt_cache_miss_tokens": 8907,
+      "estimated_cost_usd": 0.002154090400000001,
+      "avg_input_cost_usd_per_observable_request": 5.388301333333334e-05,
+      "median_total_latency_ms": 2260.4082000325434,
+      "p95_total_latency_ms": 3206.8347649532375
+    }
+  },
+  "memory_churn_every": 5,
+  "b1_vs_b0": {
+    "token_cache_read_ratio_absolute_lift": 6.6496332632448585e-06,
+    "token_cache_read_ratio_relative_lift": 7.09849157062987e-06,
+    "b0_avg_input_cost_usd_per_request": 5.388768000000001e-05,
+    "b1_avg_input_cost_usd_per_request": 5.388301333333334e-05,
+    "avg_input_cost_reduction_ratio": 8.65998808386281e-05
+  }
+}

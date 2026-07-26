@@ -26,19 +26,16 @@ def test_prompt_assembler_routes_sections_by_name():
         ]
     )
 
-    assert result.system_prompt == (
-        "## identity\n\nidentity content\n\n---\n\n## long_term_memory\n\nmemory content"
-    )
-    assert [item.label for item in result.system_sections] == [
-        "identity",
-        "long_term_memory",
-    ]
+    assert result.system_prompt == "## identity\n\nidentity content"
+    assert [item.label for item in result.system_sections] == ["identity"]
     assert [item.label for item in result.frame_sections] == [
+        "long_term_memory",
         "recent_context",
         "retrieved_memory",
         "runtime_metadata",
     ]
     assert "recent content" in result.context_frame
+    assert "memory content" in result.context_frame
     assert "retrieved content" in result.context_frame
     assert "metadata content" in result.context_frame
 

@@ -1,0 +1,35 @@
+{
+  "run_id": "prompt-cache-20260724T074654Z-37e5b5",
+  "model": "deepseek-v4-flash",
+  "budget_usd": 5.0,
+  "budget_truncated": false,
+  "stopped_on_provider_error": false,
+  "groups": {
+    "A": {
+      "measurement_requests": 30,
+      "directly_observable_requests": 30,
+      "token_cache_read_ratio": 0.0,
+      "request_hit_rate": 0.0,
+      "prompt_cache_hit_tokens": 0,
+      "prompt_cache_miss_tokens": 93024,
+      "estimated_cost_usd": 0.013561520000000002,
+      "median_total_latency_ms": 1646.0847500129603,
+      "p95_total_latency_ms": 1965.5593249830417
+    },
+    "B": {
+      "measurement_requests": 30,
+      "directly_observable_requests": 30,
+      "token_cache_read_ratio": 0.9494324045407637,
+      "request_hit_rate": 1.0,
+      "prompt_cache_hit_tokens": 88320,
+      "prompt_cache_miss_tokens": 4704,
+      "estimated_cost_usd": 0.0014431759999999998,
+      "median_total_latency_ms": 1682.263900001999,
+      "p95_total_latency_ms": 2072.0276799809653
+    }
+  },
+  "ab": {
+    "token_cache_read_ratio_absolute_lift": 0.9494324045407637,
+    "token_cache_read_ratio_relative_lift": null
+  }
+}
