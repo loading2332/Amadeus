@@ -242,6 +242,8 @@ def test_approved_v1_is_formal_and_content_hash_is_frozen() -> None:
         Path(__file__).parents[2]
         / ".trellis"
         / "tasks"
+        / "archive"
+        / "2026-07"
         / "07-11-memory-retrieval-parameter-evaluation"
         / "review"
         / "dataset-freeze.md"
