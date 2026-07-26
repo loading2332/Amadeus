@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "delete_session SQL 与级联删除需遵循的数据库约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "404/OwnerResourceNotFound 错误映射约定"}
+{"file": ".trellis/spec/backend/async-boundaries.md", "reason": "路由内同步 store 调用必须经 asyncio.to_thread 的契约"}
+{"file": ".trellis/spec/frontend/react-chat-client.md", "reason": "前端 HTTP 状态边界、mutation 缓存与错误提示约定"}
