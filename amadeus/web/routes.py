@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Response
 from fastapi.responses import StreamingResponse
 
 from amadeus.web.dependencies import get_owner_scope
-from amadeus.web.owner import OwnerScope, web_turn_metadata
+from amadeus.web.owner import OwnerResourceNotFound, OwnerScope, web_turn_metadata
 from amadeus.web.schemas import (
     BootstrapResponse,
     HealthResponse,
@@ -62,6 +62,23 @@ async def list_sessions(
         user_id=scope.user_id,
     )
     return [SessionResponse(**row) for row in rows]
+
+
+@api_router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(
+    session_id: int,
+    scope: Annotated[OwnerScope, Depends(get_owner_scope)],
+) -> Response:
+    # 直接按 (id, user_id) 条件删除，rowcount=0 即 404，避免两次往返与 TOCTOU；
+    # 关联 messages / turns 由 DB 外键 ON DELETE CASCADE 清理。
+    deleted = await asyncio.to_thread(
+        scope.session_store.delete_session,
+        user_id=scope.user_id,
+        session_id=session_id,
+    )
+    if not deleted:
+        raise OwnerResourceNotFound()
+    return Response(status_code=204)
 
 
 @api_router.get(

@@ -100,6 +100,16 @@ arguments, error = _parse_tool_call_arguments(payload)
 # error 非 None 时由 Reasoner 转为 is_error ToolResult 回传模型自纠
 ```
 
+## 场景：Web owner 资源的删除接口
+
+> 来源：07-26-session-delete（`DELETE /sessions/{id}`）。
+
+- 删除按 `(id, user_id)` 条件一次完成，`rowcount == 0` 即 `OwnerResourceNotFound` → 404；不要先 `require_session` 再删（两次往返 + TOCTOU）。
+- 「不存在」与「非本 owner」必须返回同一个 404 响应体，不泄露资源存在性。
+- 关联数据清理依赖 DB `ON DELETE CASCADE` 外键（messages / turns / memory_markdown_state），store 层禁止手动逐表删除；新表引用 `conversation_sessions.id` 时必须带级联。
+- 产品面（Web）专属的 store 方法（如 `delete_session`）只加在 `PostgresSessionStore` / `InMemorySessionStore` 双实现上，**不进** `SessionStoreProtocol`——该 Protocol 是 Reasoner/tools 消费的最小契约。
+- 测试须断言：204 后列表消失、级联行确实不存在（直查 store 返回 None）、missing 与 foreign 两种 404 一致。
+
 ## 场景：模型可见的本地子进程工具
 
 ### 1. 范围 / 触发

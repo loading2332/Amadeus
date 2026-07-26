@@ -10,6 +10,13 @@ describe("API client", () => {
     expect(get).toHaveBeenCalledWith("/bootstrap", { signal: undefined });
   });
 
+  it("deletes a session through the injected Axios boundary without decoding a body", async () => {
+    const del = vi.fn().mockResolvedValue({ data: "" });
+    const instance = { delete: del } as never;
+    await expect(createApi(instance).deleteSession(7)).resolves.toBeUndefined();
+    expect(del).toHaveBeenCalledWith("/sessions/7", { signal: undefined });
+  });
+
   it("converts a safe non-2xx payload without exposing unknown fields", () => {
     const error = new AxiosError("raw secret", "ERR_BAD_RESPONSE", undefined, undefined, {
       data: { code: "active_turn_exists", detail: "该会话已有正在处理的请求", debug: "secret" },

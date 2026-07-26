@@ -200,6 +200,13 @@ class InMemorySessionStore:
             }
             self._messages.setdefault(identity, [])
 
+    def delete_session(self, *, user_id: int, session_id: int) -> bool:
+        identity = (int(user_id), int(session_id))
+        with self._lock:
+            existed = self._sessions.pop(identity, None) is not None
+            had_messages = self._messages.pop(identity, None) is not None
+            return existed or had_messages
+
     def next_seq(self, session: SessionRef) -> int:
         with self._lock:
             messages = self._messages.get(session.identity, [])

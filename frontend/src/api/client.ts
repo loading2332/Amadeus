@@ -51,6 +51,9 @@ export function createApi(instance: AxiosInstance = http) {
       const response = await instance.post<unknown>("/sessions", {}, { signal });
       return decodeSession(response.data);
     },
+    async deleteSession(sessionId: number, signal?: AbortSignal): Promise<void> {
+      await instance.delete(`/sessions/${encodeURIComponent(sessionId)}`, { signal });
+    },
     async listMessages(sessionId: number, signal?: AbortSignal): Promise<Message[]> {
       const response = await instance.get<unknown>(
         `/sessions/${encodeURIComponent(sessionId)}/messages`,

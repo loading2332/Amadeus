@@ -154,6 +154,52 @@ def test_postgres_web_hides_missing_and_non_owner_resources_with_same_404() -> N
         db.close()
 
 
+def test_postgres_web_delete_session_returns_204_and_cascades() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = _client(session_store, turn_store)
+        session = client.post("/api/sessions", json={"title": "doomed"}).json()
+        session_id = session["session_id"]
+        turn_id = client.post(
+            "/api/messages",
+            json={"session_id": session_id, "message": "hello"},
+        ).json()["turn_id"]
+
+        deleted = client.delete(f"/api/sessions/{session_id}")
+
+        assert deleted.status_code == 204
+        assert client.get("/api/sessions").json() == []
+        assert client.get(f"/api/sessions/{session_id}/messages").status_code == 404
+        assert client.get(f"/api/sessions/{session_id}/turns").status_code == 404
+        assert turn_store.get_turn(turn_id) is None
+    finally:
+        db.close()
+
+
+def test_postgres_web_delete_hides_missing_and_non_owner_sessions_with_same_404() -> None:
+    db = clean_postgres()
+    try:
+        session_store = PostgresSessionStore(db=db)
+        turn_store = PostgresTurnStore(db=db)
+        client = _client(session_store, turn_store)
+        other_session = session_store.create_session(user_id=2, title="private")
+        other_session_id = int(other_session["session_id"])
+
+        missing = client.delete("/api/sessions/999999")
+        foreign = client.delete(f"/api/sessions/{other_session_id}")
+
+        for response in (missing, foreign):
+            assert response.status_code == 404
+            assert response.json() == {"detail": "Resource not found"}
+        assert [
+            row["session_id"] for row in session_store.list_sessions(user_id=2)
+        ] == [other_session_id]
+    finally:
+        db.close()
+
+
 def test_postgres_web_sse_endpoint_emits_terminal_owner_turn_and_closes() -> None:
     db = clean_postgres()
     try:

@@ -6,7 +6,12 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Drawer from "@mui/material/Drawer";
 import Typography from "@mui/material/Typography";
 
-import { useBootstrapQuery, useCreateSessionMutation, useSessionsQuery } from "../api/queries";
+import {
+  useBootstrapQuery,
+  useCreateSessionMutation,
+  useDeleteSessionMutation,
+  useSessionsQuery,
+} from "../api/queries";
 import { ChatView } from "../chat/ChatView";
 import { SessionSidebar } from "../sessions/SessionSidebar";
 import { syncOwnerIdentity } from "./ownerIdentity";
@@ -17,10 +22,14 @@ const SIDEBAR_WIDTH = 280;
 export function App() {
   const bootstrap = useBootstrapQuery();
   const sessions = useSessionsQuery();
-  const createSession = useCreateSessionMutation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(readSidebarCollapsed);
   const [selectedId, setSelectedId] = useState<number | null>(() => sessionFromUrl());
+  const createSession = useCreateSessionMutation((session) => {
+    setSelectedId(session.sessionId);
+    setMobileOpen(false);
+  });
+  const deleteSession = useDeleteSessionMutation();
   const sessionRows = useMemo(() => sessions.data ?? [], [sessions.data]);
   const effectiveSelectedId = sessionRows.some((session) => session.sessionId === selectedId)
     ? selectedId
@@ -69,12 +78,7 @@ export function App() {
     setMobileOpen(false);
   };
   const createNewSession = () => {
-    createSession.mutate(undefined, {
-      onSuccess: (session) => {
-        setSelectedId(session.sessionId);
-        setMobileOpen(false);
-      },
-    });
+    createSession.mutate(undefined);
   };
   const toggleDesktopSidebar = () => {
     setDesktopCollapsed((collapsed) => {
@@ -83,6 +87,8 @@ export function App() {
       return next;
     });
   };
+  // 删除后的选中态回落由 effectiveSelectedId 的"选中 id 不在列表则取第一个"兜底。
+  const deleteSessionById = (sessionId: number) => deleteSession.mutateAsync(sessionId);
 
   return (
     <Box sx={{ display: "flex", height: "100dvh", overflow: "hidden", bgcolor: "background.default" }}>
@@ -112,6 +118,7 @@ export function App() {
           createFailed={createSession.isError}
           onSelect={selectSession}
           onCreate={createNewSession}
+          onDelete={deleteSessionById}
           onToggleCollapse={toggleDesktopSidebar}
         />
       </Box>
@@ -121,7 +128,7 @@ export function App() {
         ModalProps={{ keepMounted: true }}
         sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": { width: SIDEBAR_WIDTH } }}
       >
-        <SessionSidebar sessions={sessionRows} selectedId={effectiveSelectedId} creating={createSession.isPending} createFailed={createSession.isError} onSelect={selectSession} onCreate={createNewSession} onClose={() => setMobileOpen(false)} />
+        <SessionSidebar sessions={sessionRows} selectedId={effectiveSelectedId} creating={createSession.isPending} createFailed={createSession.isError} onSelect={selectSession} onCreate={createNewSession} onDelete={deleteSessionById} onClose={() => setMobileOpen(false)} />
       </Drawer>
       <Box component="main" sx={{ minWidth: 0, minHeight: 0, height: "100%", flex: 1, overflow: "hidden" }}>
         <ChatView

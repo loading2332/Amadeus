@@ -87,6 +87,21 @@ class PostgresSessionStore:
                 rows = cursor.fetchall()
         return [_session_row(row) for row in rows]
 
+    def delete_session(self, *, user_id: int, session_id: int) -> bool:
+        # messages / turns / markdown state 由 DB 外键 ON DELETE CASCADE 清理。
+        with self.db.connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM conversation_sessions
+                    WHERE id = %s AND user_id = %s
+                    """,
+                    (int(session_id), int(user_id)),
+                )
+                deleted = bool(cursor.rowcount > 0)
+            conn.commit()
+        return deleted
+
     def get_session_meta(self, session: SessionRef) -> dict[str, Any] | None:
         user_id, session_id = session.identity
         with self.db.connection() as conn:

@@ -39,15 +39,34 @@ export function useSessionTurnsQuery(sessionId: number | null) {
   });
 }
 
-export function useCreateSessionMutation(): UseMutationResult<SessionSummary, Error, void> {
+export function useCreateSessionMutation(
+  onCreated?: (session: SessionSummary) => void,
+): UseMutationResult<SessionSummary, Error, void> {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => api.createSession(),
     onSuccess: (session) => {
+      // 选中态必须先于列表缓存更新，两者才会合并进同一次渲染；
+      // 反过来会先渲染"新会话插入但选中还在旧行"的中间帧，高亮闪跳。
+      onCreated?.(session);
       client.setQueryData<SessionSummary[]>(queryKeys.sessions, (current = []) => [
         session,
         ...current.filter((item) => item.sessionId !== session.sessionId),
       ]);
+    },
+  });
+}
+
+export function useDeleteSessionMutation(): UseMutationResult<void, Error, number> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId) => api.deleteSession(sessionId),
+    onSuccess: (_data, sessionId) => {
+      client.setQueryData<SessionSummary[]>(queryKeys.sessions, (current = []) =>
+        current.filter((item) => item.sessionId !== sessionId),
+      );
+      client.removeQueries({ queryKey: queryKeys.messages(sessionId) });
+      client.removeQueries({ queryKey: queryKeys.turns(sessionId) });
     },
   });
 }
