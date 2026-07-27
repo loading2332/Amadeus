@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/react-chat-client.md", "reason": "检查改动是否守住 HTTP/SSE 状态边界、终态交接与浏览器验证要求"}
+{"file": ".trellis/tasks/07-27-reply-experience/research/current-reply-pipeline.md", "reason": "核对'已有的优点'清单未被破坏(contentVisibility/memo/幂等/URL 白名单/滚动阈值)"}

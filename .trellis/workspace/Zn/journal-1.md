@@ -577,3 +577,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 完成记忆检索 abstention 置信度门
+
+**Date**: 2026-07-27
+**Task**: 完成记忆检索 abstention 置信度门
+**Branch**: `main`
+
+### Summary
+
+在最终 recall records 上实现三段式 abstention 置信度门、灰区不确定标注与完整 trace；用冻结 development cache 复现 floor=0.50/confident=0.70 的 37→22（-41%）误注入减量和 Recall@8 不回归。memory/evaluation 225 项、Ruff、Mypy 通过；全量 pytest 仅跨进程 SSE streaming integration 失败，未在本任务扩修。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ef6d5f7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

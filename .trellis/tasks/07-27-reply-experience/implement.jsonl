@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/react-chat-client.md", "reason": "前端 HTTP/SSE 状态边界与终态交接规范,吐字 hook 与滚动改动必须遵守"}
+{"file": ".trellis/tasks/07-27-reply-experience/research/current-reply-pipeline.md", "reason": "现状数据流 file:line 与 12 条短板,实现的事实基础"}
+{"file": ".trellis/tasks/07-27-reply-experience/research/streaming-render-options.md", "reason": "选型依据:rehype-highlight/remend/marked 版本、集成要点与风险"}
+{"file": ".trellis/tasks/07-27-reply-experience/research/improvement-candidates.md", "reason": "范围与顺序:本任务只做 #1-#7,注意 #2/#3 必须整体设计"}
