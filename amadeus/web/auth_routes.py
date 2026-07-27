@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import cast
 
 from authlib.integrations.starlette_client import OAuth  # type: ignore[import-untyped]
@@ -12,6 +13,7 @@ from amadeus.auth.service import AuthenticationError, LoginTokens
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 ACCESS_COOKIE = "amadeus_access"
 REFRESH_COOKIE = "amadeus_refresh"
+logger = logging.getLogger(__name__)
 
 
 def configure_oauth(request: Request) -> OAuth:
@@ -50,6 +52,10 @@ async def github_callback(request: Request) -> Response:
             raise AuthenticationError("Invalid GitHub identity")
         tokens = _auth_service(request).login_github_user(subject)
     except Exception as error:
+        logger.warning(
+            "GitHub OAuth callback failed: error_type=%s",
+            type(error).__name__,
+        )
         if isinstance(error, AuthenticationError):
             raise HTTPException(status_code=401, detail="GitHub 登录失败") from error
         raise HTTPException(status_code=401, detail="GitHub 登录失败") from error
