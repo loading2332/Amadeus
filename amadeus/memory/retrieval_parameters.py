@@ -9,7 +9,15 @@ from typing import Any
 
 @dataclass(frozen=True)
 class MemoryRetrievalParameters:
-    """Immutable parameters that control candidate retrieval and ranking."""
+    """Immutable parameters that control candidate retrieval and ranking.
+
+    Abstention gate (``abstention_semantic_floor`` /
+    ``abstention_confident_semantic``): per-record confidence bands applied
+    to the final ranked records of answer-intent recalls. The semantic score
+    distribution these thresholds are calibrated against depends on the
+    embedding model (DashScope text-embedding-v4 / 1024 dims); switching the
+    embedding model requires recalibrating both thresholds.
+    """
 
     vector_candidate_floor: int = 32
     vector_candidate_multiplier: int = 4
@@ -22,6 +30,15 @@ class MemoryRetrievalParameters:
     hotness_half_life_days: float = 14.0
     reinforcement_strength: float = 1.0
     emotional_half_life_scale: float = 0.5
+    # Calibrated 2026-07-27 on the frozen development split (see
+    # runtime-artifacts/evaluation/abstention-gate/calibration-decision-20260727.md):
+    # floor=0.50 cuts no-answer injections 37->22 (-41%) with zero loss of
+    # relevance>=2 records. 0.0 disables the gate entirely (rollback switch).
+    abstention_semantic_floor: float = 0.50
+    # Lower bound of the high-confidence band; must be >= the floor.
+    # Records with floor <= vector_score < confident are kept but marked
+    # uncertain. Equal to the floor means no uncertainty band.
+    abstention_confident_semantic: float = 0.70
 
     def __post_init__(self) -> None:
         _require_positive_int(
@@ -62,6 +79,20 @@ class MemoryRetrievalParameters:
             self.emotional_half_life_scale,
             name="emotional_half_life_scale",
         )
+        _require_unit_interval(
+            self.abstention_semantic_floor,
+            name="abstention_semantic_floor",
+        )
+        _require_unit_interval(
+            self.abstention_confident_semantic,
+            name="abstention_confident_semantic",
+        )
+        if float(self.abstention_confident_semantic) < float(
+            self.abstention_semantic_floor
+        ):
+            raise ValueError(
+                "abstention_confident_semantic must be >= abstention_semantic_floor"
+            )
 
     def vector_candidate_limit(self, request_limit: int) -> int:
         return max(
@@ -90,6 +121,8 @@ class MemoryRetrievalParameters:
             "hotness_half_life_days": float(self.hotness_half_life_days),
             "reinforcement_strength": float(self.reinforcement_strength),
             "emotional_half_life_scale": float(self.emotional_half_life_scale),
+            "abstention_semantic_floor": float(self.abstention_semantic_floor),
+            "abstention_confident_semantic": float(self.abstention_confident_semantic),
         }
 
     @property

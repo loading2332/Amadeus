@@ -76,7 +76,14 @@ SUMMARY_METRICS = (
 
 
 def build_ablation_profiles() -> tuple[MemoryRetrievalExperimentProfile, ...]:
-    baseline = MemoryRetrievalParameters()
+    # 本消融测量的是检索通道（假设/词法/热度）的贡献，评测口径冻结于
+    # abstention 门发布之前；显式关门以保证与已发布 artifact 可复现对照。
+    # 门本身的对照见 scripts/run_abstention_calibration.py。
+    baseline = replace(
+        MemoryRetrievalParameters(),
+        abstention_semantic_floor=0.0,
+        abstention_confident_semantic=1.0,
+    )
     hotness_off = replace(baseline, hotness_alpha=0.0)
     return (
         MemoryRetrievalExperimentProfile(

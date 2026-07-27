@@ -23,6 +23,8 @@ def test_default_retrieval_parameters_reproduce_amadeus_baseline() -> None:
         "hotness_half_life_days": 14.0,
         "reinforcement_strength": 1.0,
         "emotional_half_life_scale": 0.5,
+        "abstention_semantic_floor": 0.5,
+        "abstention_confident_semantic": 0.7,
     }
     assert len(parameters.fingerprint) == 16
 
@@ -61,6 +63,10 @@ def test_parameter_fingerprint_is_stable_and_changes_with_profile() -> None:
         ("hotness_half_life_days", 0.0),
         ("reinforcement_strength", -1.0),
         ("emotional_half_life_scale", float("nan")),
+        ("abstention_semantic_floor", -0.1),
+        ("abstention_semantic_floor", 1.1),
+        ("abstention_confident_semantic", -0.1),
+        ("abstention_confident_semantic", 1.1),
     ],
 )
 def test_retrieval_parameters_reject_invalid_values(

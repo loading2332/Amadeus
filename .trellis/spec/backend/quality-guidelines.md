@@ -652,3 +652,67 @@ while True:
     await asyncio.sleep(loop.seconds_until_next_tick())
     await optimizer.optimize()  # 唯一拥有 PENDING snapshot/rollback 事务的边界
 ```
+
+## 场景：检索 abstention 置信度门
+
+### 1. 范围 / 触发
+
+- 触发：修改 `MemoryRetriever.recall()` 的最终 records、`MemoryRetrievalParameters`、context 注入文本或检索实验 profile。
+- 该能力跨越公开 recall trace、context 注入和开发集评测；必须在最终排序后、返回 `MemoryQueryResult` 前执行，不能由调用方各自过滤。
+
+### 2. 签名
+
+- `MemoryRetrievalParameters(abstention_semantic_floor: float = 0.50, abstention_confident_semantic: float = 0.70)`
+- `MemoryRetriever.recall(request: MemoryRecallRequest) -> MemoryQueryResult`
+- `result.trace["abstention"] -> {enabled, outcome, reason, top_semantic, dropped_count, uncertain_count, lexical_anchor_count, semantic_floor, confident_semantic}`
+- `python scripts/run_abstention_calibration.py --cache <frozen-cache>`
+
+### 3. 契约
+
+- 仅 `intent == "answer"` 且 `floor > 0` 启用；`floor = 0.0` 是逐字节兼容的回滚开关，不能添加 uncertain 标记或删除 records。
+- 每条最终 record 使用 raw `signals["vector_score"]` 分带：lexical lane 是高置信旁路；`score >= confident` 正常返回；`floor <= score < confident` 返回但 `signals["uncertain"] = True`；低于 floor 或缺失/非有限 score 的非 lexical record 丢弃。
+- context 渲染必须为 uncertain record 追加 `（可能相关，不确定）`，使模型和 trace 看到同一事实。
+- 两个阈值均在 `[0, 1]`，且 `confident >= floor`，必须进入 `as_dict()` 和 fingerprint。它们耦合 DashScope `text-embedding-v4 / 1024` 的分数分布；换 embedding 模型必须重新校准。
+- 默认值由冻结 development split 选择：误注入条数 37→22（-41%）、强相关 Recall@8 维持 0.9722；`no_answer_false_positive` 的 any-hit 口径仍为 1.0，HyDE 实体陷阱属于 verifier/生成层边界，不能宣传为误注入率下降。
+
+### 4. 验证与错误矩阵
+
+- `floor <= 0` -> gate disabled，保留原 records，reason=`disabled`。
+- 非 answer intent -> 不删记录、不打 uncertain，outcome/reason=`intent_exempt`。
+- 所有非 lexical records 低于 floor -> 空 records，outcome=`all_dropped`，reason=`below_floor`。
+- 一部分丢弃 -> outcome=`partial`；无丢弃 -> `pass`。每种情况都保留完整 abstention trace。
+- 参数非有限、超出单位区间，或 `confident < floor` -> `ValueError`。
+
+### 5. Good / Base / Bad Cases
+
+- Good：0.60 的 vector-only record 在 0.50/0.70 下保留并带 uncertain 标签；0.40 record 被丢弃；lexical-only 精确标识符即使没有 vector score 也保留。
+- Base：maintenance/context intent 不受门影响；ablation runner 显式设 `floor=0.0`，保持历史通道实验可复现。
+- Bad：在 prompt 层静默删记录；使用 RRF 分数做跨查询绝对阈值；把 lexical 命中当作返回必要条件；把 any-hit FP 不变的结果描述成“误注入率下降”。
+
+### 6. 必需测试
+
+- 单测：关闭兼容、三段边界、lexical 旁路、非 answer 豁免、all-dropped trace、参数校验、uncertain context 标签。
+- 回归：`pytest tests/memory tests/evaluation -q`，Ruff 与 Mypy。
+- 评测：使用冻结 cache 的校准脚本，断言默认 profile 无答案误注入至少下降 40%、强相关 Recall@8 不下降、dangerous/determinism 硬门通过。
+
+### 7. 错误与正确示例
+
+#### 错误
+
+```python
+# 每个调用方自行决定要不要注入，trace 与 prompt 会分裂。
+if record.signals["vector_score"] < 0.50:
+    continue
+```
+
+#### 正确
+
+```python
+ranked, lane_trace = rank_candidate_lanes(...)
+ranked, abstention_trace = _apply_abstention_gate(
+    ranked,
+    intent=request.intent,
+    parameters=parameters,
+)
+return MemoryQueryResult(records=ranked, trace={"abstention": abstention_trace})
+```

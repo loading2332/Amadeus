@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -139,6 +140,11 @@ class MemoryRetriever:
         )
         fallbacks.extend(retrieval_fallbacks)
         errors.extend(retrieval_errors)
+        ranked, abstention_trace = _apply_abstention_gate(
+            ranked,
+            intent=request.intent,
+            parameters=parameters,
+        )
         trace: dict[str, Any] = {
             "intent": request.intent,
             "queries": queries,
@@ -187,6 +193,7 @@ class MemoryRetriever:
             "hypothesis_retrieval": hypothesis_trace,
             "retrieval_parameters": parameters.as_dict(),
             "retrieval_parameter_fingerprint": parameters.fingerprint,
+            "abstention": abstention_trace,
             "ranking_time": (
                 normalize_datetime(self.ranking_time) if self.ranking_time else None
             ),
@@ -534,6 +541,90 @@ class MemoryRetriever:
         )
 
 
+def _apply_abstention_gate(
+    records: list[MemoryRecord],
+    *,
+    intent: str,
+    parameters: MemoryRetrievalParameters,
+) -> tuple[list[MemoryRecord], dict[str, Any]]:
+    """Apply per-record confidence bands to the final ranked records.
+
+    Thresholds are calibrated against the semantic score distribution of the
+    embedding model (DashScope text-embedding-v4 / 1024 dims); switching the
+    embedding model requires recalibration.
+    """
+
+    floor = float(parameters.abstention_semantic_floor)
+    confident = float(parameters.abstention_confident_semantic)
+    semantic_scores = [
+        score
+        for record in records
+        if (score := _finite_signal_float(record.signals.get("vector_score")))
+        is not None
+    ]
+    lexical_anchor_count = sum(
+        "lexical" in (record.signals.get("lanes") or []) for record in records
+    )
+    gate_trace: dict[str, Any] = {
+        "enabled": False,
+        "outcome": "disabled",
+        "reason": "disabled",
+        "top_semantic": max(semantic_scores, default=None),
+        "dropped_count": 0,
+        "uncertain_count": 0,
+        "lexical_anchor_count": lexical_anchor_count,
+        "semantic_floor": floor,
+        "confident_semantic": confident,
+    }
+    if floor <= 0.0:
+        return records, gate_trace
+    gate_trace["enabled"] = True
+    if intent != "answer":
+        gate_trace["outcome"] = "intent_exempt"
+        gate_trace["reason"] = "intent_exempt"
+        return records, gate_trace
+
+    kept: list[MemoryRecord] = []
+    dropped_count = 0
+    uncertain_count = 0
+    for record in records:
+        lanes = record.signals.get("lanes") or []
+        if "lexical" in lanes:
+            kept.append(record)
+            continue
+        vector_score = _finite_signal_float(record.signals.get("vector_score"))
+        if vector_score is None or vector_score < floor:
+            dropped_count += 1
+            continue
+        if vector_score >= confident:
+            kept.append(record)
+            continue
+        uncertain_count += 1
+        kept.append(replace(record, signals={**record.signals, "uncertain": True}))
+
+    if dropped_count == 0:
+        outcome = "pass"
+    elif kept:
+        outcome = "partial"
+    else:
+        outcome = "all_dropped"
+    gate_trace["outcome"] = outcome
+    gate_trace["reason"] = "below_floor" if dropped_count else "pass"
+    gate_trace["dropped_count"] = dropped_count
+    gate_trace["uncertain_count"] = uncertain_count
+    return kept, gate_trace
+
+
+def _finite_signal_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def _render_priority_sections(
     records: list[Any],
     char_budget: int,
@@ -561,6 +652,8 @@ def _render_priority_sections(
     for record in records:
         title = title_by_kind.get(record.kind, "Relevant Memory")
         entry = format_context_record(record)
+        if record.signals.get("uncertain") is True:
+            entry = f"{entry}（可能相关，不确定）"
         if selected_sections and selected_sections[-1][0] == title:
             candidate_sections = [
                 *selected_sections[:-1],
