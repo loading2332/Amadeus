@@ -212,6 +212,9 @@ test("renders the composer as a floating rounded box without a full-width bar", 
 });
 
 test("collapses the desktop sidebar and restores the preference", async ({ page }) => {
+  // 该用例需要采样普通动效的中间帧；不能继承运行机的无障碍偏好，
+  // 否则产品正确地关闭动画时，80ms 宽度采样会直接得到 0。
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const sidebar = page.getByTestId("desktop-sidebar-shell");
   await expect(sidebar).toHaveCSS("width", "280px");
   await visibleButton(page, "新对话").click();

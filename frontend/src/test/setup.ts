@@ -4,6 +4,15 @@ if (HTMLElement.prototype.scrollTo === undefined) {
   HTMLElement.prototype.scrollTo = vi.fn();
 }
 
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  globalThis.ResizeObserver = ResizeObserverStub;
+}
+
 Object.defineProperty(window, "matchMedia", {
   configurable: true,
   writable: true,

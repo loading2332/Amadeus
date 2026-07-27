@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import ArrowDownwardRounded from "@mui/icons-material/ArrowDownwardRounded";
 import RefreshRounded from "@mui/icons-material/RefreshRounded";
 import Box from "@mui/material/Box";
@@ -9,7 +9,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 import type { Turn } from "../api/contracts";
-import { useLiveTurnStore } from "../streaming/store";
+import { fadeUpProps, motion } from "../ui/motion";
 import { TurnItem } from "./TurnItem";
 
 const BOTTOM_THRESHOLD = 96;
@@ -39,11 +39,22 @@ export function TurnTimeline({
   const viewport = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const returningToBottomRef = useRef(false);
+  const contentObserverRef = useRef<ResizeObserver | null>(null);
   const [following, setFollowing] = useState(true);
   const showWelcome = rows.length === 0 && !submittingFirstTurn;
-  const streamSignal = useLiveTurnStore((state) =>
-    rows.map((turn) => state.turns[turn.turnId]?.lastSeq ?? 0).join(":"),
-  );
+
+  // 流式吐字期间内容高度逐帧变化:观察内容容器尺寸,跟随时每次变化滚到底。
+  // ResizeObserver 回调按帧聚合,与 rAF 吐字天然同步。
+  const observeContent = useCallback((node: HTMLDivElement | null) => {
+    contentObserverRef.current?.disconnect();
+    contentObserverRef.current = null;
+    if (node === null) return;
+    const observer = new ResizeObserver(() => {
+      if (followingRef.current) scrollToBottom(viewport.current, "auto");
+    });
+    observer.observe(node);
+    contentObserverRef.current = observer;
+  }, []);
 
   useLayoutEffect(() => {
     scrollToBottom(viewport.current, "auto");
@@ -51,7 +62,7 @@ export function TurnTimeline({
 
   useLayoutEffect(() => {
     if (followingRef.current) scrollToBottom(viewport.current, "auto");
-  }, [rows.length, streamSignal]);
+  }, [rows.length]);
 
   const updateFollowing = (next: boolean) => {
     followingRef.current = next;
@@ -113,6 +124,7 @@ export function TurnTimeline({
               />
             ) : (
               <EmptyState
+                hero
                 title="有什么想一起完成的？"
                 detail="输入消息后，Amadeus 会在这里实时回答。"
               />
@@ -120,6 +132,7 @@ export function TurnTimeline({
           </Box>
         ) : (
           <Box
+            ref={observeContent}
             sx={{
               width: "100%",
               maxWidth: 900,
@@ -155,6 +168,13 @@ export function TurnTimeline({
             bgcolor: "primary.main",
             color: "primary.contrastText",
             boxShadow: 2,
+            animation: "amadeus-rise 200ms ease-out",
+            "@keyframes amadeus-rise": {
+              from: { opacity: 0, transform: "translateX(-50%) translateY(10px)" },
+              to: { opacity: 1, transform: "translateX(-50%)" },
+            },
+            "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+            transition: "opacity 120ms ease",
             "&:hover": { bgcolor: "primary.main", opacity: 0.9 },
           }}
         >
@@ -170,11 +190,13 @@ function EmptyState({
   detail,
   children,
   action,
+  hero = false,
 }: {
   title: string;
   detail: string;
   children?: React.ReactNode;
   action?: React.ReactNode;
+  hero?: boolean;
 }) {
   return (
     <Stack
@@ -183,8 +205,23 @@ function EmptyState({
       spacing={1}
     >
       {children}
-      <Typography variant="h6">{title}</Typography>
-      {detail ? <Typography color="text.secondary">{detail}</Typography> : null}
+      {hero ? (
+        <>
+          <motion.div {...fadeUpProps()}>
+            <Typography variant="h5">{title}</Typography>
+          </motion.div>
+          {detail ? (
+            <motion.div {...fadeUpProps(0.1)}>
+              <Typography color="text.secondary">{detail}</Typography>
+            </motion.div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <Typography variant="h6">{title}</Typography>
+          {detail ? <Typography color="text.secondary">{detail}</Typography> : null}
+        </>
+      )}
       {action}
     </Stack>
   );
