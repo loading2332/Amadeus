@@ -9,7 +9,7 @@ import asyncio
 import math
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
@@ -426,8 +426,23 @@ def build_passive_app(
     workspace_root: str | Path | None = None,
     env_path: str | Path = ".env",
     client: ChatClient | None = None,
+    user_id: int | None = None,
 ) -> PassiveApp:
     config = load_runtime_config(env_path=env_path, workspace_root=workspace_root)
+    if user_id is not None:
+        if int(user_id) <= 0:
+            raise ValueError("user_id must be a positive integer")
+        scoped_root = (config.workspace_root / "users" / str(int(user_id))).resolve()
+        base_root = config.workspace_root.resolve()
+        if base_root not in scoped_root.parents:
+            raise ValueError("user workspace must remain below workspace root")
+        # Web turns never inherit local_trusted MCP: it can spawn host commands.
+        config = replace(
+            config,
+            workspace_root=scoped_root,
+            owner_user_id=int(user_id),
+            mcp_mode="disabled",
+        )
     initialize_workspace(config.workspace_root)
     provider = LLMProvider(config.provider, client=client)
     # Single shared PostgreSQL connection pool for every native-SQL store.

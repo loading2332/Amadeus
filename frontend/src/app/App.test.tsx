@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import { ApiError } from "../api/client";
 import { App } from "./App";
 
 const queryMocks = vi.hoisted(() => ({
@@ -68,6 +69,34 @@ describe("App", () => {
 
     expect(refetchBootstrap).toHaveBeenCalledOnce();
     expect(refetchSessions).toHaveBeenCalledOnce();
+  });
+
+  it("shows the public GitHub login landing for an anonymous visitor", () => {
+    const unauthorized = new ApiError("需要登录", "http_401", 401, false);
+    queryMocks.bootstrap.mockReturnValue({
+      data: undefined,
+      error: unauthorized,
+      isPending: false,
+      isError: true,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    queryMocks.sessions.mockReturnValue({
+      data: undefined,
+      error: unauthorized,
+      isPending: false,
+      isError: true,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Amadeus" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "使用 GitHub 登录开始体验" }),
+    ).toHaveAttribute("href", "/auth/github/login");
+    expect(screen.queryByText("session sidebar")).not.toBeInTheDocument();
   });
 
   it("falls back to the first remaining session and syncs the URL after the selected session disappears", () => {

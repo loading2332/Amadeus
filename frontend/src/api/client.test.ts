@@ -1,6 +1,6 @@
-import { AxiosError, CanceledError } from "axios";
+import axios, { AxiosError, CanceledError } from "axios";
 
-import { ApiError, createApi, toApiError } from "./client";
+import { ApiError, createApi, installAuthRecovery, toApiError } from "./client";
 
 describe("API client", () => {
   it("routes semantic calls through the injected Axios boundary", async () => {
@@ -42,5 +42,56 @@ describe("API client", () => {
     expect(toApiError(http)).toMatchObject({ code: "http_503", retryable: true });
     expect(toApiError(new Error("secret"))).toEqual(expect.any(ApiError));
     expect(toApiError(new Error("secret")).message).toBe("发生未知错误，请重试");
+  });
+
+  it("refreshes and replays a safe read exactly once after a 401", async () => {
+    const instance = axios.create();
+    const recover = vi.fn().mockResolvedValue(undefined);
+    let attempts = 0;
+    instance.defaults.adapter = (config) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.reject(
+          new AxiosError("expired", "ERR_BAD_RESPONSE", config, undefined, {
+            data: { detail: "expired" },
+            status: 401,
+            statusText: "Unauthorized",
+            headers: {},
+            config,
+          }),
+        );
+      }
+      return Promise.resolve({
+        data: { ok: true },
+        status: 200,
+        statusText: "OK",
+        headers: {},
+        config,
+      });
+    };
+    installAuthRecovery(instance, recover);
+
+    await expect(instance.get("/safe")).resolves.toMatchObject({ data: { ok: true } });
+    expect(recover).toHaveBeenCalledOnce();
+    expect(attempts).toBe(2);
+  });
+
+  it("does not automatically replay a non-idempotent write after a 401", async () => {
+    const instance = axios.create();
+    const recover = vi.fn().mockResolvedValue(undefined);
+    instance.defaults.adapter = (config) =>
+      Promise.reject(
+        new AxiosError("expired", "ERR_BAD_RESPONSE", config, undefined, {
+          data: { detail: "expired" },
+          status: 401,
+          statusText: "Unauthorized",
+          headers: {},
+          config,
+        }),
+      );
+    installAuthRecovery(instance, recover);
+
+    await expect(instance.post("/unsafe", {})).rejects.toMatchObject({ status: 401 });
+    expect(recover).not.toHaveBeenCalled();
   });
 });

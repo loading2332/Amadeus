@@ -1,4 +1,8 @@
-import axios, { AxiosError, type AxiosInstance } from "axios";
+import axios, {
+  AxiosError,
+  type AxiosInstance,
+  type InternalAxiosRequestConfig,
+} from "axios";
 
 import {
   decodeBootstrap,
@@ -32,10 +36,47 @@ export const http = axios.create({
   timeout: 20_000,
 });
 
-http.interceptors.response.use(
-  (response) => response,
-  (error: unknown) => Promise.reject(toApiError(error)),
-);
+const authHttp = axios.create({
+  baseURL: "/auth",
+  timeout: 20_000,
+});
+let refreshInFlight: Promise<void> | null = null;
+
+installAuthRecovery(http, refreshAccessToken);
+
+export function installAuthRecovery(
+  instance: AxiosInstance,
+  recover: () => Promise<void>,
+): void {
+  instance.interceptors.response.use(
+    (response) => response,
+    async (error: unknown) => {
+      if (canRefreshAndReplay(error)) {
+        try {
+          await recover();
+          return await instance.request(error.config);
+        } catch {
+          // The original 401 is the useful public contract for the app: it
+          // transitions the UI to the logged-out landing state.
+        }
+      }
+      return Promise.reject(toApiError(error));
+    },
+  );
+}
+
+export async function refreshAccessToken(): Promise<void> {
+  refreshInFlight ??= authHttp.post("/refresh").then(() => undefined);
+  try {
+    await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
+export async function logout(): Promise<void> {
+  await authHttp.post("/logout");
+}
 
 export function createApi(instance: AxiosInstance = http) {
   return {
@@ -133,4 +174,23 @@ function safeErrorPayload(error: AxiosError<unknown>): { code: string; message: 
   } catch {
     return null;
   }
+}
+
+interface ReplayableRequestConfig extends InternalAxiosRequestConfig {
+  _amadeusRetried?: boolean;
+}
+
+function canRefreshAndReplay(
+  error: unknown,
+): error is AxiosError<unknown, unknown> & { config: ReplayableRequestConfig } {
+  if (!axios.isAxiosError(error) || error.response?.status !== 401 || error.config === undefined) {
+    return false;
+  }
+  const config = error.config as ReplayableRequestConfig;
+  const method = config.method?.toUpperCase() ?? "GET";
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) || config._amadeusRetried === true) {
+    return false;
+  }
+  config._amadeusRetried = true;
+  return true;
 }

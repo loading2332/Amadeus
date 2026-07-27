@@ -12,3 +12,13 @@ export function syncOwnerIdentity(
     return false;
   }
 }
+
+export function clearOwnerIdentity(
+  storage: Pick<Storage, "removeItem"> = window.localStorage,
+): void {
+  try {
+    storage.removeItem(OWNER_STORAGE_KEY);
+  } catch {
+    // Authentication still ends server-side when browser storage is unavailable.
+  }
+}

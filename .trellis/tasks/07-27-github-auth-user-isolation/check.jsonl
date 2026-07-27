@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/web-auth-identity.md", "reason": "逐项核对身份来源、Token rotation、Cookie、跨用户 404 与用户运行时"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "执行 Ruff、Mypy、测试与反模式审查"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "检查 migration、参数化 SQL、事务与真实 PostgreSQL 测试"}
+{"file": ".trellis/spec/frontend/react-chat-client.md", "reason": "检查登录 landing、单次 refresh、SSE after_seq 恢复和 logout"}

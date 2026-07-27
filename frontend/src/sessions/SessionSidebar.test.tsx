@@ -156,4 +156,24 @@ describe("SessionSidebar", () => {
     expect(onDelete).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument());
   });
+
+  it("exposes an explicit logout action", async () => {
+    const user = userEvent.setup();
+    const onLogout = vi.fn();
+    render(
+      <SessionSidebar
+        sessions={[]}
+        selectedId={null}
+        creating={false}
+        createFailed={false}
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onDelete={vi.fn()}
+        onLogout={onLogout}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "退出登录" }));
+    expect(onLogout).toHaveBeenCalledOnce();
+  });
 });

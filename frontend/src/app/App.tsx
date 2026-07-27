@@ -16,6 +16,11 @@ import { ChatView } from "../chat/ChatView";
 import { SessionSidebar } from "../sessions/SessionSidebar";
 import { syncOwnerIdentity } from "./ownerIdentity";
 import { readSidebarCollapsed, writeSidebarCollapsed } from "./sidebarPreference";
+import { ApiError, logout } from "../api/client";
+import { queryClient } from "./queryClient";
+import { turnStreamManager } from "./streamManager";
+import { useLiveTurnStore } from "../streaming/store";
+import { clearOwnerIdentity } from "./ownerIdentity";
 
 const SIDEBAR_WIDTH = 280;
 
@@ -49,10 +54,33 @@ export function App() {
     window.history.replaceState(null, "", url);
   }, [effectiveSelectedId]);
 
+  useEffect(() => {
+    const expire = () => {
+      void bootstrap.refetch();
+      void sessions.refetch();
+    };
+    window.addEventListener("amadeus:auth-expired", expire);
+    return () => window.removeEventListener("amadeus:auth-expired", expire);
+  }, [bootstrap, sessions]);
+
   if (bootstrap.isPending || sessions.isPending) {
     return <CenteredStatus><CircularProgress size={28} /><Typography>正在载入 Amadeus…</Typography></CenteredStatus>;
   }
   if (bootstrap.isError || sessions.isError) {
+    const unauthenticated = [bootstrap.error, sessions.error].some(
+      (error) => error instanceof ApiError && error.status === 401,
+    );
+    if (unauthenticated) {
+      return (
+        <CenteredStatus>
+          <Typography variant="h4">Amadeus</Typography>
+          <Typography color="text.secondary">带有长期记忆的个人 Agent 工作台。</Typography>
+          <Button component="a" href="/auth/github/login" variant="contained">
+            使用 GitHub 登录开始体验
+          </Button>
+        </CenteredStatus>
+      );
+    }
     const retrying = bootstrap.isFetching || sessions.isFetching;
     return (
       <CenteredStatus>
@@ -89,6 +117,18 @@ export function App() {
   };
   // 删除后的选中态回落由 effectiveSelectedId 的"选中 id 不在列表则取第一个"兜底。
   const deleteSessionById = (sessionId: number) => deleteSession.mutateAsync(sessionId);
+  const signOut = async () => {
+    try {
+      await logout();
+    } finally {
+      turnStreamManager.closeAll();
+      useLiveTurnStore.getState().reset();
+      queryClient.clear();
+      clearOwnerIdentity();
+      window.history.replaceState(null, "", "/");
+      window.location.reload();
+    }
+  };
 
   return (
     <Box sx={{ display: "flex", height: "100dvh", overflow: "hidden", bgcolor: "background.default" }}>
@@ -119,6 +159,7 @@ export function App() {
           onSelect={selectSession}
           onCreate={createNewSession}
           onDelete={deleteSessionById}
+          onLogout={() => void signOut()}
           onToggleCollapse={toggleDesktopSidebar}
         />
       </Box>
@@ -128,7 +169,7 @@ export function App() {
         ModalProps={{ keepMounted: true }}
         sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": { width: SIDEBAR_WIDTH } }}
       >
-        <SessionSidebar sessions={sessionRows} selectedId={effectiveSelectedId} creating={createSession.isPending} createFailed={createSession.isError} onSelect={selectSession} onCreate={createNewSession} onDelete={deleteSessionById} onClose={() => setMobileOpen(false)} />
+        <SessionSidebar sessions={sessionRows} selectedId={effectiveSelectedId} creating={createSession.isPending} createFailed={createSession.isError} onSelect={selectSession} onCreate={createNewSession} onDelete={deleteSessionById} onLogout={() => void signOut()} onClose={() => setMobileOpen(false)} />
       </Drawer>
       <Box component="main" sx={{ minWidth: 0, minHeight: 0, height: "100%", flex: 1, overflow: "hidden" }}>
         <ChatView

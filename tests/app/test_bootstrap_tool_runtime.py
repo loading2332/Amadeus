@@ -205,6 +205,52 @@ def test_build_passive_app_uses_unscoped_file_tools(tmp_path):
     assert not target.exists()
 
 
+def test_web_user_runtime_derives_memory_and_workspace_from_user_id(
+    tmp_path,
+    monkeypatch,
+):
+    clean_postgres().close()
+    monkeypatch.setenv("AMADEUS_MCP_MODE", "local_trusted")
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "OPENAI_BASE_URL=https://llm.example.test/v1",
+                "OPENAI_API_KEY=secret",
+                "OPENAI_MODEL=fake-model",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    workspace = tmp_path / "workspace"
+
+    app = build_passive_app(
+        workspace_root=workspace,
+        env_path=env_path,
+        client=FakeClient(),
+        user_id=42,
+    )
+    other_user_file = workspace / "users" / "7" / "private.txt"
+    other_user_file.parent.mkdir(parents=True)
+    other_user_file.write_text("private", encoding="utf-8")
+
+    denied = asyncio.run(
+        app.tool_executor.execute(
+            ToolExecutionRequest("read_file", {"path": str(other_user_file)})
+        )
+    )
+
+    assert app.config.owner_user_id == 42
+    assert app.config.workspace_root == (workspace / "users" / "42").resolve()
+    assert app.memory.store.user_id == 42
+    assert app.memory.store.memory_dir == app.config.workspace_root / "memory"
+    assert app.config.mcp_mode == "disabled"
+    assert app.mcp_server_registry is None
+    assert denied.status == "denied"
+    assert "escapes allowed directory" in str(denied.output)
+    asyncio.run(app.aclose())
+
+
 def test_build_passive_app_composes_store_retriever_memorizer_and_worker(
     tmp_path,
     monkeypatch,

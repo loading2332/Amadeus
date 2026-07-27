@@ -86,4 +86,57 @@ describe("TurnStreamManager", () => {
     expect(useLiveTurnStore.getState().turns["turn-1"]?.streamError).toContain("无法识别");
     expect(source?.closed).toBe(true);
   });
+
+  it("refreshes access once and reconnects from the last observed sequence", async () => {
+    const sources: FakeEventSource[] = [];
+    const recover = vi.fn().mockResolvedValue(undefined);
+    const manager = new TurnStreamManager(
+      undefined,
+      (url) => {
+        const source = new FakeEventSource(url);
+        sources.push(source);
+        return source as unknown as EventSource;
+      },
+      recover,
+    );
+    manager.connect("turn-1", 4);
+    sources[0]?.emit("turn_event", {
+      seq: 3,
+      type: "content_snapshot",
+      turn_id: "turn-1",
+      occurred_at: "2026-07-19T00:00:00Z",
+      data: { content: "hello", version: 1 },
+    });
+    if (sources[0] !== undefined) {
+      sources[0].readyState = FakeEventSource.CLOSED;
+      sources[0].onerror?.();
+    }
+    await vi.waitFor(() => expect(sources).toHaveLength(2));
+
+    expect(recover).toHaveBeenCalledOnce();
+    expect(sources[1]?.url).toBe("/api/turns/turn-1/events?after_seq=3");
+  });
+
+  it("surfaces an expired login when SSE access recovery fails", async () => {
+    let source: FakeEventSource | undefined;
+    const expired = vi.fn();
+    window.addEventListener("amadeus:auth-expired", expired, { once: true });
+    const manager = new TurnStreamManager(
+      undefined,
+      (url) => {
+        source = new FakeEventSource(url);
+        return source as unknown as EventSource;
+      },
+      vi.fn().mockRejectedValue(new Error("expired")),
+    );
+    manager.connect("turn-1", 4);
+    if (source !== undefined) {
+      source.readyState = FakeEventSource.CLOSED;
+      source.onerror?.();
+    }
+    await vi.waitFor(() =>
+      expect(useLiveTurnStore.getState().turns["turn-1"]?.streamError).toContain("登录已过期"),
+    );
+    expect(expired).toHaveBeenCalledOnce();
+  });
 });

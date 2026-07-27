@@ -4,6 +4,7 @@ import CloseRounded from "@mui/icons-material/CloseRounded";
 import DeleteOutlineRounded from "@mui/icons-material/DeleteOutlineRounded";
 import MenuOpenRounded from "@mui/icons-material/MenuOpenRounded";
 import RefreshRounded from "@mui/icons-material/RefreshRounded";
+import LogoutRounded from "@mui/icons-material/LogoutRounded";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -30,6 +31,7 @@ interface Props {
   onSelect: (sessionId: number) => void;
   onCreate: () => void;
   onDelete: (sessionId: number) => Promise<void>;
+  onLogout?: () => void;
   onClose?: () => void;
   onToggleCollapse?: () => void;
 }
@@ -57,6 +59,7 @@ export function SessionSidebar({
   onSelect,
   onCreate,
   onDelete,
+  onLogout,
   onClose,
   onToggleCollapse,
 }: Props) {
@@ -276,6 +279,13 @@ export function SessionSidebar({
       <Divider />
       <Box data-testid="sidebar-footer" sx={{ display: "flex", minHeight: 60, alignItems: "center", px: 1.25 }}>
         <ThemeModeControl />
+        {onLogout ? (
+          <Tooltip title="退出登录">
+            <IconButton aria-label="退出登录" onClick={onLogout} sx={{ ml: "auto" }}>
+              <LogoutRounded />
+            </IconButton>
+          </Tooltip>
+        ) : null}
       </Box>
     </Box>
   );

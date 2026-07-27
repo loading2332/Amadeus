@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/web-auth-identity.md", "reason": "GitHub OAuth、双 Token、owner scope 与 turn.user_id 贯穿的主实现合同"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "身份映射与 refresh rotation 的 PostgreSQL/Alembic 事务约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "认证失败、跨用户资源与安全公开错误约束"}
+{"file": ".trellis/spec/backend/async-boundaries.md", "reason": "同步 store 在 FastAPI/worker 中的线程与生命周期边界"}
+{"file": ".trellis/spec/frontend/react-chat-client.md", "reason": "Axios、SSE、Query cache 与登录状态恢复约束"}

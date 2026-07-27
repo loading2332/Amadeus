@@ -22,6 +22,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Turn Streaming](./turn-streaming.md) | 跨进程增量回答、SSE、租约、取消与恢复契约 | Active |
 | [Prompt Cache](./prompt-cache.md) | 缓存友好的提示词组装契约与实验规范 | Active |
+| [Web 鉴权与运行时身份](./web-auth-identity.md) | GitHub OAuth、双 Token、Web owner scope 与 turn.user_id 贯穿契约 | Active |
 
 ---
 

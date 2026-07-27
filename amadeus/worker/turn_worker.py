@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from amadeus.app.bootstrap import PassiveApp, build_passive_app, default_workspace_root
+from amadeus.app.bootstrap import (
+    build_passive_app,
+    default_workspace_root,
+    load_runtime_config,
+)
 from amadeus.runtime.streaming import TurnCancelled, TurnStreamSink
 from amadeus.session import PostgresSessionStore
 from amadeus.session.identity import SessionRef
@@ -80,22 +84,41 @@ class WorkerStats:
 
 
 class PassiveAppTurnRunner:
-    def __init__(self, app: PassiveApp) -> None:
-        self.app = app
+    def __init__(
+        self,
+        workspace_root: Path,
+        *,
+        env_path: Path = Path(".env"),
+    ) -> None:
+        self.workspace_root = workspace_root.resolve()
+        self.env_path = env_path
 
     async def run(self, turn: Turn, stream_sink: TurnStreamSink) -> str:
-        session = SessionRef(user_id=turn.user_id, session_id=turn.session_id)
-        result = await self.app.runtime.run_turn(
-            session=session,
-            user_message=turn.content,
-            runtime_metadata={
-                "channel": str(turn.metadata.get("channel") or "web"),
-                "turn_id": turn.id,
-            },
-            extra={"turn_id": turn.id},
-            stream_sink=stream_sink,
+        # A PassiveRuntime captures its memory engine and workspace in phase
+        # objects at construction time. Reusing ``self.app.runtime`` after
+        # swapping an attribute would therefore leak user state. Build a
+        # user-scoped runtime for this turn instead.
+        user_app = build_passive_app(
+            workspace_root=self.workspace_root,
+            env_path=self.env_path,
+            user_id=turn.user_id,
         )
-        return str(result.assistant_response)
+        session = SessionRef(user_id=turn.user_id, session_id=turn.session_id)
+        try:
+            await user_app.start()
+            result = await user_app.runtime.run_turn(
+                session=session,
+                user_message=turn.content,
+                runtime_metadata={
+                    "channel": str(turn.metadata.get("channel") or "web"),
+                    "turn_id": turn.id,
+                },
+                extra={"turn_id": turn.id},
+                stream_sink=stream_sink,
+            )
+            return str(result.assistant_response)
+        finally:
+            await user_app.aclose()
 
 
 class PersistedTurnStream:
@@ -355,28 +378,27 @@ async def amain(argv: list[str] | None = None) -> None:
         if args.workspace_root is not None
         else default_workspace_root()
     )
-    app = build_passive_app(workspace_root=workspace_root, env_path=args.env)
+    config = load_runtime_config(
+        workspace_root=workspace_root,
+        env_path=args.env,
+    )
+    store = PostgresTurnStore(config.postgres_dsn)
+    session_store = PostgresSessionStore(config.postgres_dsn)
     try:
-        await app.start()
-        store = PostgresTurnStore(app.config.postgres_dsn)
-        session_store = PostgresSessionStore(app.config.postgres_dsn)
         worker = TurnWorker(
             store=store,
-            runner=PassiveAppTurnRunner(app),
+            runner=PassiveAppTurnRunner(workspace_root, env_path=args.env),
             poll_interval=args.poll_interval,
             message_store=session_store,
-            heartbeat_interval=app.config.turn_heartbeat_interval_seconds,
-            flush_characters=app.config.turn_stream_flush_characters,
-            flush_interval=app.config.turn_stream_flush_interval_seconds,
-            stale_after_seconds=app.config.turn_stale_after_seconds,
+            heartbeat_interval=config.turn_heartbeat_interval_seconds,
+            flush_characters=config.turn_stream_flush_characters,
+            flush_interval=config.turn_stream_flush_interval_seconds,
+            stale_after_seconds=config.turn_stale_after_seconds,
         )
-        try:
-            await worker.run_forever()
-        finally:
-            store.close()
-            session_store.close()
+        await worker.run_forever()
     finally:
-        await app.aclose()
+        store.close()
+        session_store.close()
 
 
 def main(argv: list[str] | None = None) -> None:

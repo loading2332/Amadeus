@@ -5,11 +5,14 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from amadeus.app.bootstrap import default_workspace_root, load_runtime_config
+from amadeus.auth import AuthConfig, AuthService, AuthStore, load_auth_config
 from amadeus.session import PostgresSessionStore
 from amadeus.turns import PostgresTurnStore
 from amadeus.turns.store import ActiveTurnExists, InvalidTurnTransition
+from amadeus.web.auth_routes import auth_router
 from amadeus.web.owner import OwnerResourceNotFound
 from amadeus.web.routes import api_router
 from amadeus.web.static_routes import static_router
@@ -23,12 +26,15 @@ def create_app(
     env_path: str | Path = ".env",
     static_dir: str | Path | None = None,
     owner_user_id: int | None = None,
+    auth_config: AuthConfig | None = None,
+    auth_service: AuthService | None = None,
 ) -> FastAPI:
     root = (
         Path(workspace_root).resolve()
         if workspace_root is not None
         else default_workspace_root()
     )
+    resolved_auth_config: AuthConfig | None
     if store is None:
         if owner_user_id is not None:
             raise ValueError(
@@ -38,6 +44,7 @@ def create_app(
         turn_store = PostgresTurnStore(config.postgres_dsn)
         resolved_session_store = session_store or PostgresSessionStore(config.postgres_dsn)
         resolved_owner_user_id = config.owner_user_id
+        resolved_auth_config = auth_config or load_auth_config(env_path=env_path)
     else:
         if session_store is None:
             raise ValueError("session_store is required when injecting a turn store")
@@ -48,16 +55,40 @@ def create_app(
         turn_store = store
         resolved_session_store = session_store
         resolved_owner_user_id = int(owner_user_id)
+        resolved_auth_config = auth_config
+    if auth_service is not None:
+        resolved_auth_config = auth_service.config
     resolved_static_dir = (
         Path(static_dir)
         if static_dir is not None
         else Path(__file__).with_name("static")
     )
 
-    app = FastAPI(title="Amadeus Web Chat")
+    app = FastAPI(
+        title="Amadeus Web Chat",
+        docs_url=None if resolved_auth_config is not None else "/docs",
+        redoc_url=None if resolved_auth_config is not None else "/redoc",
+        openapi_url=None if resolved_auth_config is not None else "/openapi.json",
+    )
     app.state.turn_store = turn_store
     app.state.session_store = resolved_session_store
     app.state.owner_user_id = resolved_owner_user_id
+    app.state.test_owner_user_id = (
+        resolved_owner_user_id if resolved_auth_config is None else None
+    )
+    if resolved_auth_config is not None:
+        auth_store = AuthStore(turn_store.db)
+        app.state.auth_config = resolved_auth_config
+        app.state.auth_service = auth_service or AuthService(
+            auth_store,
+            resolved_auth_config,
+        )
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=resolved_auth_config.jwt_secret,
+            https_only=True,
+            same_site="lax",
+        )
     app.state.static_dir = resolved_static_dir
 
     @app.exception_handler(OwnerResourceNotFound)
@@ -104,6 +135,8 @@ def create_app(
         )
 
     app.include_router(static_router)
+    if resolved_auth_config is not None:
+        app.include_router(auth_router)
     app.include_router(api_router, prefix="/api")
 
     return app

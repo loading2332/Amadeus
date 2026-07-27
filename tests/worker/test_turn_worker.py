@@ -1,5 +1,9 @@
 import asyncio
 import time
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 from amadeus.runtime.streaming import TurnStreamSink
 from amadeus.session import PostgresSessionStore
@@ -13,7 +17,7 @@ from amadeus.turns import (
     Turn,
     TurnError,
 )
-from amadeus.worker.turn_worker import TurnWorker
+from amadeus.worker.turn_worker import PassiveAppTurnRunner, TurnWorker
 
 from tests.db.postgres_helpers import clean_postgres
 
@@ -258,6 +262,62 @@ def test_run_forever_survives_store_and_mark_failed_errors() -> None:
     assert store.mark_failed_attempts == 1
     assert worker.stats.failed == 1
     assert worker.stats.completed == 1
+
+
+def test_passive_runner_builds_fresh_user_context_for_consecutive_turns(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    built: list[tuple[int, Path]] = []
+    runtime_sessions: list[SessionRef] = []
+    closed: list[int] = []
+
+    class ScopedRuntime:
+        def __init__(self, user_id: int) -> None:
+            self.user_id = user_id
+
+        async def run_turn(self, *, session: SessionRef, **kwargs: Any) -> Any:
+            del kwargs
+            runtime_sessions.append(session)
+            return SimpleNamespace(assistant_response=f"user:{self.user_id}")
+
+    class ScopedApp:
+        def __init__(self, user_id: int) -> None:
+            self.user_id = user_id
+            self.runtime = ScopedRuntime(user_id)
+
+        async def start(self) -> None:
+            return None
+
+        async def aclose(self) -> None:
+            closed.append(self.user_id)
+
+    def build_scoped_app(*, workspace_root, env_path, user_id):
+        del env_path
+        built.append((user_id, Path(workspace_root)))
+        return ScopedApp(user_id)
+
+    monkeypatch.setattr(
+        "amadeus.worker.turn_worker.build_passive_app",
+        build_scoped_app,
+    )
+    runner = PassiveAppTurnRunner(
+        tmp_path,
+        env_path=tmp_path / ".env",
+    )
+
+    async def scenario() -> None:
+        sink = cast(TurnStreamSink, object())
+        first = replace(_claimed_turn("turn-1"), user_id=7, session_id=70)
+        second = replace(_claimed_turn("turn-2"), user_id=8, session_id=80)
+        assert await runner.run(first, sink) == "user:7"
+        assert await runner.run(second, sink) == "user:8"
+
+    asyncio.run(scenario())
+
+    assert built == [(7, tmp_path), (8, tmp_path)]
+    assert runtime_sessions == [SessionRef(7, 70), SessionRef(8, 80)]
+    assert closed == [7, 8]
 
 
 def test_turn_worker_completes_postgres_turn():
