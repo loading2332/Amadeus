@@ -209,3 +209,14 @@ await expect(page.getByText(/失败/).last()).toBeVisible();
 const turn = page.locator('article[aria-label="一轮对话"]').filter({ hasText: userMessage });
 await expect(turn.getByText("模型响应超时，请重试")).toBeVisible();
 ```
+- 回复渲染：`MarkdownMessage({ content, streaming?, cursor? })` 按 `marked.lexer` 顶层 block 切块渲染,块用索引 key;`useSmoothText(target, done): { text, settled }` 是 UI 层唯一的平滑吐字入口,只作用于活跃 turn 的最后一个 text part。
+- 流式呈现属于 UI 层:store/reducer/manager 保存并交接权威全文,不得为打字机、光标等呈现需求改动 `frontend/src/streaming` 的事件与数据结构(useSmoothText 除外,它只消费 target 文本)。`turn_terminal` 后现有的 overlay 移除→回退 `turn.answer` 链路就是"瞬间补齐"路径,不需要额外补齐逻辑。
+- Markdown 分块 memo 的前提是引用稳定:remark/rehype 插件数组、components 映射、`markdownSx` 必须模块级常量,回调经空依赖 `useCallback`;`remend` 自愈只在 `streaming` 时应用,终态渲染权威原文。代码高亮用 `rehype-highlight` 且 `detect: false`;暗色 token 规则必须作用于 `[data-amadeus-color-scheme="dark"]`(项目自定义 colorSchemeSelector,不是 MUI 默认的 `data-mui-color-scheme`),且删除 hljs 主题的 `.hljs` 背景规则,背景由容器持有。
+- 流式光标是 CSS `::after` 脉冲圆点,挂在最后一个文本叶子元素(段落/标题/列表项/引用内段落)行尾;尾块是代码围栏或表格时不显示(内容增长本身即进度信号);仅当回答尾部 part 是文本时开启;`prefers-reduced-motion` 下静止常显。
+- 自动跟随滚动由 ResizeObserver 观察时间线内容尺寸驱动,且仅在 following 状态滚底;不得用 store 事件信号(如 lastSeq 拼串)触发滚动——吐字改为逐帧后事件粒度与内容高度变化不再对应。
+| 流式中途未闭合 `**`/``` 围栏 | remend 自愈渲染,后续文本不塌成代码块;终态以权威原文重渲染 |
+| 流式尾块是代码围栏/表格 | 不显示光标圆点,代码块随内容增长即进度信号 |
+| 系统开启减弱动态效果 | 吐字直达全文、光标静止、消息无位移动画 |
+- Good：长回复流式期间只有尾部 block 重解析重渲染,历史 block 引用稳定命中 memo;吐字逐帧推进时输入框与滚动不卡顿。
+- Bad：为打字机效果改 reducer/store 数据结构,或在事件处理里做逐字 setState;平滑吐字只属于 UI hook。
+- Bad：MemoizedBlock 的 components/plugins 在组件体内重建,导致每帧引用变化、块级 memo 全部失效,长回复 O(n²) 重解析。
