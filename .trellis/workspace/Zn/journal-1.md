@@ -610,3 +610,37 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: 完成前端回复效果改进
+
+**Date**: 2026-07-27
+**Task**: 完成前端回复效果改进
+**Branch**: `main`
+
+### Summary
+
+完成流式回复的语法高亮、Markdown 自愈、分块 memo、平滑吐字与光标、ResizeObserver 自动跟随及全文复制；修复端到端测试对主机减弱动态效果偏好的依赖。验证通过：typecheck、lint、Vitest 76 项、Playwright 15 项与生产构建。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ef3dcb7` | (see git log) |
+| `6085013` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
