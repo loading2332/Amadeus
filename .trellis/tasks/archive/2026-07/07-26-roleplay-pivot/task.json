@@ -1,0 +1,29 @@
+{
+  "id": "roleplay-pivot",
+  "name": "roleplay-pivot",
+  "title": "Roleplay 角色扮演方向改造",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "Zn",
+  "assignee": "Zn",
+  "createdAt": "2026-07-26",
+  "completedAt": "2026-07-27",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-26-persona-editable",
+    "07-26-persona-consistency-eval"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
