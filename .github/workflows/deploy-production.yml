@@ -19,10 +19,10 @@ jobs:
     steps:
       - name: Install restricted deployment key
         env:
-          DEPLOY_KEY: ${{ secrets.AMADEUS_DEPLOY_SSH_KEY }}
+          DEPLOY_KEY_B64: ${{ secrets.AMADEUS_DEPLOY_SSH_KEY_B64 }}
         run: |
           install -d -m 700 ~/.ssh
-          printf '%s' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          printf '%s' "$DEPLOY_KEY_B64" | base64 --decode > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           cat >> ~/.ssh/known_hosts <<'EOF'
           188.166.216.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID6LTQJPltVPhzt3HNxRJhCPYJn3ZE5Zf5klad+sPahl
