@@ -1,0 +1,38 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: amadeus-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install restricted deployment key
+        env:
+          DEPLOY_KEY: ${{ secrets.AMADEUS_DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/known_hosts <<'EOF'
+          188.166.216.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID6LTQJPltVPhzt3HNxRJhCPYJn3ZE5Zf5klad+sPahl
+          EOF
+
+      - name: Trigger production deployment
+        run: |
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            root@188.166.216.99
