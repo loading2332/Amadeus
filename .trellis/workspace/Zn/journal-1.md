@@ -644,3 +644,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: GitHub 登录与用户运行时隔离
+
+**Date**: 2026-07-28
+**Task**: GitHub 登录与用户运行时隔离
+**Branch**: `main`
+
+### Summary
+
+实现 GitHub OAuth、JWT access/refresh rotation、Web owner 授权、前端登录恢复与登出，并让 worker 只从 turn.user_id 构造用户 memory/workspace 运行时；完成后端、前端、迁移与静态检查。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f11b4e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
