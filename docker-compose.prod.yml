@@ -1,0 +1,22 @@
+services:
+  postgres:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${AMADEUS_POSTGRES_PASSWORD:?AMADEUS_POSTGRES_PASSWORD is required}
+    restart: unless-stopped
+
+  migrate:
+    environment:
+      AMADEUS_POSTGRES_DSN: postgresql://amadeus:${AMADEUS_POSTGRES_PASSWORD}@postgres:5432/amadeus
+
+  api:
+    ports: !reset
+      - "127.0.0.1:8000:8000"
+    environment:
+      AMADEUS_POSTGRES_DSN: postgresql://amadeus:${AMADEUS_POSTGRES_PASSWORD}@postgres:5432/amadeus
+    restart: unless-stopped
+
+  worker:
+    environment:
+      AMADEUS_POSTGRES_DSN: postgresql://amadeus:${AMADEUS_POSTGRES_PASSWORD}@postgres:5432/amadeus
+    restart: unless-stopped
