@@ -15,6 +15,7 @@
 - 会话标题：`PostgresTurnStore.create_turn(user_id, session_id, content, retry_of_turn_id=None)` 在首个非重试 turn 的事务内调用 `title_from_first_message(content)` 更新 `conversation_sessions.title`；`useCreateTurnMutation()` 成功后失效 `queryKeys.sessions`。
 - 恢复入口：启动页调用 `bootstrap.refetch()` 与 `sessions.refetch()`；`TurnTimeline.onRetry` 调用当前 turns query 的 `refetch()`；新建与发送失败分别复用原有 `createSession.mutate()` 和 `createTurn.mutate()`。
 - 实时状态：`useLiveTurnStore.turns[turnId]` 保存 `lastSeq/parts/status/error/connection`，不得保存 `EventSource`。
+- 回复渲染：`MarkdownMessage({ content, streaming?, cursor? })` 按 `marked.lexer` 顶层 block 切块渲染,块用索引 key;`useSmoothText(target, done): { text, settled }` 是 UI 层唯一的平滑吐字入口,只作用于活跃 turn 的最后一个 text part。
 - 生产构建：`pnpm install --frozen-lockfile && pnpm run build`，Vite base 为 `/static/`，Docker 把 `dist` 复制到 `amadeus/web/static`。
 
 ### 3. 契约
@@ -28,7 +29,12 @@
 - 桌面侧栏折叠状态由 `App` 单点持有，并通过 `amadeus:sidebar-collapsed:v1` 持久化；占位宽度只能在展开 `280px` 与完全收起 `0px` 之间变化。收起时侧栏必须 `inert`，展开与新建入口由 `ChatView` 左上角浮动图标承接，创建会话仍回到 `App` 的 mutation 边界。
 - 聊天区不渲染顶栏、会话标题或横向分隔线。移动端的 Drawer 入口与桌面完全收起态的展开/新建入口绝对定位在聊天画布左上角；时间线在存在浮动入口的断点留出顶部空间，首条消息不得被遮挡。
 - 空会话欢迎提示必须在 `TurnTimeline` 的可用视口内水平、垂直居中。只在 `rows.length === 0` 且首条消息没有正在提交时显示；`createTurn` 进入 pending 后立即隐藏，成功后由 Query 中的真实 turn 接管，失败后恢复空状态以允许重试。
-- Composer 保持单一胶囊外壳，textarea 左缘距 `composer-shell` 左缘不得小于 `20px`；该留白由输入槽的左内边距承担，不得整体移动发送按钮或改变单行垂直居中、多行底部对齐。
+- Composer 保持单一圆角矩形外壳,圆角固定 `28px`,不得使用 `borderRadius: 999`(多行高度下胶囊两端成大半圆,顶/底行文字会伸出弧线);textarea 左缘距 `composer-shell` 左缘不得小于 `20px`;该留白由输入槽的左内边距承担,不得整体移动发送按钮或改变单行垂直居中、多行底部对齐。聚焦粗描边必须用 `outline` + 负 `outline-offset` 叠加(纯绘制、零布局);不得聚焦时改 border 宽度(内容位移)或用 border+inset box-shadow 双线拼描边(大圆角下两条弧光栅化错位产生锯齿)。
+- 流式呈现属于 UI 层:store/reducer/manager 保存并交接权威全文,不得为打字机、光标等呈现需求改动 `frontend/src/streaming` 的事件与数据结构(useSmoothText 除外,它只消费 target 文本)。`turn_terminal` 后现有的 overlay 移除→回退 `turn.answer` 链路就是"瞬间补齐"路径,不需要额外补齐逻辑。
+- Markdown 分块 memo 的前提是引用稳定:remark/rehype 插件数组、components 映射、`markdownSx` 必须模块级常量,回调经空依赖 `useCallback`;`remend` 自愈只在 `streaming` 时应用,终态渲染权威原文。代码高亮用 `rehype-highlight` 且 `detect: false`;暗色 token 规则必须作用于 `[data-amadeus-color-scheme="dark"]`(项目自定义 colorSchemeSelector,不是 MUI 默认的 `data-mui-color-scheme`),且删除 hljs 主题的 `.hljs` 背景规则,背景由容器持有。
+- 流式光标是 CSS `::after` 脉冲圆点,挂在最后一个文本叶子元素(段落/标题/列表项/引用内段落)行尾;尾块是代码围栏或表格时不显示(内容增长本身即进度信号);仅当回答尾部 part 是文本时开启;`prefers-reduced-motion` 下静止常显。
+- 自动跟随滚动由 ResizeObserver 观察时间线内容尺寸驱动,且仅在 following 状态滚底;不得用 store 事件信号(如 lastSeq 拼串)触发滚动——吐字改为逐帧后事件粒度与内容高度变化不再对应。
+- 会话列表行(`ListItemButton`)必须显式 `transition: "none"` 覆盖 MUI 内置的 background-color 150ms 过渡:新会话插入顶部时旧选中行被挤到下一行,残留的选中色淡出会被用户看成高亮闪跳。
 - 用户上滚离开 following 状态时，“回到底部”入口必须是固定 `40px` 的圆形 `IconButton`，只渲染向下箭头；仅通过 `aria-label="回到底部"` 提供辅助技术语义，不显示按钮文字、Tooltip 或点击涟漪。点击后使用 `behavior: "smooth"` 平滑滚动；returning 状态下忽略普通的 `96px` following 阈值，按钮持续显示，只有底部间距进入 `2px` 容差后才恢复 following 并隐藏。
 - 拉丁字形使用随前端产物本地打包的 `Inter Variable`，中文依次回退到 `Noto Sans SC`、`Microsoft YaHei UI` 与 `PingFang SC`；全局字距为 `0`，不得依赖浏览器默认系统字体作为首选字体。
 - 聊天页只能有一个纵向滚动所有者：`App` 固定 `height: 100dvh` 并隐藏外层溢出，`main` 与 `ChatView` 使用 `height: 100%`、`minHeight: 0` 传递确定高度，`TurnTimeline` 承担 `overflowY: auto`。侧栏继承外壳 `100%` 高度；不得用 `minHeight: 100dvh` 让长会话撑高 document，否则侧栏会断层且自动跟随失效。
@@ -61,6 +67,10 @@
 | 创建 session 失败 | 不插入本地假 session；展开侧栏或收起态入口附近显示“重试新建” |
 | 创建 turn 失败 | 保留当前 session 草稿并显示“重试发送”；成功后才清空草稿 |
 | 首个非重试 turn 创建成功 | 同一数据库事务持久化首条消息摘要；sessions query 刷新后侧栏更新，页面刷新后保持 |
+| 流式中途未闭合 `**`/``` 围栏 | remend 自愈渲染,后续文本不塌成代码块;终态以权威原文重渲染 |
+| 流式尾块是代码围栏/表格 | 不显示光标圆点,代码块随内容增长即进度信号 |
+| 系统开启减弱动态效果 | 吐字直达全文、光标静止、消息无位移动画 |
+| 创建会话插入列表顶部 | 选中色块即时切换到新行,旧行不得出现过渡淡出残影 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -73,6 +83,7 @@
 - Good：创建 turn 失败后输入值保持不变，用户在 Composer 下方重试；成功后 draft 清空，Query/SSE 接管时间线。
 - Good：首条消息写 turn 和 session 标题发生在同一后端事务，前端只失效 sessions query。
 - Good：桌面轮内间距小于轮间间距，用户无需额外边框或卡片也能识别一问一答。
+- Good：长回复流式期间只有尾部 block 重解析重渲染,历史 block 引用稳定命中 memo;吐字逐帧推进时输入框与滚动不卡顿。
 - Base：刷新页面没有 live overlay，直接从 FastAPI turns 恢复 done/failed/cancelled 时间线。
 - Bad：终态一到就清除 Zustand，再异步 refetch；网络慢时正文闪空。
 - Bad：组件直接 `fetch/axios`，或把 EventSource 放入 Zustand，使认证、清理和 StrictMode 幂等边界分裂。
@@ -84,10 +95,12 @@
 - Bad：在 React 中截断首条消息生成临时标题，或为每个 session 请求 turns，造成刷新、客户端与后端事实不一致。
 - Bad：发送失败后立即清空 draft，或用 toast 承担唯一恢复入口，让错误与触发操作分离。
 - Bad：Playwright 用全页面 `getByText(/消息内容/).last()` 断言时间线；首条消息成为侧栏标题后，隐藏 Drawer 和当前 turn 都可能匹配。应先定位具体 `article[aria-label="一轮对话"]`。
+- Bad：为打字机效果改 reducer/store 数据结构,或在事件处理里做逐字 setState;平滑吐字只属于 UI hook。
+- Bad：MemoizedBlock 的 components/plugins 在组件体内重建,导致每帧引用变化、块级 memo 全部失效,长回复 O(n²) 重解析。
 
 ### 6. 必需测试
 
-- Vitest：response guard、Axios 非 2xx/网络/取消、安全 payload、SSE seq 去重与坏包、工具折叠、Markdown 安全、复制反馈、Composer Enter/IME/移动端、发送失败保留 draft 与重试、启动查询/turns 查询原位重试、创建 session 失败反馈、滚动保护、“回到底部”无点击涟漪、使用 `behavior: "smooth"`、中间位置保持显示且实际到底后隐藏、主题存储异常和旧值归一化，以及会话日期分组的本地日历日/无效时间边界。
+- Vitest：response guard、Axios 非 2xx/网络/取消、安全 payload、SSE seq 去重与坏包、工具折叠、Markdown 安全、复制反馈、Composer Enter/IME/移动端、发送失败保留 draft 与重试、启动查询/turns 查询原位重试、创建 session 失败反馈、滚动保护、“回到底部”无点击涟漪、使用 `behavior: "smooth"`、中间位置保持显示且实际到底后隐藏、主题存储异常和旧值归一化，以及会话日期分组的本地日历日/无效时间边界。回复渲染新增必测:useSmoothText(fake rAF 推进/done 补齐/reduced-motion 直达/卸载清理)、分块渲染计数(尾块外 0 次重渲染)、高亮 token 与语言标签、streaming 自愈与终态原文、光标出现/消失、复制全文内容与可见性。lazy chunk 内元素的首个断言用 `findBy*` 并放宽 timeout,全量并行跑时模块加载可能超过默认 1s。
 - Playwright Chromium：使用独立 `amadeus_e2e` PostgreSQL 数据库、真实 FastAPI store 和真实 `TurnWorker`，仅 runner 使用确定性 fixture；覆盖完成、跨会话、停止、失败重试、网络注入后的 session/turn 原位重试与 draft 保留、首条消息标题即时刷新和页面刷新后持久化、桌面轮内/轮间几何关系、刷新、Drawer、主题、Markdown 局部溢出、桌面 `280px -> 0px -> 280px`、无聊天顶栏、欢迎提示双向居中和发送后消失、Composer 左侧留白与单行/多行对齐、浮动入口可达、本地字体生效、长会话 document/侧栏/时间线滚动边界、“回到底部”无 Tooltip、平滑滚动期间持续显示且实际到底后稳定退出、收起态新建、折叠偏好持久化和 keep-mounted DOM id 唯一性。标题持久化必须走真实后端；浏览器路由注入只用于制造网络失败。
 - 构建：typecheck、ESLint、Vite build 无大 chunk 警告；Docker 冻结 lockfile 构建并检查 hashed assets。
 - 视觉：`kill-ai-slop` 扫描后逐项人工判断；MUI 布局 `Box` 不是卡片，不能为了归零而隐藏或改坏结构。
@@ -209,14 +222,3 @@ await expect(page.getByText(/失败/).last()).toBeVisible();
 const turn = page.locator('article[aria-label="一轮对话"]').filter({ hasText: userMessage });
 await expect(turn.getByText("模型响应超时，请重试")).toBeVisible();
 ```
-- 回复渲染：`MarkdownMessage({ content, streaming?, cursor? })` 按 `marked.lexer` 顶层 block 切块渲染,块用索引 key;`useSmoothText(target, done): { text, settled }` 是 UI 层唯一的平滑吐字入口,只作用于活跃 turn 的最后一个 text part。
-- 流式呈现属于 UI 层:store/reducer/manager 保存并交接权威全文,不得为打字机、光标等呈现需求改动 `frontend/src/streaming` 的事件与数据结构(useSmoothText 除外,它只消费 target 文本)。`turn_terminal` 后现有的 overlay 移除→回退 `turn.answer` 链路就是"瞬间补齐"路径,不需要额外补齐逻辑。
-- Markdown 分块 memo 的前提是引用稳定:remark/rehype 插件数组、components 映射、`markdownSx` 必须模块级常量,回调经空依赖 `useCallback`;`remend` 自愈只在 `streaming` 时应用,终态渲染权威原文。代码高亮用 `rehype-highlight` 且 `detect: false`;暗色 token 规则必须作用于 `[data-amadeus-color-scheme="dark"]`(项目自定义 colorSchemeSelector,不是 MUI 默认的 `data-mui-color-scheme`),且删除 hljs 主题的 `.hljs` 背景规则,背景由容器持有。
-- 流式光标是 CSS `::after` 脉冲圆点,挂在最后一个文本叶子元素(段落/标题/列表项/引用内段落)行尾;尾块是代码围栏或表格时不显示(内容增长本身即进度信号);仅当回答尾部 part 是文本时开启;`prefers-reduced-motion` 下静止常显。
-- 自动跟随滚动由 ResizeObserver 观察时间线内容尺寸驱动,且仅在 following 状态滚底;不得用 store 事件信号(如 lastSeq 拼串)触发滚动——吐字改为逐帧后事件粒度与内容高度变化不再对应。
-| 流式中途未闭合 `**`/``` 围栏 | remend 自愈渲染,后续文本不塌成代码块;终态以权威原文重渲染 |
-| 流式尾块是代码围栏/表格 | 不显示光标圆点,代码块随内容增长即进度信号 |
-| 系统开启减弱动态效果 | 吐字直达全文、光标静止、消息无位移动画 |
-- Good：长回复流式期间只有尾部 block 重解析重渲染,历史 block 引用稳定命中 memo;吐字逐帧推进时输入框与滚动不卡顿。
-- Bad：为打字机效果改 reducer/store 数据结构,或在事件处理里做逐字 setState;平滑吐字只属于 UI hook。
-- Bad：MemoizedBlock 的 components/plugins 在组件体内重建,导致每帧引用变化、块级 memo 全部失效,长回复 O(n²) 重解析。
