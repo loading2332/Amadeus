@@ -40,44 +40,10 @@ class _EmitAfterTurnCtxModule:
 
 class _ReturnAfterTurnResultModule:
     slot = "after_turn.return"
-    requires = ("after_turn.post_response",)
+    requires = ("after_turn.emit",)
 
     async def run(self, frame: AfterTurnFrame) -> AfterTurnFrame:
         frame.output = AfterTurnResult(context=frame.input.context)
-        return frame
-
-
-class _RunPostResponseMemoryModule:
-    slot = "after_turn.post_response"
-    requires = ("after_turn.emit",)
-
-    def __init__(
-        self,
-        memory_engine: MemoryEngine | None,
-        session_manager: SessionManager,
-    ) -> None:
-        self._memory_engine = memory_engine
-        self._session_manager = session_manager
-
-    async def run(self, frame: AfterTurnFrame) -> AfterTurnFrame:
-        if self._memory_engine is None:
-            return frame
-        session = self._session_manager.get_or_create(frame.input.context.session)
-        try:
-            trace = await self._memory_engine.run_post_response(
-                session=frame.input.context.session,
-                messages=list(session.messages),
-                explicit_memory_ids=list(
-                    frame.input.context.memory_trace.get("explicit_memory_ids", [])
-                ),
-            )
-        except Exception as error:
-            trace = {
-                "status": "error",
-                "reason": "post_response_worker_failed",
-                "error": str(error),
-            }
-        frame.input.context.memory_trace["post_response"] = trace
         return frame
 
 
@@ -88,9 +54,9 @@ def default_after_turn_modules(
     session_manager: SessionManager,
     plugin_modules: AfterTurnModules | None = None,
 ) -> AfterTurnModules:
+    del memory_engine, session_manager
     builtins: AfterTurnModules = [
         _EmitAfterTurnCtxModule(lifecycle),
-        _RunPostResponseMemoryModule(memory_engine, session_manager),
         _ReturnAfterTurnResultModule(),
     ]
     return cast(

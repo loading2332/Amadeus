@@ -38,6 +38,15 @@ class TurnEvent:
 
 
 @dataclass(frozen=True)
+class TurnExecutionResult:
+    answer: str
+    user_message_id: str
+    assistant_message_id: str
+    explicit_memory_ids: tuple[str, ...] = ()
+    enqueue_post_response_memory: bool = False
+
+
+@dataclass(frozen=True)
 class Turn:
     id: str
     user_id: int

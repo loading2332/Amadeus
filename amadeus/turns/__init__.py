@@ -13,6 +13,7 @@ from amadeus.turns.store import (
     Turn,
     TurnError,
     TurnEvent,
+    TurnExecutionResult,
 )
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "Turn",
     "TurnError",
     "TurnEvent",
+    "TurnExecutionResult",
     "PostgresTurnStore",
 ]

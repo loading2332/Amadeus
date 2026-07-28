@@ -25,6 +25,9 @@
 - 同一 turn 的事件写入必须保序：可能被并发调用的写路径需 per-stream `asyncio.Lock` 串行化，且快照捕获在锁内完成。
 - 异常语义不变：store 抛出的领域异常（`OwnerResourceNotFound`、`InvalidTurnTransition` 等）从线程原样传播回 async 调用方，上层处理逻辑不因 to_thread 改变。
 - 测试可直接调用的同步方法（如 `recover_stale_once`）保持同步签名，由 async 侧经 to_thread 调用。
+- `PostResponseMemoryWorker` 的 claim、heartbeat、done、failed、stale recovery
+  以及按消息 ID 读取 session store 都属于同步存储调用，必须逐一经
+  `asyncio.to_thread`；heartbeat 发现 lease 失效时必须取消仍在执行的抽取协程。
 
 ### 4. 验证与错误矩阵
 

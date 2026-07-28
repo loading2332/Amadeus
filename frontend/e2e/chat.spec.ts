@@ -331,6 +331,27 @@ test("creates a session, streams text and tools, then restores after refresh", a
   await expect(page.getByText("确定性回答")).toBeVisible();
 });
 
+test("leaves generating state within 500ms after the complete answer is visible", async ({ page }) => {
+  await visibleButton(page, "新对话").click();
+  await page.getByPlaceholder("给 Amadeus 发消息").fill("验证回答终态延迟");
+  await page.getByRole("button", { name: "发送消息" }).click();
+  await expect(page.getByRole("button", { name: "停止生成" })).toBeVisible();
+
+  await expect(page.getByText("确定性回答")).toBeVisible();
+  const answerVisibleAt = Date.now();
+  await expect(page.getByRole("button", { name: "停止生成" })).toHaveCount(0, {
+    timeout: 500,
+  });
+  await expect(page.getByRole("button", { name: "发送消息" })).toBeVisible({
+    timeout: 500,
+  });
+  await expect(page.getByPlaceholder("给 Amadeus 发消息")).toBeEnabled({
+    timeout: 500,
+  });
+
+  expect(Date.now() - answerVisibleAt).toBeLessThanOrEqual(500);
+});
+
 test("keeps slow streams isolated while switching sessions", async ({ page }) => {
   await createConversation(page, "[slow] 会话甲");
   await expect(page.getByText("慢速")).toBeVisible();

@@ -22,6 +22,9 @@
 
 - React 只提交资源 ID 和文本，不提交 `user_id`；启动时以 `/api/bootstrap` 返回的 owner 为准。
 - Query 是服务器快照；Zustand 是未终态 overlay。终态事件先应用到 overlay，再失效并等待 Query refetch 成功，最后删除 overlay，让服务器 `answer/partial_answer/error` 接管界面。
+- `turn_terminal: done` 是回答生命周期的唯一前端终态；后台 memory job
+  不进入 SSE、Query 或 Zustand。完整回答字符可见后 500ms 内必须隐藏停止入口、
+  恢复发送入口并启用 Composer，不得等待记忆抽取状态。
 - 不得在发起 refetch 时立即删除 overlay，否则网络失败或 refetch 窗口会让部分正文闪回或消失。
 - SSE `seq <= lastSeq` 必须忽略；协议坏包只显示固定安全提示，不暴露原始 payload/异常。
 - 工具 `started` 显示过程行；`completed/failed` 立即变为紧凑摘要。只显示工具名和状态，不显示参数、结果或思考。
@@ -54,6 +57,7 @@
 | SSE JSON/契约无效 | 关闭连接，保留已收内容并显示安全恢复提示 |
 | 终态 refetch 成功 | 删除 overlay，Query 最终快照获胜 |
 | 终态 refetch 失败 | 保留 overlay，避免丢失已经展示的内容 |
+| 完整回答已可见且收到 `done` | 500ms 内停止按钮消失、发送入口出现、输入框可编辑；memory job 仍可在后台运行 |
 | 用户主动上滚 | 停止自动跟随并显示“回到底部” |
 | owner 与本地记录变化 | 清理旧 session URL 定位，以新 owner 的 sessions 回退 |
 | 桌面侧栏完全收起 | 外壳最终宽度为 `0px`，聊天区接管剩余宽度，左上角浮动显示展开与新建图标 |
@@ -75,6 +79,7 @@
 ### 5. Good / Base / Bad Cases
 
 - Good：`text -> tool -> text -> done` 先按事件顺序展示；工具完成后收起；refetch 成功后最终 answer 接管。
+- Good：memory worker 被阻塞时，聊天仍在 `done` 到达后立即结束生成态，用户可以输入下一轮。
 - Good：桌面侧栏以 `280px -> 0px` 平滑退出布局，刷新后保持偏好；移动端仍通过独立 Drawer 打开同一套导航内容。
 - Good：长会话只增加时间线的 `scrollHeight`；浮动导航、Composer 和侧栏保持在视口内，新增流式内容自动跟随到底部。
 - Good：用户上滚后只看到圆形向下箭头；悬停无文字提示，点击无涟漪，按钮随平滑滚动保持可见并在实际到底后稳定退出。
@@ -86,6 +91,7 @@
 - Good：长回复流式期间只有尾部 block 重解析重渲染,历史 block 引用稳定命中 memo;吐字逐帧推进时输入框与滚动不卡顿。
 - Base：刷新页面没有 live overlay，直接从 FastAPI turns 恢复 done/failed/cancelled 时间线。
 - Bad：终态一到就清除 Zustand，再异步 refetch；网络慢时正文闪空。
+- Bad：增加 memory job 轮询或把 memory 状态合并进 active turn；这会把后台派生计算重新带回用户关键路径。
 - Bad：组件直接 `fetch/axios`，或把 EventSource 放入 Zustand，使认证、清理和 StrictMode 幂等边界分裂。
 - Bad：桌面收起后保留固定窄栏，或让 `ChatView` 直接操作 localStorage / create-session mutation，造成状态和副作用边界分裂。
 - Bad：外壳和聊天 Grid 只设 `minHeight: 100dvh`，让内容把 body 撑高，再依赖浏览器页面滚动承载消息。
@@ -102,6 +108,9 @@
 
 - Vitest：response guard、Axios 非 2xx/网络/取消、安全 payload、SSE seq 去重与坏包、工具折叠、Markdown 安全、复制反馈、Composer Enter/IME/移动端、发送失败保留 draft 与重试、启动查询/turns 查询原位重试、创建 session 失败反馈、滚动保护、“回到底部”无点击涟漪、使用 `behavior: "smooth"`、中间位置保持显示且实际到底后隐藏、主题存储异常和旧值归一化，以及会话日期分组的本地日历日/无效时间边界。回复渲染新增必测:useSmoothText(fake rAF 推进/done 补齐/reduced-motion 直达/卸载清理)、分块渲染计数(尾块外 0 次重渲染)、高亮 token 与语言标签、streaming 自愈与终态原文、光标出现/消失、复制全文内容与可见性。lazy chunk 内元素的首个断言用 `findBy*` 并放宽 timeout,全量并行跑时模块加载可能超过默认 1s。
 - Playwright Chromium：使用独立 `amadeus_e2e` PostgreSQL 数据库、真实 FastAPI store 和真实 `TurnWorker`，仅 runner 使用确定性 fixture；覆盖完成、跨会话、停止、失败重试、网络注入后的 session/turn 原位重试与 draft 保留、首条消息标题即时刷新和页面刷新后持久化、桌面轮内/轮间几何关系、刷新、Drawer、主题、Markdown 局部溢出、桌面 `280px -> 0px -> 280px`、无聊天顶栏、欢迎提示双向居中和发送后消失、Composer 左侧留白与单行/多行对齐、浮动入口可达、本地字体生效、长会话 document/侧栏/时间线滚动边界、“回到底部”无 Tooltip、平滑滚动期间持续显示且实际到底后稳定退出、收起态新建、折叠偏好持久化和 keep-mounted DOM id 唯一性。标题持久化必须走真实后端；浏览器路由注入只用于制造网络失败。
+- 回答终态时序：确定性 runner 的完整回答可见后开始计时，断言停止按钮消失、
+  发送入口出现且输入框恢复的总时间不超过 500ms；后端因果测试另行证明
+  该终态不依赖 post-response memory 完成。
 - 构建：typecheck、ESLint、Vite build 无大 chunk 警告；Docker 冻结 lockfile 构建并检查 hashed assets。
 - 视觉：`kill-ai-slop` 扫描后逐项人工判断；MUI 布局 `Box` 不是卡片，不能为了归零而隐藏或改坏结构。
 

@@ -21,6 +21,7 @@ from amadeus.turns.store import (
     Turn,
     TurnError,
     TurnEvent,
+    TurnExecutionResult,
 )
 
 _TURN_COLUMNS = """
@@ -40,6 +41,7 @@ class PostgresTurnStore:
         dsn: str | None = None,
         *,
         db: PostgresDatabase | None = None,
+        post_response_memory_enabled: bool = False,
     ) -> None:
         if db is None:
             if dsn is None:
@@ -50,6 +52,7 @@ class PostgresTurnStore:
         else:
             self._owns_db = False
         self.db = db
+        self.post_response_memory_enabled = bool(post_response_memory_enabled)
 
     def close(self) -> None:
         if self._owns_db:
@@ -390,6 +393,21 @@ class PostgresTurnStore:
             error=None,
         )
 
+    def complete_success(
+        self,
+        turn_id: str,
+        lease_id: str,
+        result: TurnExecutionResult,
+    ) -> Turn:
+        return self._mark_terminal(
+            turn_id,
+            lease_id,
+            status=TURN_DONE,
+            answer=result.answer,
+            error=None,
+            execution_result=result,
+        )
+
     def mark_failed(self, turn_id: str, lease_id: str, error: TurnError) -> Turn:
         return self._mark_terminal(
             turn_id,
@@ -537,6 +555,14 @@ class PostgresTurnStore:
                         },
                     }
                 self._insert_event(cursor, turn_id, "turn_terminal", terminal)
+                if (
+                    assistant_answer is not None
+                    and self.post_response_memory_enabled
+                ):
+                    self._insert_recovered_post_response_job(
+                        cursor,
+                        turn_id=turn_id,
+                    )
             conn.commit()
         return self._require_turn(turn_id)
 
@@ -548,6 +574,7 @@ class PostgresTurnStore:
         status: str,
         answer: str | None,
         error: TurnError | None,
+        execution_result: TurnExecutionResult | None = None,
     ) -> Turn:
         with self.db.connection() as conn:
             with conn.cursor() as cursor:
@@ -564,6 +591,18 @@ class PostgresTurnStore:
                 )
                 if status == TURN_DONE and row["cancel_requested_at"] is not None:
                     raise InvalidTurnTransition("Cancellation was requested before done")
+                if (
+                    execution_result is not None
+                    and self.post_response_memory_enabled
+                    and execution_result.enqueue_post_response_memory
+                ):
+                    self._validate_success_messages(
+                        cursor,
+                        turn_id=turn_id,
+                        user_id=int(row["user_id"]),
+                        session_id=int(row["session_id"]),
+                        result=execution_result,
+                    )
                 partial = str(row["partial_answer"] or "")
                 if status == TURN_DONE and answer is not None and not partial:
                     version = int(row["stream_version"] or 0) + 1
@@ -608,8 +647,132 @@ class PostgresTurnStore:
                         "retryable": error.retryable,
                     }
                 self._insert_event(cursor, turn_id, "turn_terminal", terminal)
+                if (
+                    status == TURN_DONE
+                    and execution_result is not None
+                    and self.post_response_memory_enabled
+                    and execution_result.enqueue_post_response_memory
+                ):
+                    self._insert_post_response_job(
+                        cursor,
+                        turn_id=turn_id,
+                        user_id=int(row["user_id"]),
+                        session_id=int(row["session_id"]),
+                        result=execution_result,
+                    )
             conn.commit()
         return self._require_turn(turn_id)
+
+    @staticmethod
+    def _validate_success_messages(
+        cursor: Any,
+        *,
+        turn_id: str,
+        user_id: int,
+        session_id: int,
+        result: TurnExecutionResult,
+    ) -> None:
+        cursor.execute(
+            """
+            SELECT id, user_id, session_id, role, turn_id
+            FROM conversation_messages
+            WHERE id = ANY(%s)
+            """,
+            ([result.user_message_id, result.assistant_message_id],),
+        )
+        messages = {str(row["id"]): row for row in cursor.fetchall()}
+        expected = {
+            result.user_message_id: "user",
+            result.assistant_message_id: "assistant",
+        }
+        if set(messages) != set(expected):
+            raise InvalidTurnTransition(
+                "Successful turn messages were not durably persisted"
+            )
+        for message_id, role in expected.items():
+            message = messages[message_id]
+            if (
+                int(message["user_id"]) != user_id
+                or int(message["session_id"]) != session_id
+                or str(message["role"]) != role
+                or str(message["turn_id"]) != str(turn_id)
+            ):
+                raise InvalidTurnTransition(
+                    "Successful turn messages do not match the active turn"
+                )
+
+    @staticmethod
+    def _insert_post_response_job(
+        cursor: Any,
+        *,
+        turn_id: str,
+        user_id: int,
+        session_id: int,
+        result: TurnExecutionResult,
+    ) -> None:
+        cursor.execute(
+            """
+            INSERT INTO post_response_memory_jobs (
+                id, turn_id, user_id, session_id, user_message_id,
+                assistant_message_id, explicit_memory_ids, status, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT (turn_id) DO NOTHING
+            """,
+            (
+                str(uuid.uuid4()),
+                turn_id,
+                user_id,
+                session_id,
+                result.user_message_id,
+                result.assistant_message_id,
+                Jsonb(list(result.explicit_memory_ids)),
+                "pending",
+            ),
+        )
+
+    def _insert_recovered_post_response_job(
+        self,
+        cursor: Any,
+        *,
+        turn_id: str,
+    ) -> None:
+        cursor.execute(
+            """
+            SELECT id, user_id, session_id, role
+            FROM conversation_messages
+            WHERE turn_id = %s AND role IN ('user', 'assistant')
+            """,
+            (turn_id,),
+        )
+        messages = {str(row["role"]): row for row in cursor.fetchall()}
+        if set(messages) != {"user", "assistant"}:
+            raise InvalidTurnTransition(
+                "Recovered turn messages were not durably persisted"
+            )
+        user_message = messages["user"]
+        assistant_message = messages["assistant"]
+        if (
+            int(user_message["user_id"]) != int(assistant_message["user_id"])
+            or int(user_message["session_id"])
+            != int(assistant_message["session_id"])
+        ):
+            raise InvalidTurnTransition(
+                "Recovered turn messages do not share one session boundary"
+            )
+        result = TurnExecutionResult(
+            answer="",
+            user_message_id=str(user_message["id"]),
+            assistant_message_id=str(assistant_message["id"]),
+            enqueue_post_response_memory=True,
+        )
+        self._insert_post_response_job(
+            cursor,
+            turn_id=turn_id,
+            user_id=int(user_message["user_id"]),
+            session_id=int(user_message["session_id"]),
+            result=result,
+        )
 
     @staticmethod
     def _lock_active(cursor: Any, turn_id: str, lease_id: str) -> Mapping[str, Any]:
@@ -631,7 +794,7 @@ class PostgresTurnStore:
         cursor.execute(
             """
             SELECT status, lease_id, stream_version, partial_answer,
-                   cancel_requested_at
+                   cancel_requested_at, user_id, session_id
             FROM conversation_turns
             WHERE id = %s
             FOR UPDATE

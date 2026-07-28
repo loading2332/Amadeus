@@ -12,6 +12,15 @@ from amadeus.memory.engine import (
     MemoryScope,
     MemoryWriteRequest,
 )
+from amadeus.memory.jobs import (
+    MEMORY_JOB_DONE,
+    MEMORY_JOB_FAILED,
+    MEMORY_JOB_PENDING,
+    MEMORY_JOB_PROCESSING,
+    InvalidMemoryJobTransition,
+    PostgresPostResponseMemoryJobStore,
+    PostResponseMemoryJob,
+)
 from amadeus.memory.markdown import (
     ConsolidateRequest,
     ConsolidateResult,
@@ -56,6 +65,11 @@ __all__ = [
     "LongTermMemoryEngine",
     "LLMMemoryDecisionProvider",
     "LLMMemoryExtractor",
+    "MEMORY_JOB_DONE",
+    "MEMORY_JOB_FAILED",
+    "MEMORY_JOB_PENDING",
+    "MEMORY_JOB_PROCESSING",
+    "InvalidMemoryJobTransition",
     "MarkdownMemoryMaintenance",
     "MarkdownMemoryRuntime",
     "MarkdownMemoryStore",
@@ -69,6 +83,8 @@ __all__ = [
     "MemoryOptimizerBusy",
     "MemoryOptimizerLoop",
     "PostResponseMemoryWorker",
+    "PostResponseMemoryJob",
+    "PostgresPostResponseMemoryJobStore",
     "MemoryQueryResult",
     "MemoryRecallRequest",
     "MemoryRecord",

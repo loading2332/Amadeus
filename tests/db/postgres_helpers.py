@@ -50,6 +50,7 @@ def clean_postgres() -> PostgresDatabase:
             cursor.execute(
                 """
                 TRUNCATE
+                    post_response_memory_jobs,
                     memory_markdown_state,
                     memory_markdown_writes,
                     memory_replacements,

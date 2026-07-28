@@ -211,6 +211,62 @@ def test_runtime_continues_when_memory_retrieval_fails(tmp_path):
     assert result.assistant_response == "assistant reply"
 
 
+def test_runtime_does_not_wait_for_post_response_memory(tmp_path):
+    class BlockingPostResponseMemory(MemoryEngine):
+        async def recall(self, request: MemoryRecallRequest) -> MemoryQueryResult:
+            del request
+            return MemoryQueryResult()
+
+        async def memorize(self, request) -> MemoryIngestResult:
+            del request
+            return MemoryIngestResult(status="skipped")
+
+        def forget(self, ids: list[str]) -> MemoryMutationResult:
+            del ids
+            return MemoryMutationResult()
+
+        def undo_by_source(self, source_ref: str) -> MemoryMutationResult:
+            del source_ref
+            return MemoryMutationResult()
+
+        async def build_context(
+            self, request: MemoryRecallRequest
+        ) -> MemoryContextResult:
+            del request
+            return MemoryContextResult()
+
+        async def run_post_response(
+            self,
+            *,
+            session: SessionRef,
+            messages: list[dict[str, Any]],
+            explicit_memory_ids: list[str],
+        ) -> dict[str, Any]:
+            del session, messages, explicit_memory_ids
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+    runtime = PassiveRuntime(
+        workspace_root=tmp_path,
+        provider=LLMProvider(
+            LLMProviderConfig(api_key="secret", model="fake"),
+            client=FakeClient(),
+        ),
+        session_manager=SessionManager(tmp_path, store=InMemorySessionStore()),
+        memory_engine=BlockingPostResponseMemory(),
+    )
+
+    async def run_with_deadline():
+        return await asyncio.wait_for(
+            runtime.run_turn(session=_session(), user_message="hello"),
+            timeout=0.1,
+        )
+
+    result = asyncio.run(run_with_deadline())
+
+    assert result.assistant_response == "assistant reply"
+
+
 def test_runtime_marks_pre_retrieval_as_context_intent(tmp_path):
     class RecordingMemory(MemoryEngine):
         def __init__(self) -> None:

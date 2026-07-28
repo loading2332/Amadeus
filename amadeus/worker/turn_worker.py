@@ -16,13 +16,22 @@ from amadeus.app.bootstrap import (
 from amadeus.runtime.streaming import TurnCancelled, TurnStreamSink
 from amadeus.session import PostgresSessionStore
 from amadeus.session.identity import SessionRef
-from amadeus.turns import PostgresTurnStore, Turn, TurnError
+from amadeus.turns import (
+    PostgresTurnStore,
+    Turn,
+    TurnError,
+    TurnExecutionResult,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class TurnRunner(Protocol):
-    async def run(self, turn: Turn, stream_sink: TurnStreamSink) -> str: ...
+    async def run(
+        self,
+        turn: Turn,
+        stream_sink: TurnStreamSink,
+    ) -> str | TurnExecutionResult: ...
 
 
 class TurnQueueStore(Protocol):
@@ -93,7 +102,11 @@ class PassiveAppTurnRunner:
         self.workspace_root = workspace_root.resolve()
         self.env_path = env_path
 
-    async def run(self, turn: Turn, stream_sink: TurnStreamSink) -> str:
+    async def run(
+        self,
+        turn: Turn,
+        stream_sink: TurnStreamSink,
+    ) -> TurnExecutionResult:
         # A PassiveRuntime captures its memory engine and workspace in phase
         # objects at construction time. Reusing ``self.app.runtime`` after
         # swapping an attribute would therefore leak user state. Build a
@@ -116,7 +129,18 @@ class PassiveAppTurnRunner:
                 extra={"turn_id": turn.id},
                 stream_sink=stream_sink,
             )
-            return str(result.assistant_response)
+            return TurnExecutionResult(
+                answer=str(result.assistant_response),
+                user_message_id=result.user_message_id,
+                assistant_message_id=result.assistant_message_id,
+                explicit_memory_ids=tuple(
+                    str(item)
+                    for item in result.memory_trace.get("explicit_memory_ids", [])
+                ),
+                enqueue_post_response_memory=(
+                    user_app.runtime.memory_engine is not None
+                ),
+            )
         finally:
             await user_app.aclose()
 
@@ -266,7 +290,7 @@ class TurnWorker:
             flush_interval=self.flush_interval,
         )
         try:
-            answer = await self._run_with_heartbeat(turn, stream)
+            execution = await self._run_with_heartbeat(turn, stream)
             await stream.begin_finalization()
         except TurnCancelled:
             await stream.flush()
@@ -294,7 +318,29 @@ class TurnWorker:
                 )
             return True
         await stream.flush()
-        await asyncio.to_thread(self.store.mark_done, turn.id, turn.lease_id, answer)
+        if isinstance(execution, TurnExecutionResult):
+            complete_success = getattr(self.store, "complete_success", None)
+            if callable(complete_success):
+                await asyncio.to_thread(
+                    complete_success,
+                    turn.id,
+                    turn.lease_id,
+                    execution,
+                )
+            else:
+                await asyncio.to_thread(
+                    self.store.mark_done,
+                    turn.id,
+                    turn.lease_id,
+                    execution.answer,
+                )
+        else:
+            await asyncio.to_thread(
+                self.store.mark_done,
+                turn.id,
+                turn.lease_id,
+                execution,
+            )
         self.stats.completed += 1
         return True
 
@@ -302,7 +348,7 @@ class TurnWorker:
         self,
         turn: Turn,
         stream: PersistedTurnStream,
-    ) -> str:
+    ) -> str | TurnExecutionResult:
         task = asyncio.create_task(self.runner.run(turn, stream))
         while True:
             done, _ = await asyncio.wait(
@@ -382,7 +428,12 @@ async def amain(argv: list[str] | None = None) -> None:
         workspace_root=workspace_root,
         env_path=args.env,
     )
-    store = PostgresTurnStore(config.postgres_dsn)
+    store = PostgresTurnStore(
+        config.postgres_dsn,
+        post_response_memory_enabled=(
+            config.long_term_memory_enabled and bool(config.embedding_model)
+        ),
+    )
     session_store = PostgresSessionStore(config.postgres_dsn)
     try:
         worker = TurnWorker(

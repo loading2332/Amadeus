@@ -350,7 +350,7 @@ def test_build_passive_app_registers_memory_tools_without_correct_memory(tmp_pat
     asyncio.run(app.aclose())
 
 
-def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memory_enabled(
+def test_build_passive_app_leaves_post_response_memory_for_background_worker(
     tmp_path,
     monkeypatch,
 ):
@@ -411,6 +411,21 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
             user_message="以后默认中文回复",
         )
         assert app.runtime.memory_engine is not None
+        before_worker = await app.runtime.memory_engine.recall(
+            MemoryRecallRequest(
+                text="默认用中文",
+                memory_types=("preference",),
+            )
+        )
+        messages = await asyncio.to_thread(
+            app.session_manager.store.fetch_by_ids,
+            [result.user_message_id, result.assistant_message_id],
+        )
+        worker_trace = await app.runtime.memory_engine.run_post_response(
+            session=_session(),
+            messages=messages,
+            explicit_memory_ids=[],
+        )
         recalled = await app.runtime.memory_engine.recall(
             MemoryRecallRequest(
                 text="默认用中文",
@@ -418,11 +433,13 @@ def test_build_passive_app_runs_post_response_memory_worker_when_long_term_memor
             )
         )
         await app.aclose()
-        return result, recalled
+        return result, before_worker, worker_trace, recalled
 
-    result, recalled = asyncio.run(scenario())
+    result, before_worker, worker_trace, recalled = asyncio.run(scenario())
 
-    assert result.memory_trace["post_response"]["written_count"] == 1
+    assert "post_response" not in result.memory_trace
+    assert before_worker.records == []
+    assert worker_trace["written_count"] == 1
     assert recalled.records
 
 

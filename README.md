@@ -16,6 +16,7 @@ $env:AMADEUS_POSTGRES_DSN="postgresql://amadeus:amadeus@localhost:5432/amadeus"
 uv run alembic upgrade head
 uv run uvicorn amadeus.web.main:app --host 0.0.0.0 --port 8000
 uv run python -m amadeus.worker.turn_worker
+uv run python -m amadeus.worker.post_response_memory_worker
 ```
 
 前端(pnpm + Vite,`/api` 代理到 127.0.0.1:8000):
@@ -48,7 +49,7 @@ pnpm run test:e2e   # 首次先 pnpm exec playwright install chromium
 ```
 amadeus/          Python 包
   web/            FastAPI 路由、SSE、静态托管
-  worker/         turn worker
+  worker/         turn worker 与独立后台 memory worker
   runtime/        推理循环(tool loop)
   memory/         长期记忆:检索、整理、Markdown 记忆
   session/ turns/ 会话与 turn 的存储层

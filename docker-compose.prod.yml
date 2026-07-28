@@ -20,3 +20,8 @@ services:
     environment:
       AMADEUS_POSTGRES_DSN: postgresql://amadeus:${AMADEUS_POSTGRES_PASSWORD}@postgres:5432/amadeus
     restart: unless-stopped
+
+  memory-worker:
+    environment:
+      AMADEUS_POSTGRES_DSN: postgresql://amadeus:${AMADEUS_POSTGRES_PASSWORD}@postgres:5432/amadeus
+    restart: unless-stopped

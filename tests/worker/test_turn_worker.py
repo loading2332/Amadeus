@@ -275,11 +275,17 @@ def test_passive_runner_builds_fresh_user_context_for_consecutive_turns(
     class ScopedRuntime:
         def __init__(self, user_id: int) -> None:
             self.user_id = user_id
+            self.memory_engine = None
 
         async def run_turn(self, *, session: SessionRef, **kwargs: Any) -> Any:
             del kwargs
             runtime_sessions.append(session)
-            return SimpleNamespace(assistant_response=f"user:{self.user_id}")
+            return SimpleNamespace(
+                assistant_response=f"user:{self.user_id}",
+                user_message_id=f"user-message-{self.user_id}",
+                assistant_message_id=f"assistant-message-{self.user_id}",
+                memory_trace={},
+            )
 
     class ScopedApp:
         def __init__(self, user_id: int) -> None:
@@ -310,8 +316,8 @@ def test_passive_runner_builds_fresh_user_context_for_consecutive_turns(
         sink = cast(TurnStreamSink, object())
         first = replace(_claimed_turn("turn-1"), user_id=7, session_id=70)
         second = replace(_claimed_turn("turn-2"), user_id=8, session_id=80)
-        assert await runner.run(first, sink) == "user:7"
-        assert await runner.run(second, sink) == "user:8"
+        assert (await runner.run(first, sink)).answer == "user:7"
+        assert (await runner.run(second, sink)).answer == "user:8"
 
     asyncio.run(scenario())
 

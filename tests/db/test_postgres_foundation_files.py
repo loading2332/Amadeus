@@ -32,6 +32,13 @@ def test_docker_compose_defines_runtime_services_and_workspace_volume() -> None:
         "--workspace-root",
         "/workspace",
     ]
+    assert services["memory-worker"]["command"] == [
+        "python",
+        "-m",
+        "amadeus.worker.post_response_memory_worker",
+        "--workspace-root",
+        "/workspace",
+    ]
     assert "amadeus-workspace" in compose["volumes"]
     assert services["api"]["environment"]["AMADEUS_POSTGRES_DSN"].endswith(
         "@postgres:5432/amadeus"
@@ -39,6 +46,9 @@ def test_docker_compose_defines_runtime_services_and_workspace_volume() -> None:
     assert services["worker"]["environment"]["AMADEUS_POSTGRES_DSN"].endswith(
         "@postgres:5432/amadeus"
     )
+    assert services["memory-worker"]["environment"][
+        "AMADEUS_POSTGRES_DSN"
+    ].endswith("@postgres:5432/amadeus")
 
 
 def test_initial_migration_creates_vector_extension_and_foundation_tables() -> None:
@@ -64,6 +74,18 @@ def test_turn_streaming_migration_adds_durable_state_and_constraints() -> None:
     assert "heartbeat_at" in migration
     assert "retry_of_turn_id" in migration
     assert "uq_conversation_messages_turn_role" in migration
+
+
+def test_post_response_memory_job_migration_adds_durable_queue() -> None:
+    migration = Path(
+        "migrations/versions/20260728_0008_post_response_memory_jobs.py"
+    ).read_text(encoding="utf-8")
+
+    assert "post_response_memory_jobs" in migration
+    assert "uq_post_response_memory_jobs_turn_id" in migration
+    assert "uq_post_response_memory_jobs_processing_session" in migration
+    assert "user_message_id" in migration
+    assert "assistant_message_id" in migration
 
 
 def test_content_hash_migration_uses_memory_store_hash_contract() -> None:

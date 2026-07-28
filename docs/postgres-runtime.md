@@ -10,7 +10,7 @@ the PostgreSQL `vector` extension is unavailable.
 Start the default local stack:
 
 ```powershell
-wsl docker compose up --build postgres migrate api worker
+wsl docker compose up --build postgres migrate api worker memory-worker
 ```
 
 Services:
@@ -20,6 +20,8 @@ Services:
 - `migrate`: runs `alembic upgrade head` after PostgreSQL is healthy.
 - `api`: runs `uvicorn amadeus.web.main:app --host 0.0.0.0 --port 8000`.
 - `worker`: runs `python -m amadeus.worker.turn_worker --workspace-root /workspace`.
+- `memory-worker`: 在回答和终态已经可靠落库后，独立消费
+  `post_response_memory_jobs`，执行长期记忆抽取。
 - `amadeus-workspace`: shared Markdown memory and runtime workspace volume.
 
 The API is exposed on `http://localhost:8000`.
@@ -62,6 +64,7 @@ $env:AMADEUS_POSTGRES_DSN="postgresql://amadeus:amadeus@localhost:5432/amadeus"
 uv run alembic upgrade head
 uv run uvicorn amadeus.web.main:app --host 0.0.0.0 --port 8000
 uv run python -m amadeus.worker.turn_worker
+uv run python -m amadeus.worker.post_response_memory_worker
 ```
 
 Useful checks:
@@ -94,6 +97,19 @@ Turn 流式运行时：
 - `AMADEUS_TURN_STREAM_FLUSH_INTERVAL_SECONDS=0.1`：有新正文时允许按时间阈值批量刷新；不会逐 token 写库。
 - `AMADEUS_TURN_HEARTBEAT_INTERVAL_SECONDS=10`：worker 续租和检查取消请求的周期。
 - `AMADEUS_TURN_STALE_AFTER_SECONDS=120`：processing turn 超过此时间无心跳后进入中断对账；必须大于心跳周期。
+
+## 回答终态与后台记忆生命周期
+
+一轮回答现在有两个相互独立的生命周期：
+
+1. Turn worker 持久化用户消息和助手消息，并在同一个 PostgreSQL 事务中把
+   turn 标记为 `done`、写入终态事件、创建 `post_response_memory_jobs`。
+2. 浏览器看到持久化的 `done` 后立即结束生成态；它不等待记忆抽取。
+3. `memory-worker` 随后租用 job，按原始消息 ID 读取输入并运行记忆抽取。
+
+这里的关键不变量是：只要用户能看到 `done`，后台 job 就一定已经存在；反过来，
+记忆模型变慢或失败不会把已经完成的回答改回生成中。job 和 turn 都保存在
+PostgreSQL，因此任一 worker 重启后都能继续消费，而不是依赖进程内队列。
 
 浏览器通过 `GET /api/turns/{turn_id}/events` 读取 PostgreSQL 中的持久化事件。SSE 使用单调 `id` 与统一的 `turn_event` envelope；重连时可传 `Last-Event-ID` 或 `after_seq`。SSE 断开不会取消执行，只有 `POST /api/turns/{turn_id}/cancel` 会发出持久化取消请求。
 

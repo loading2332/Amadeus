@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -18,7 +19,12 @@ sys.path.insert(0, str(ROOT))
 
 from amadeus.runtime.streaming import TurnStreamSink  # noqa: E402
 from amadeus.session import PostgresSessionStore  # noqa: E402
-from amadeus.turns import PostgresTurnStore, Turn  # noqa: E402
+from amadeus.session.identity import SessionRef  # noqa: E402
+from amadeus.turns import (  # noqa: E402
+    PostgresTurnStore,
+    Turn,
+    TurnExecutionResult,
+)
 from amadeus.web.app import create_app  # noqa: E402
 from amadeus.worker.turn_worker import TurnWorker  # noqa: E402
 
@@ -27,7 +33,14 @@ E2E_DATABASE = "amadeus_e2e"
 
 
 class DeterministicRunner:
-    async def run(self, turn: Turn, stream_sink: TurnStreamSink) -> str:
+    def __init__(self, sessions: PostgresSessionStore) -> None:
+        self.sessions = sessions
+
+    async def run(
+        self,
+        turn: Turn,
+        stream_sink: TurnStreamSink,
+    ) -> TurnExecutionResult:
         if "[slow]" in turn.content:
             answer = ""
             for chunk in ("慢速", "回答", "仍在", "继续"):
@@ -35,7 +48,7 @@ class DeterministicRunner:
                 answer += chunk
                 await asyncio.sleep(0.35)
                 await stream_sink.check_cancelled()
-            return answer
+            return await self._persist_result(turn, answer)
 
         if "[fail]" in turn.content and turn.retry_of_turn_id is None:
             await stream_sink.publish_content("失败前的部分回答")
@@ -49,7 +62,7 @@ class DeterministicRunner:
                 "```ts\nconst answer = 42;\n```"
             )
             await stream_sink.publish_content(answer)
-            return answer
+            return await self._persist_result(turn, answer)
 
         await stream_sink.publish_content("确定性")
         await stream_sink.publish_tool_activity(
@@ -61,15 +74,49 @@ class DeterministicRunner:
         )
         await asyncio.sleep(0.3)
         await stream_sink.publish_content("回答")
-        return "确定性回答"
+        return await self._persist_result(turn, "确定性回答")
+
+    async def _persist_result(
+        self,
+        turn: Turn,
+        answer: str,
+    ) -> TurnExecutionResult:
+        session = SessionRef(turn.user_id, turn.session_id)
+        seq = await asyncio.to_thread(self.sessions.next_seq, session)
+        now = datetime.now().astimezone().isoformat()
+        user_message = await asyncio.to_thread(
+            self.sessions.insert_message,
+            session,
+            role="user",
+            content=turn.content,
+            ts=now,
+            seq=seq,
+            extra={"turn_id": turn.id},
+        )
+        assistant_message = await asyncio.to_thread(
+            self.sessions.insert_message,
+            session,
+            role="assistant",
+            content=answer,
+            ts=now,
+            seq=seq + 1,
+            extra={"turn_id": turn.id},
+        )
+        return TurnExecutionResult(
+            answer=answer,
+            user_message_id=str(user_message["id"]),
+            assistant_message_id=str(assistant_message["id"]),
+            enqueue_post_response_memory=True,
+        )
 
 
 def worker_main(dsn: str) -> None:
     async def loop() -> None:
-        store = PostgresTurnStore(dsn)
+        store = PostgresTurnStore(dsn, post_response_memory_enabled=True)
+        sessions = PostgresSessionStore(dsn)
         worker = TurnWorker(
             store=store,
-            runner=DeterministicRunner(),
+            runner=DeterministicRunner(sessions),
             poll_interval=0.05,
             heartbeat_interval=0.1,
             flush_characters=1,
@@ -80,6 +127,7 @@ def worker_main(dsn: str) -> None:
                 if not await worker.run_once():
                     await asyncio.sleep(0.05)
         finally:
+            sessions.close()
             store.close()
 
     asyncio.run(loop())
@@ -129,6 +177,7 @@ def prepare_database() -> str:
             cursor.execute(
                 """
                 TRUNCATE
+                    post_response_memory_jobs,
                     memory_markdown_state,
                     memory_markdown_writes,
                     memory_replacements,
