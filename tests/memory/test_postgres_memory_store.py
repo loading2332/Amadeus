@@ -5,12 +5,17 @@ from datetime import UTC, datetime
 
 import psycopg
 import pytest
+from pgvector import Vector
 from amadeus.db import PostgresDatabase
-from amadeus.memory.postgres import PostgresMemoryStore
+from amadeus.memory.postgres import PostgresMemoryStore, _coerce_embedding
 
 from tests.db.postgres_helpers import clean_postgres
 
 EMBEDDING_DIM = 1024
+
+
+def test_coerce_embedding_accepts_pgvector_value() -> None:
+    assert _coerce_embedding(Vector([0.25, 0.5, 0.75])) == [0.25, 0.5, 0.75]
 
 
 def _pad(values: list[float], dim: int = EMBEDDING_DIM) -> list[float]:

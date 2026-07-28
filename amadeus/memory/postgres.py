@@ -595,12 +595,15 @@ def _iso(value: Any) -> str | None:
 def _coerce_embedding(value: Any) -> list[float]:
     """Normalize a pgvector column value into a plain ``list[float]``.
 
-    The pgvector psycopg adapter decodes columns into ``numpy.ndarray``; the
-    ranking layer and existing tests expect ``list[float]``. ``None`` (a null
-    embedding) decodes to an empty list, matching the SQLite store shape.
+    Depending on adapter configuration and version, pgvector columns decode to
+    ``Vector`` or ``numpy.ndarray``.  The memory layer consistently consumes
+    ``list[float]``. ``None`` (a null embedding) decodes to an empty list,
+    matching the SQLite store shape.
     """
     if value is None:
         return []
+    if isinstance(value, Vector):
+        return [float(v) for v in value.to_list()]
     if isinstance(value, list):
         return [float(v) for v in value]
     # numpy ndarray or other sequence-like container
