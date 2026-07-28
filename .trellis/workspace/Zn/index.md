@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-07-28
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~679 | Active |
+| `journal-1.md` | ~712 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-07-28 | 拆分回答终态与后台记忆生命周期 | `238d567` | `main` |
 | 20 | 2026-07-28 | GitHub 登录与用户运行时隔离 | `3f11b4e` | `main` |
 | 19 | 2026-07-27 | 完成前端回复效果改进 | `ef3dcb7`, `6085013` | `main` |
 | 18 | 2026-07-27 | 完成记忆检索 abstention 置信度门 | `ef6d5f7` | `main` |

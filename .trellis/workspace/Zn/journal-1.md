@@ -677,3 +677,36 @@ Removed SQLite-backed runtime store paths, tightened structured session contract
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: 拆分回答终态与后台记忆生命周期
+
+**Date**: 2026-07-28
+**Task**: 拆分回答终态与后台记忆生命周期
+**Branch**: `main`
+
+### Summary
+
+将回答可靠落库与 post-response 记忆抽取拆分为两个生命周期；新增 PostgreSQL durable job、原子 done+job 提交、独立 memory worker、500ms 浏览器验收、Docker 服务和可执行规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `238d567` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
